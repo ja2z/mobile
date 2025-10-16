@@ -1,0 +1,136 @@
+---
+description: Project-specific rules and guidelines for React Native Demo App development
+globs: ["**/*"]
+alwaysApply: true
+---
+# Project-Specific Rules for React Native Demo App
+
+> **📖 Quick Reference**: See [`DEVELOPMENT.md`](../DEVELOPMENT.md) for a condensed development guide that references these rules.
+
+## Project Overview
+This is a simple React Native mobile app built with Expo for internal company demos. The app embeds an iframe displaying charts/dashboards with minimal native UI interactions.
+
+## Tech Stack
+- **Framework**: React Native with Expo
+- **Language**: JavaScript/TypeScript (prefer TypeScript for better AI assistance)
+- **Primary Target**: iOS (iPhone)
+- **Secondary Target**: Android
+- **Development**: Testing via Expo Go app on actual iPhone
+
+## Core Requirements
+
+### App Structure
+- **Home Page**: Simple landing page with a single button to navigate to the Dashboard
+- **Dashboard Page**: Contains an iframe embedding a third-party dashboard/charts
+- **Persistent Navigation**: Home button visible at bottom of ALL screens to return to home page
+
+### Navigation
+- Use `@react-navigation/native` with stack navigator
+- Keep navigation simple and flat (no complex nested navigators)
+- Home button must be a custom component rendered on every screen
+
+### WebView/Iframe Implementation
+- Use `react-native-webview` package for embedding external content
+- The iframe loads third-party dashboard content
+- Handle loading states gracefully
+- Ensure proper error handling for network issues
+
+## Code Style & Conventions
+
+### General Principles
+- Keep components simple and functional
+- Prefer functional components with hooks over class components
+- Use clear, descriptive variable names
+- Add comments for non-obvious logic
+
+### File Structure
+```
+/app
+  - (tabs)/           # Main navigation screens
+  - _layout.tsx       # Root layout
+/components
+  - HomeButton.tsx    # Persistent home button component
+  - DashboardView.tsx # WebView wrapper component
+/constants
+  - Config.ts         # URLs and configuration
+```
+
+### Component Guidelines
+- Create a reusable `HomeButton` component that can be imported on all screens
+- Keep the WebView logic in a separate `DashboardView` component
+- Use Expo's built-in UI components where possible
+- Follow React Native styling conventions (StyleSheet.create)
+
+### Configuration
+- Store the iframe URL in a config file (not hardcoded in components)
+- Use environment variables for any sensitive data (though not needed initially)
+- Make the dashboard URL easily changeable for demo purposes
+
+## Development Workflow
+
+### Testing
+- Primary testing on actual iPhone via Expo Go
+- Test both iOS and Android before considering feature complete
+- Ensure home button works from all screens
+- Test WebView loading states and error conditions
+
+### Performance
+- Keep bundle size small (this is a simple app)
+- Lazy load components if needed (probably not necessary initially)
+- Ensure smooth navigation transitions
+
+### Error Handling
+- Handle WebView loading errors gracefully
+- Show user-friendly messages if dashboard fails to load
+- Add basic error boundaries for production
+
+## Dependencies to Use
+
+### Essential
+```json
+{
+  "expo": "latest",
+  "react-native": "latest",
+  "react-native-webview": "latest",
+  "@react-navigation/native": "latest",
+  "@react-navigation/stack": "latest"
+}
+```
+
+### Future Additions (not now)
+- Camera/barcode scanning: `react-native-camera` or `react-native-vision-camera`
+
+## Things to Avoid
+- Don't over-engineer - this is a demo app
+- Don't add unnecessary dependencies
+- Don't create complex state management (useState/useContext is fine)
+- Don't use Expo's managed workflow limitations as excuse to eject (stay in managed workflow)
+- Avoid inline styles - use StyleSheet.create for better performance
+
+## AI Assistant Instructions
+When generating code:
+1. **Always use TypeScript** for better type safety and autocomplete
+2. **Prioritize simplicity** over fancy patterns
+3. **Include error handling** for WebView and navigation
+4. **Add comments** explaining key decisions
+5. **Make the home button prominent and easy to tap** (minimum 44x44 pt hit area)
+6. **Use Expo's best practices** and modern React Native patterns
+7. **Test suggestions** work with Expo Go (avoid native modules that require custom dev builds)
+
+## Deployment Notes (for later)
+- Target deployment: TestFlight for internal testing
+- Will need Apple Developer account ($99/year)
+- Support 200+ internal company users
+- Builds expire after 90 days on TestFlight
+
+## Current Phase
+**Phase 1: MVP Development**
+- Home page with button ✓
+- Dashboard page with iframe (placeholder URL: https://example.com)
+- Persistent home button on all screens ✓
+- Basic navigation working ✓
+
+**Future phases:**
+- Production dashboard URL
+- Barcode scanning feature
+- Polish and refinement
