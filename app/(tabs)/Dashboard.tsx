@@ -1,18 +1,79 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DashboardView } from '../../components/DashboardView';
+import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
+import { NavigationBar } from '../../components/NavigationBar';
 
 /**
  * Dashboard Page Component
- * Contains the WebView with embedded dashboard content
+ * Contains the WebView with embedded dashboard content and bottom navigation
  */
 export default function Dashboard() {
+  const dashboardRef = useRef<DashboardViewRef>(null);
+  const [selectedPage, setSelectedPage] = useState('nVSaruy7Wf'); // Default to 'Dash'
+  const [isFilterActive, setIsFilterActive] = useState(false);
+  const [previousPage, setPreviousPage] = useState('nVSaruy7Wf');
+
+  /**
+   * Handle page selection from navigation bar
+   */
+  const handlePageSelect = (pageId: string, pageName: string) => {
+    console.log(`📱 Navigating to page: ${pageName} (${pageId})`);
+    setSelectedPage(pageId);
+    setIsFilterActive(false);
+    
+    // Send postMessage to iframe to change page
+    dashboardRef.current?.sendMessage({
+      type: 'workbook:selectednodeid:update',
+      selectedNodeId: pageId,
+      nodeType: 'page',
+    });
+  };
+
+  /**
+   * Handle filter button press
+   * When filter is not active: navigate to filter page
+   * When filter is active: return to previous page
+   */
+  const handleFilterPress = () => {
+    if (!isFilterActive) {
+      // Navigate to filter page
+      console.log('📱 Opening filter page');
+      setPreviousPage(selectedPage); // Remember current page
+      setIsFilterActive(true);
+      
+      // Send postMessage to navigate to filter page
+      dashboardRef.current?.sendMessage({
+        type: 'workbook:selectednodeid:update',
+        selectedNodeId: '6SuAlIRhQ_',
+        nodeType: 'page',
+      });
+    } else {
+      // Return to previous page
+      console.log(`📱 Closing filter page, returning to previous page: ${previousPage}`);
+      setIsFilterActive(false);
+      setSelectedPage(previousPage);
+      
+      // Send postMessage to return to previous page
+      dashboardRef.current?.sendMessage({
+        type: 'workbook:selectednodeid:update',
+        selectedNodeId: previousPage,
+        nodeType: 'page',
+      });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
-        <DashboardView />
+        <DashboardView ref={dashboardRef} />
       </View>
+      <NavigationBar
+        selectedPage={selectedPage}
+        onPageSelect={handlePageSelect}
+        onFilterPress={handleFilterPress}
+        isFilterActive={isFilterActive}
+      />
     </SafeAreaView>
   );
 }

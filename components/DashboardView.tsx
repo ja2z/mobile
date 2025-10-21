@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
@@ -8,18 +8,100 @@ interface DashboardViewProps {
   // No longer accepting URL as prop - it will be fetched dynamically
 }
 
+export interface DashboardViewRef {
+  sendMessage: (message: any) => void;
+}
+
 /**
  * Dashboard WebView Component
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView: React.FC<DashboardViewProps> = () => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((props, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [workbookLoaded, setWorkbookLoaded] = useState(false); // Track workbook:loaded event
   const [error, setError] = useState<string | null>(null);
   const [fetchingUrl, setFetchingUrl] = useState(true);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const webViewRef = useRef<WebView>(null);
+
+  /**
+   * Send a message to the embedded iframe
+   */
+  const sendMessage = (message: any) => {
+    console.log('🚀 sendMessage called with:', message);
+    
+    if (!webViewRef.current) {
+      console.error('❌ webViewRef.current is null!');
+      return;
+    }
+    
+    console.log('✅ webViewRef.current exists, injecting JavaScript...');
+    
+    const messageStr = JSON.stringify(message);
+    const escapedMessageStr = messageStr.replace(/'/g, "\\'");
+    
+    const js = `
+      (function() {
+        try {
+          console.log('🔧 Injected JS: Starting...');
+          const iframe = document.getElementById('sigma-embed');
+          
+          if (!iframe) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'debug',
+              message: 'ERROR: iframe not found'
+            }));
+            return;
+          }
+          
+          console.log('🔧 Injected JS: iframe found');
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'debug',
+            message: 'iframe found, attempting to send message'
+          }));
+          
+          if (!iframe.contentWindow) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'debug',
+              message: 'ERROR: iframe.contentWindow is null'
+            }));
+            return;
+          }
+          
+          const messageToSend = ${messageStr};
+          console.log('🔧 Injected JS: Sending message to iframe:', messageToSend);
+          
+          iframe.contentWindow.postMessage(messageToSend, 'https://app.sigmacomputing.com');
+          
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'debug',
+            message: 'Message sent successfully to iframe',
+            sentMessage: messageToSend
+          }));
+          
+          console.log('🔧 Injected JS: Message sent successfully');
+        } catch (error) {
+          console.error('🔧 Injected JS ERROR:', error);
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'debug',
+            message: 'ERROR: ' + error.message
+          }));
+        }
+      })();
+      true;
+    `;
+    
+    console.log('📝 Injecting JavaScript...');
+    webViewRef.current.injectJavaScript(js);
+    console.log('✅ JavaScript injected');
+  };
+
+  // Expose sendMessage method via ref
+  useImperativeHandle(ref, () => ({
+    sendMessage
+  }));
 
   /**
    * Fetches a new embed URL from the API and sets up auto-refresh
@@ -110,7 +192,13 @@ export const DashboardView: React.FC<DashboardViewProps> = () => {
       console.log('✅ Parsed message:', JSON.stringify(data, null, 2));
       console.log('📋 Message type:', data.type);
 
-      if (data.type === 'workbook:loaded') {
+      // Handle debug messages from our injected JS
+      if (data.type === 'debug') {
+        console.log('🔧 DEBUG MESSAGE:', data.message);
+        if (data.sentMessage) {
+          console.log('🔧 Sent message details:', data.sentMessage);
+        }
+      } else if (data.type === 'workbook:loaded') {
         console.log('🎉 ✅ WORKBOOK LOADED SUCCESSFULLY! 🎉');
         console.log('📊 Workbook variables:', data.workbook?.variables || 'none');
         setWorkbookLoaded(true);
@@ -224,6 +312,7 @@ export const DashboardView: React.FC<DashboardViewProps> = () => {
       )}
       
       <WebView
+        ref={webViewRef}
         key={url} // Force WebView to reload when URL changes
         source={{ html: htmlContent, baseUrl: 'https://app.sigmacomputing.com' }}
         style={styles.webview}
@@ -252,7 +341,7 @@ export const DashboardView: React.FC<DashboardViewProps> = () => {
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
