@@ -1,0 +1,177 @@
+---
+alwaysApply: false
+---
+# Mobile App Authentication System Implementation
+
+## Context
+I'm building a React Native mobile app called "Big Buys Mobile" that embeds Sigma dashboards via iframes with signed JWT URLs. The app is deployed via TestFlight for internal Sigma employees and select customers to use for demos.
+
+## Current State
+- Mobile app is built with React Native and Expo (NOT using EAS)
+- App already calls AWS Lambda to generate Sigma embed URLs
+- Desktop app "Big Buys" exists with Okta authentication (backend handles this)
+- Need to implement authentication for the mobile app
+
+## Authentication Requirements
+
+### Two Authentication Flows Needed:
+
+#### 1. Email Magic Link Flow (Self-Service Registration)
+**User Experience:**
+- User opens mobile app (not authenticated)
+- Enters their email address
+- If email is approved, receives magic link via email
+- Clicks link, opens app, authenticated for 7-30 days
+
+**Email Approval Logic:**
+- Auto-approve any `@sigmacomputing.com` email
+- Check against approved emails list in DynamoDB for non-Sigma emails
+- Reject unapproved emails with message to contact administrator
+
+#### 2. SMS Magic Link Flow (Desktop-to-Mobile Handoff)
+**User Experience:**
+- User authenticated in desktop Big Buys app
+- Clicks "Send to Mobile" button, enters phone number
+- Desktop backend calls Lambda with user info and API key
+- Lambda sends SMS with magic link
+- User clicks SMS link, opens mobile app, authenticated
+- Optionally can deep link to specific dashboard
+
+**Security Model:**
+- Desktop backend and Lambda share API key (Option C: "Just Trust the Desktop Backend")
+- Desktop backend has already authenticated user via Okta
+- Lambda trusts requests with valid API key
+
+### Both Flows Converge:
+- Magic link opens app via deep linking: `bigbuys://auth?token=xxx`
+- App calls verify endpoint to exchange token for long-lived JWT
+- JWT stored securely on device using expo-secure-store
+- JWT contains user identity (email, userId) for embed URL personalization
+
+## Technical Requirements
+
+### AWS Infrastructure Needed:
+1. **API Gateway** with routes:
+   - `POST /v1/auth/request-magic-link` (email flow)
+   - `POST /v1/auth/send-to-mobile` (SMS flow)
+   - `POST /v1/auth/verify-magic-link` (both flows converge)
+   - `POST /v1/auth/refresh-token` (optional: refresh before expiry)
+
+2. **Lambda Function(s):**
+   - Can be single Lambda with routing or separate functions
+   - Handle email validation and sending (SES)
+   - Handle SMS sending (SNS)
+   - Token generation and validation
+   - JWT signing and verification
+
+3. **DynamoDB Tables:**
+   - `mobile-auth` - magic link tokens and active sessions
+   - `approved-emails` - whitelist of approved non-Sigma emails
+
+4. **AWS Services:**
+   - SES (Simple Email Service) for sending magic link emails
+   - SNS (Simple Notification Service) for sending SMS
+   - Secrets Manager for API keys and JWT signing secret
+
+### Token/Session Design:
+- **Magic link tokens:** Short-lived (5-15 min), single-use, stored in DynamoDB
+- **Session JWTs:** Long-lived (7-30 days), stored on device, contains user identity
+- **Device binding:** Associate JWT with specific deviceId
+
+### React Native App Changes:
+- Add authentication screen for email entry
+- Implement deep linking handler for `bigbuys://auth?token=xxx`
+- Add AuthService using expo-secure-store
+- Modify embed URL generation to include user context from JWT
+- Add authentication check before showing dashboard
+
+## What You will create when asked
+
+These are the artifacts required. Only create these when asked.
+
+### Artifact 1: DynamoDB Schema Design
+- Complete table definitions with partition keys, sort keys, GSIs
+- Sample data entries
+- Access patterns covered
+
+### Artifact 2: Lambda Function Code
+- Complete TypeScript/JavaScript Lambda handler
+- All route handlers (email, SMS, verify, refresh)
+- Email approval logic
+- Token generation and validation
+- JWT signing and verification
+- Error handling and logging
+- Use aws-sdk v3 (modular imports)
+
+### Artifact 3: AWS Setup Guide
+- Step-by-step instructions for creating DynamoDB tables
+- API Gateway configuration (REST API)
+- Lambda deployment steps
+- SES setup for sending emails
+- SNS setup for SMS
+- Secrets Manager configuration
+- IAM roles and policies needed
+
+### Artifact 4: React Native AuthService
+- Complete TypeScript service class
+- Token storage using expo-secure-store
+- Deep link handling
+- API calls to Lambda endpoints
+- User session management
+
+### Artifact 5: React Native Auth UI Components
+- Email entry screen for registration
+- Loading states during auth
+- Error handling UI
+- Deep link handler component
+
+### Artifact 6: Integration with Existing App
+- How to modify existing DashboardView component
+- How to pass user context to embed URL generation
+- How to check authentication before rendering
+- App routing changes needed
+
+### Artifact 7: API Reference Documentation
+- All endpoint specifications
+- Request/response examples
+- Error codes and messages
+- Sample curl commands for testing
+
+### Artifact 8: Desktop Backend Integration Guide
+- How desktop app should call the send-to-mobile endpoint
+- API key usage
+- Request payload format
+- Sample implementation code
+
+### Artifact 9: Testing Plan
+- How to test email flow end-to-end
+- How to test SMS flow
+- How to test token expiry and refresh
+- Sample test data
+
+### Artifact 10: Security Considerations
+- JWT signing best practices
+- Token expiry recommendations
+- API key rotation strategy
+- Rate limiting recommendations
+- How to revoke access if needed
+
+## Important Notes
+- Keep solutions pragmatic for internal demo tool (not public-facing)
+- Prioritize getting it working over perfect security
+- But don't skip obvious security measures
+- Code should be production-ready but not over-engineered
+- Include helpful comments and error messages
+- Make it easy to extend for future requirements
+
+## Constraints
+- Use AWS services only (already using API Gateway + Lambda)
+- React Native with Expo (not EAS)
+- TypeScript preferred for all code
+- Must work on iOS (TestFlight deployment)
+- Existing app already has: react-navigation, react-native-webview
+
+## Output Format
+Include all necessary imports, error handling, and comments.
+
+We will through artifacts in order for lowest to highest.
