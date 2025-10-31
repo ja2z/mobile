@@ -11,22 +11,34 @@ interface EmbedUrlResponse {
 }
 
 /**
+ * Parameters for customizing the embed URL request
+ */
+interface EmbedUrlParams {
+  workbook_id?: string;
+  merchant_id?: string;
+  user_email?: string;
+  embed_path?: string;
+  teams?: string[];
+}
+
+/**
  * Service for fetching and managing Sigma embed URLs
  */
 export class EmbedUrlService {
   /**
    * Fetches a new embed URL from the API
+   * @param params Optional parameters to customize the embed URL
    * @returns Promise with the embed URL response
    * @throws Error if the API call fails
    */
-  static async fetchEmbedUrl(): Promise<EmbedUrlResponse> {
+  static async fetchEmbedUrl(params?: EmbedUrlParams): Promise<EmbedUrlResponse> {
     try {
       const response = await fetch(Config.API.EMBED_URL_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(params || {}),
       });
 
       if (!response.ok) {
@@ -65,4 +77,3 @@ export class EmbedUrlService {
     return refreshIn * 1000;
   }
 }
-
