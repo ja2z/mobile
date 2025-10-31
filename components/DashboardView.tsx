@@ -112,8 +112,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
       setError(null);
       setWorkbookLoaded(false); // Reset workbook loaded state when fetching new URL
       
-      const response = await EmbedUrlService.fetchEmbedUrl();
-      console.log('🌐 Setting new dashboard URL:', response.url);
+      const response = await EmbedUrlService.fetchEmbedUrl({
+        workbook_id: '6vzpQFMQkEiBIbnybiwrH3'
+      });      console.log('🌐 Setting new dashboard URL:', response.url);
       setUrl(response.url);
       
       // Clear any existing refresh timeout
