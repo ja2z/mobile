@@ -12,6 +12,12 @@ export const Config = {
   // App configuration
   APP_NAME: 'Big Buys Mobile',
   
+  // Workbook IDs
+  WORKBOOKS: {
+    AOP_EXEC_DASHBOARD: '6vzpQFMQkEiBIbnybiwrH3',
+    AI_NEWSLETTER: '70xl8hMTdNeqN75p4i4dSG',
+  },
+  
   // Navigation configuration
   NAVIGATION: {
     HEADER_HEIGHT: 60,

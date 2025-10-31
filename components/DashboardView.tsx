@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Animated } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
 import { colors, spacing, typography } from '../constants/Theme';
 
 interface DashboardViewProps {
-  // No longer accepting URL as prop - it will be fetched dynamically
+  workbookId?: string; // Optional workbook ID to load specific workbook
 }
 
 export interface DashboardViewRef {
@@ -14,11 +14,64 @@ export interface DashboardViewRef {
 }
 
 /**
+ * Skeleton Placeholder Component
+ * Shows animated skeleton while dashboard loads
+ */
+const SkeletonPlaceholder: React.FC = () => {
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shimmer = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    shimmer.start();
+    return () => shimmer.stop();
+  }, []);
+
+  const opacity = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <View style={styles.skeletonContainer}>
+      {/* Header skeleton */}
+      <Animated.View style={[styles.skeletonHeader, { opacity }]} />
+      
+      {/* Chart skeletons */}
+      <View style={styles.skeletonChartsRow}>
+        <Animated.View style={[styles.skeletonChartLarge, { opacity }]} />
+        <Animated.View style={[styles.skeletonChartSmall, { opacity }]} />
+      </View>
+      
+      <View style={styles.skeletonChartsRow}>
+        <Animated.View style={[styles.skeletonChartMedium, { opacity }]} />
+        <Animated.View style={[styles.skeletonChartMedium, { opacity }]} />
+      </View>
+      
+      {/* Table skeleton */}
+      <Animated.View style={[styles.skeletonTable, { opacity }]} />
+    </View>
+  );
+};
+
+/**
  * Dashboard WebView Component
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((props, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [workbookLoaded, setWorkbookLoaded] = useState(false); // Track workbook:loaded event
@@ -113,8 +166,11 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
       setError(null);
       setWorkbookLoaded(false); // Reset workbook loaded state when fetching new URL
       
-      const response = await EmbedUrlService.fetchEmbedUrl();
+      // Pass workbook_id if provided
+      const params = workbookId ? { workbook_id: workbookId } : undefined;
+      const response = await EmbedUrlService.fetchEmbedUrl(params);
       console.log('🌐 Setting new dashboard URL:', response.url);
+      console.log('📚 Workbook ID:', workbookId || 'default');
       setUrl(response.url);
       
       // Clear any existing refresh timeout
@@ -215,14 +271,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
     console.log('🔔 ===== END POSTMESSAGE =====\n');
   };
 
-  // Show loading state while fetching the initial URL
+  // Show skeleton loading state while fetching the initial URL
   if (fetchingUrl && !url) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Initializing Dashboard...</Text>
-      </View>
-    );
+    return <SkeletonPlaceholder />;
   }
 
   // Show error if URL fetch failed
@@ -306,9 +357,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
   return (
     <View style={styles.container}>
       {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading Dashboard...</Text>
+        <View style={styles.loadingOverlay}>
+          <SkeletonPlaceholder />
         </View>
       )}
       
@@ -367,10 +417,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 1,
   },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.background,
+    zIndex: 1,
+  },
   loadingText: {
     marginTop: spacing.md,
     ...typography.body,
     color: colors.textSecondary,
+  },
+  // Skeleton styles
+  skeletonContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: spacing.lg,
+  },
+  skeletonHeader: {
+    height: 60,
+    backgroundColor: colors.border,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+  },
+  skeletonChartsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
+  skeletonChartLarge: {
+    height: 200,
+    flex: 2,
+    backgroundColor: colors.border,
+    borderRadius: 8,
+    marginRight: spacing.md,
+  },
+  skeletonChartSmall: {
+    height: 200,
+    flex: 1,
+    backgroundColor: colors.border,
+    borderRadius: 8,
+  },
+  skeletonChartMedium: {
+    height: 180,
+    flex: 1,
+    backgroundColor: colors.border,
+    borderRadius: 8,
+    marginHorizontal: spacing.xs,
+  },
+  skeletonTable: {
+    height: 300,
+    backgroundColor: colors.border,
+    borderRadius: 8,
   },
   errorContainer: {
     flex: 1,

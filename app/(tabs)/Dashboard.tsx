@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { NavigationBar } from '../../components/NavigationBar';
+import { Config } from '../../constants/Config';
 
 /**
  * Dashboard Page Component
@@ -66,7 +67,10 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
-        <DashboardView ref={dashboardRef} />
+        <DashboardView 
+          ref={dashboardRef}
+          workbookId={Config.WORKBOOKS.AOP_EXEC_DASHBOARD}
+        />
       </View>
       <NavigationBar
         selectedPage={selectedPage}

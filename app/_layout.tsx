@@ -4,12 +4,14 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
+import AINewsletter from './(tabs)/AINewsletter';
 import { colors } from '../constants/Theme';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
   Home: undefined;
   Dashboard: undefined;
+  AINewsletter: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -48,13 +50,14 @@ export default function RootLayout() {
           options={{
             title: 'Dashboard',
             headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
+          }}
+        />
+        <Stack.Screen 
+          name="AINewsletter" 
+          component={AINewsletter}
+          options={{
+            title: 'AI Newsletter',
+            headerShown: true,
           }}
         />
       </Stack.Navigator>

@@ -26,6 +26,10 @@ export default function Home() {
     navigation.navigate('Dashboard' as never);
   };
 
+  const handleNavigateToAINewsletter = () => {
+    navigation.navigate('AINewsletter' as never);
+  };
+
   const appTiles: AppTile[] = [
     { 
       id: '1', 
@@ -50,7 +54,8 @@ export default function Home() {
       subtitle: 'Content', 
       color: colors.tileColors.orange3,
       iconName: 'sparkles-outline',
-      isActive: false,
+      isActive: true,
+      onPress: handleNavigateToAINewsletter,
     },
     { 
       id: '4', 
@@ -129,7 +134,7 @@ export default function Home() {
               accessibilityLabel={`${tile.title} - ${tile.subtitle}`}
               accessibilityRole="button"
             >
-              <View style={[styles.tile, { opacity: tile.isActive ? 1 : 0.6 }]}>
+              <View style={[styles.tile, { opacity: tile.isActive ? 1 : 0.4 }]}>
                 {/* Color accent bar */}
                 <View style={[styles.tileAccent, { backgroundColor: tile.color }]} />
                 
@@ -245,8 +250,15 @@ const styles = StyleSheet.create({
   },
   comingSoon: {
     ...typography.caption,
-    color: colors.primary,
-    marginTop: 4,
-    fontWeight: '600',
+    fontSize: 11,
+    color: '#FFFFFF',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    marginTop: 6,
+    fontWeight: '700',
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
   },
 });

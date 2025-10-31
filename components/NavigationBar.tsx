@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
 
 interface NavigationBarProps {
@@ -20,10 +21,10 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
   isFilterActive,
 }) => {
   const pages = [
-    { id: 'nVSaruy7Wf', name: 'Dash', emoji: '📊' },
-    { id: 'Vk5j4ngio3', name: 'Bar', emoji: '📈' },
-    { id: 'ADyAhWunig', name: 'Line', emoji: '📉' },
-    { id: 'lYEajzgMLj', name: 'Card', emoji: '🃏' },
+    { id: 'nVSaruy7Wf', name: 'Dash', icon: 'grid-outline' as const },
+    { id: 'Vk5j4ngio3', name: 'Bar', icon: 'bar-chart-outline' as const },
+    { id: 'ADyAhWunig', name: 'Line', icon: 'trending-up-outline' as const },
+    { id: 'lYEajzgMLj', name: 'Card', icon: 'card-outline' as const },
   ];
 
   return (
@@ -38,9 +39,12 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
               style={styles.button}
               onPress={() => onPageSelect(page.id, page.name)}
             >
-              <Text style={[styles.emoji, isSelected && styles.selectedEmoji]}>
-                {page.emoji}
-              </Text>
+              <Ionicons 
+                name={page.icon} 
+                size={24} 
+                color={isSelected ? colors.primary : colors.textSecondary}
+                style={[styles.icon, isSelected && styles.selectedIcon]}
+              />
               <Text style={[styles.label, isSelected && styles.selectedLabel]}>
                 {page.name}
               </Text>
@@ -55,9 +59,12 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
           style={[styles.filterButton, isFilterActive && styles.filterButtonActive]}
           onPress={onFilterPress}
         >
-          <Text style={[styles.filterEmoji, isFilterActive && styles.filterEmojiActive]}>
-            {isFilterActive ? '✓' : '⚙️'}
-          </Text>
+          <Ionicons 
+            name={isFilterActive ? 'checkmark' : 'options-outline'} 
+            size={24} 
+            color={isFilterActive ? colors.primary : colors.textSecondary}
+            style={styles.filterIcon}
+          />
           <Text style={[styles.filterLabel, isFilterActive && styles.filterLabelActive]}>
             {isFilterActive ? 'Done' : 'Filter'}
           </Text>
@@ -90,14 +97,12 @@ const styles = StyleSheet.create({
     minWidth: 60,
     minHeight: 60,
   },
-  emoji: {
-    fontSize: 24,
+  icon: {
     marginBottom: spacing.xs,
-    opacity: 0.6,
+    opacity: 0.7,
   },
-  selectedEmoji: {
+  selectedIcon: {
     opacity: 1,
-    transform: [{ scale: 1.1 }],
   },
   label: {
     ...typography.caption,
@@ -126,12 +131,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
     borderRadius: borderRadius.sm,
   },
-  filterEmoji: {
-    fontSize: 24,
+  filterIcon: {
     marginBottom: spacing.xs,
-  },
-  filterEmojiActive: {
-    fontSize: 20,
   },
   filterLabel: {
     ...typography.caption,
