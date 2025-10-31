@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
 
 interface NavigationBarProps {
   selectedPage: string;
@@ -69,16 +70,12 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 5,
+    borderTopColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    ...shadows.medium,
   },
   pageButtons: {
     flex: 1,
@@ -88,14 +85,14 @@ const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     minWidth: 60,
     minHeight: 60,
   },
   emoji: {
     fontSize: 24,
-    marginBottom: 4,
+    marginBottom: spacing.xs,
     opacity: 0.6,
   },
   selectedEmoji: {
@@ -103,47 +100,46 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.1 }],
   },
   label: {
-    fontSize: 11,
-    color: '#666666',
+    ...typography.caption,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   selectedLabel: {
-    color: '#007AFF',
+    color: colors.primary,
     fontWeight: '700',
   },
   filterSection: {
-    paddingLeft: 8,
+    paddingLeft: spacing.sm,
     borderLeftWidth: 1,
-    borderLeftColor: '#E5E5E5',
+    borderLeftColor: colors.border,
     justifyContent: 'center',
   },
   filterButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     minHeight: 60,
     minWidth: 70,
   },
   filterButtonActive: {
-    backgroundColor: '#007AFF10',
-    borderRadius: 8,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.sm,
   },
   filterEmoji: {
     fontSize: 24,
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   filterEmojiActive: {
     fontSize: 20,
   },
   filterLabel: {
-    fontSize: 11,
-    color: '#666666',
+    ...typography.caption,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   filterLabelActive: {
-    color: '#007AFF',
+    color: colors.primary,
     fontWeight: '700',
   },
 });
-

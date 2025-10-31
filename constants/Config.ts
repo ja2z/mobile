@@ -10,7 +10,7 @@ export const Config = {
   },
   
   // App configuration
-  APP_NAME: 'Mobile Dashboard',
+  APP_NAME: 'Big Buys Mobile',
   
   // Navigation configuration
   NAVIGATION: {

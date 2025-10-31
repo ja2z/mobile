@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
+import { colors, spacing, typography } from '../constants/Theme';
 
 interface DashboardViewProps {
   // No longer accepting URL as prop - it will be fetched dynamically
@@ -112,9 +113,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
       setError(null);
       setWorkbookLoaded(false); // Reset workbook loaded state when fetching new URL
       
-      const response = await EmbedUrlService.fetchEmbedUrl({
-        workbook_id: '6vzpQFMQkEiBIbnybiwrH3'
-      });      console.log('🌐 Setting new dashboard URL:', response.url);
+      const response = await EmbedUrlService.fetchEmbedUrl();
+      console.log('🌐 Setting new dashboard URL:', response.url);
       setUrl(response.url);
       
       // Clear any existing refresh timeout
@@ -219,7 +219,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
   if (fetchingUrl && !url) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Initializing Dashboard...</Text>
       </View>
     );
@@ -307,7 +307,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
     <View style={styles.container}>
       {loading && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading Dashboard...</Text>
         </View>
       )}
@@ -347,7 +347,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>((p
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
     margin: 0,
     padding: 0,
   },
@@ -362,39 +362,39 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666666',
+    marginTop: spacing.md,
+    ...typography.body,
+    color: colors.textSecondary,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#FFFFFF',
+    padding: spacing.lg,
+    backgroundColor: colors.background,
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FF3B30',
-    marginBottom: 12,
+    color: colors.error,
+    marginBottom: spacing.md,
     textAlign: 'center',
   },
   errorMessage: {
-    fontSize: 16,
-    color: '#666666',
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   errorSubtext: {
-    fontSize: 14,
-    color: '#999999',
+    ...typography.bodySmall,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
 });

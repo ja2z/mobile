@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
+import { colors } from '../constants/Theme';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
@@ -25,7 +26,7 @@ export default function RootLayout() {
         initialRouteName="Home"
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#007AFF',
+            backgroundColor: colors.primary,
           },
           headerTintColor: '#FFFFFF',
           headerTitleStyle: {
@@ -48,7 +49,7 @@ export default function RootLayout() {
             title: 'Dashboard',
             headerShown: true,
             headerStyle: {
-              backgroundColor: '#007AFF',
+              backgroundColor: colors.primary,
             },
             headerTintColor: '#FFFFFF',
             headerTitleStyle: {
