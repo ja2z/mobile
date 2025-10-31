@@ -168,6 +168,19 @@ aws ses send-email \
 
 ## Step 4: Configure Amazon SNS for SMS
 
+### ⚠️ Important: Sender ID Required for U.S. SMS
+
+**For sending SMS to U.S. phone numbers, AWS requires a verified sender ID:**
+- **Toll-free number** (recommended for production) - you've requested this
+- **10DLC (10-Digit Long Code)** - requires business registration
+- **Short code** - typically for high-volume use cases
+
+**While waiting for sender ID approval:**
+- SNS will accept the `publish` command and return a MessageId
+- Messages may not actually be delivered until sender ID is approved
+- You can continue with other setup steps below
+- Lambda code will work - SMS will just fail to deliver until sender ID is active
+
 ### Enable SMS in SNS
 
 ```bash
@@ -176,21 +189,72 @@ aws sns set-sms-attributes \
   --attributes DefaultSMSType=Transactional
 ```
 
-### Set Spending Limit (Optional but Recommended)
+### Set Spending Limit (Recommended)
 
 ```bash
-# Set monthly SMS spending limit to $10
+# Set monthly SMS spending limit to $10 (prevents unexpected charges)
 aws sns set-sms-attributes \
   --attributes MonthlySpendLimit=10
 ```
 
-### Test SMS Configuration
+### Check SMS Attributes and Sandbox Status
 
 ```bash
+# View current SMS configuration
+aws sns get-sms-attributes
+
+# Check if account is in SMS sandbox mode
+# If in sandbox, you can only send to verified phone numbers
+aws sns get-sms-sandbox-account-status
+```
+
+### Request Toll-Free Sender ID (If Not Already Done)
+
+1. Go to AWS Console → SNS → Text messaging (SMS)
+2. Click "Request origination identities" or "Request sender IDs"
+3. Select "Toll-free number" and fill out the form
+4. Approval typically takes 1-2 business days
+
+### Test SMS Configuration (May Not Deliver Until Sender ID Approved)
+
+```bash
+# Test sending SMS (will return MessageId even if not delivered yet)
 aws sns publish \
   --phone-number "+1YOUR-PHONE-NUMBER" \
   --message "SNS SMS is configured correctly!"
+
+# You should see output like:
+# {
+#   "MessageId": "e9ec2a29-d159-5469-b661-4b5787786913"
+# }
 ```
+
+### Verify SMS Delivery Status
+
+Even if SMS doesn't arrive, you can check if it was sent:
+
+```bash
+# Enable SMS delivery status logging to CloudWatch
+aws sns set-sms-attributes \
+  --attributes DeliveryStatusSuccessSamplingRate=100
+```
+
+Then check CloudWatch logs:
+1. Go to AWS Console → CloudWatch → Log groups
+2. Look for `/aws/sns/us-west-2/*/DirectPublishToPhoneNumber`
+3. Check for delivery status: Success, Failure, or Unknown
+
+**Note:** A successful `publish` response doesn't guarantee delivery. The message may be queued or blocked until sender ID is approved.
+
+### ✅ Continue Setup While Waiting for Sender ID
+
+**Good news:** You can continue with the remaining setup steps while waiting for sender ID approval:
+- Step 5: IAM roles (no dependency on SMS)
+- Step 6: Lambda deployment (will work - SMS just won't deliver yet)
+- Step 7: API Gateway (no dependency on SMS)
+- Step 8: Testing (you can test email flow, SMS will fail gracefully)
+
+Once your toll-free sender ID is approved, SMS messages will start delivering automatically. The Lambda function will work correctly - it just won't be able to deliver SMS until the sender ID is active.
 
 ---
 
@@ -574,11 +638,27 @@ For an internal demo tool with ~100 users:
 - Check Lambda logs for errors
 - Verify FROM_EMAIL is verified in SES
 
-### SMS not sending
-- Check phone number format (E.164)
-- Check SNS spending limit
-- Check AWS account SMS capabilities
-- Some countries require sender ID registration
+### SMS not sending (MessageId returned but no message received)
+**Most Common Cause: Missing or Unapproved Sender ID**
+- ✅ Check: Sender ID approval status in SNS console
+- ✅ Verify: Toll-free/10DLC number is approved and active
+- ✅ Confirm: Phone number format is E.164 (+1XXXXXXXXXX for US)
+
+**Other Potential Issues:**
+- Check SNS spending limit hasn't been exceeded
+- Verify recipient hasn't opted out (check SNS console)
+- Check if account is in SMS sandbox mode (can only send to verified numbers)
+- Review CloudWatch logs for delivery failure reasons
+- Verify phone carrier accepts SMS from AWS (some carriers block initially)
+
+**How to Check Delivery Status:**
+```bash
+# View recent SMS attributes including delivery stats
+aws sns get-sms-attributes
+
+# Check CloudWatch logs (if enabled)
+aws logs tail /aws/sns/us-west-2/*/DirectPublishToPhoneNumber --follow
+```
 
 ### Lambda timeout errors
 - Increase Lambda timeout to 30 seconds
