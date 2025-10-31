@@ -2,6 +2,7 @@
   "expo": {
     "name": "Big Buys Mobile",
     "slug": "bigbuys-mobile-app",
+    "scheme": "bigbuys",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sigmacomputing.bigbuys"
+      "bundleIdentifier": "com.sigmacomputing.bigbuys",
+      "associatedDomains": [
+        "applinks:bigbuys.io"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +27,24 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.sigmacomputing.bigbuys"
+      "package": "com.sigmacomputing.bigbuys",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "bigbuys.io",
+              "pathPrefix": "/auth/verify"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
