@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
       "associatedDomains": [
-        "applinks:bigbuys.io"
+        "applinks:mobile.bigbuys.io"
       ]
     },
     "android": {
@@ -35,7 +35,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "bigbuys.io",
+              "host": "mobile.bigbuys.io",
               "pathPrefix": "/auth/verify"
             }
           ],
