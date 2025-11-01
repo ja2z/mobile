@@ -26,6 +26,7 @@ const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-k
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
+const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
 
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
@@ -134,8 +135,8 @@ async function handleRequestMagicLink(body: any) {
     }
   }));
 
-  // Send email with magic link
-  const magicLink = `${APP_DEEP_LINK_SCHEME}://auth?token=${tokenId}`;
+  // Send email with magic link (using HTTPS redirect URL for better email client support)
+  const magicLink = buildRedirectUrl(tokenId, null);
   await sendMagicLinkEmail(emailLower, magicLink);
 
   return createResponse(200, {
@@ -202,12 +203,8 @@ async function handleSendToMobile(body: any, event: any) {
     }
   }));
 
-  // Send SMS with magic link
-  let magicLink = `${APP_DEEP_LINK_SCHEME}://auth?token=${tokenId}`;
-  if (dashboardId) {
-    magicLink += `&dashboardId=${encodeURIComponent(dashboardId)}`;
-  }
-  
+  // Send SMS with magic link (using HTTPS redirect URL)
+  const magicLink = buildRedirectUrl(tokenId, dashboardId);
   await sendMagicLinkSMS(phoneNumber, magicLink);
 
   return createResponse(200, {
@@ -438,6 +435,18 @@ async function getUserIdForEmail(email: string): Promise<string> {
 }
 
 /**
+ * Build HTTPS redirect URL that will redirect to deep link
+ * This works better in email clients than direct deep links
+ */
+function buildRedirectUrl(tokenId: string, dashboardId: string | null): string {
+  let url = `${REDIRECT_BASE_URL}/auth/verify?token=${encodeURIComponent(tokenId)}`;
+  if (dashboardId) {
+    url += `&dashboardId=${encodeURIComponent(dashboardId)}`;
+  }
+  return url;
+}
+
+/**
  * Generate session JWT
  */
 async function generateSessionJWT(payload: {
@@ -505,7 +514,7 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
       Subject: { Data: 'Sign in to Big Buys Mobile' },
       Body: {
         Html: { Data: emailBody },
-        Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nThis link expires in 15 minutes.` }
+        Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
       }
     }
   }));

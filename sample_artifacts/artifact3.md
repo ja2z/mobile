@@ -504,7 +504,8 @@ aws lambda create-function \
     JWT_SECRET_NAME=mobile-app/jwt-secret,
     API_KEY_SECRET_NAME=mobile-app/api-key,
     FROM_EMAIL=noreply@sigmacomputing.com,
-    APP_DEEP_LINK_SCHEME=bigbuys
+    APP_DEEP_LINK_SCHEME=bigbuys,
+    REDIRECT_BASE_URL=https://mobile.bigbuys.io
   }"
 ```
 
