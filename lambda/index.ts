@@ -38,8 +38,26 @@ export const handler = async (event: any) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
   try {
-    const path = event.path || event.rawPath;
+    let path = event.path || event.rawPath;
     const method = event.httpMethod || event.requestContext?.http?.method;
+
+    console.log(`Original path: ${path}, method: ${method}`);
+
+    // Normalize path - API Gateway with AWS_PROXY does NOT include stage name in path
+    // If resources are at /auth/... level, path will be /auth/...
+    // If resources are at /v1/auth/... level, path will be /v1/auth/...
+    // Normalize both to /v1/auth/... format for consistent routing
+    if (path.startsWith('/v1/v1/')) {
+      // Handle duplicate /v1 case
+      path = path.replace('/v1/v1/', '/v1/');
+      console.log(`Normalized from /v1/v1/ to: ${path}`);
+    } else if (path.startsWith('/auth/')) {
+      // Handle resources at root level - add /v1 prefix
+      path = '/v1' + path;
+      console.log(`Normalized from /auth/ to: ${path}`);
+    }
+
+    console.log(`Final path for routing: ${path}, method: ${method}`);
 
     // Parse body for POST requests
     let body = {};
@@ -57,7 +75,8 @@ export const handler = async (event: any) => {
     } else if (path === '/v1/auth/refresh-token' && method === 'POST') {
       return await handleRefreshToken(body, event);
     } else {
-      return createResponse(404, { error: 'Not found' });
+      console.log(`No route matched. Path: ${path}, Method: ${method}`);
+      return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
     }
   } catch (error) {
     console.error('Unhandled error:', error);

@@ -164,6 +164,13 @@ These are the artifacts required. Only create these when asked.
 - Include helpful comments and error messages
 - Make it easy to extend for future requirements
 
+### Lambda Deployment Best Practices
+- **Always clean `dist/` directory before rebuilding** - TypeScript incremental compilation can cache old code
+- Verify zip contents before deploying - extract and check that updated code is present
+- Use consistent packaging method (npm script vs manual) and match handler path accordingly
+- Test direct Lambda invocation after deployment to verify code is live
+- See Artifact 3 for detailed packaging and deployment procedures
+
 ## Constraints
 - Use AWS services only (already using API Gateway + Lambda)
 - React Native with Expo (not EAS)

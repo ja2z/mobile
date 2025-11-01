@@ -358,36 +358,132 @@ aws iam put-role-policy \
 
 ## Step 6: Deploy Lambda Function
 
-### Prepare Lambda Package
+### Prepare Lambda Package (Initial Setup)
+
+If you're setting up Lambda from scratch:
 
 ```bash
-# Create deployment directory
-mkdir lambda-deploy
-cd lambda-deploy
+# Navigate to your lambda directory (or create it)
+cd /path/to/your/mobile/lambda
 
-# Initialize npm project
-npm init -y
+# Install dependencies (if not already done)
+npm install
 
-# Install dependencies
-npm install @aws-sdk/client-dynamodb \
-            @aws-sdk/lib-dynamodb \
-            @aws-sdk/client-ses \
-            @aws-sdk/client-sns \
-            @aws-sdk/client-secrets-manager \
-            jsonwebtoken
+# Compile TypeScript
+npm run build
 
-# Copy your Lambda code
-# (Copy the Lambda handler code from Artifact 2 into index.ts)
+# Package using npm script (recommended)
+npm run package
+# This will: build → copy dist/index.js to root → zip → clean up
 
-# Compile TypeScript (if using TypeScript)
-npm install -D typescript @types/node @types/aws-lambda
-npx tsc index.ts --target ES2020 --module commonjs --moduleResolution node
-
-# Create deployment package
-zip -r function.zip node_modules index.js
+# OR package manually:
+# Clean old build artifacts first
+rm -rf dist function.zip
+npm run build
+zip -r function.zip node_modules dist/
 ```
 
-### Create Lambda Function
+**Important:** Always clean the `dist` directory before rebuilding to ensure you get the latest compiled code. TypeScript's incremental compilation can sometimes miss changes.
+
+### Update Lambda Code (For Subsequent Deployments)
+
+When updating existing Lambda code, follow these steps carefully:
+
+```bash
+cd /path/to/your/mobile/lambda
+
+# 1. CLEAN - Remove old build artifacts (critical!)
+rm -rf dist function.zip
+
+# 2. BUILD - Compile TypeScript to JavaScript
+npm run build
+
+# 3. VERIFY - Check that dist/index.js exists and has your latest changes
+ls -lh dist/index.js
+# Optionally verify specific code is present:
+grep -i "your recent change" dist/index.js
+
+# 4. PACKAGE - Create deployment zip
+# Option A: Use npm script (recommended - handles copying and cleanup)
+npm run package
+
+# Option B: Manual zip with dist folder
+zip -r function.zip node_modules dist/
+
+# 5. VERIFY ZIP - Confirm your code is in the zip
+unzip -l function.zip | grep -E "(dist/index.js|index.js)"
+# Or extract and check:
+mkdir -p /tmp/verify-zip && cd /tmp/verify-zip
+unzip -q /path/to/lambda/function.zip
+grep -i "your recent change" index.js 2>/dev/null || grep -i "your recent change" dist/index.js
+cd /path/to/your/mobile/lambda
+
+# 6. DEPLOY - Upload to Lambda
+aws lambda update-function-code \
+  --function-name mobile-auth-handler \
+  --zip-file fileb://function.zip
+
+# 7. VERIFY DEPLOYMENT - Check status and wait for completion
+aws lambda get-function \
+  --function-name mobile-auth-handler \
+  --query 'Configuration.[LastModified,LastUpdateStatus,CodeSize]' \
+  --output table
+
+# Wait a few seconds if LastUpdateStatus is "InProgress"
+sleep 3
+```
+
+**Quick Deploy Script (Recommended):**
+
+Save this as a script or run it when updating Lambda:
+
+```bash
+#!/bin/bash
+# Quick Lambda deployment script
+# Usage: ./deploy-lambda.sh
+
+cd "$(dirname "$0")" || exit 1
+
+echo "🧹 Cleaning old build artifacts..."
+rm -rf dist function.zip
+
+echo "🔨 Building TypeScript..."
+npm run build
+
+echo "📦 Packaging Lambda..."
+npm run package
+
+echo "📤 Deploying to AWS Lambda..."
+aws lambda update-function-code \
+  --function-name mobile-auth-handler \
+  --zip-file fileb://function.zip \
+  --query '[CodeSha256,LastUpdateStatus]' \
+  --output table
+
+echo "✅ Deployment initiated! Check status with:"
+echo "   aws lambda get-function --function-name mobile-auth-handler --query 'Configuration.LastUpdateStatus'"
+```
+
+Or as a one-liner:
+```bash
+cd /path/to/lambda && rm -rf dist function.zip && npm run build && npm run package && aws lambda update-function-code --function-name mobile-auth-handler --zip-file fileb://function.zip
+```
+
+**Common Issues and Solutions:**
+
+- **Issue:** Changes not appearing in deployed Lambda
+  - **Solution:** Always delete `dist/` before rebuilding. TypeScript incremental builds can cache old code.
+  - **Quick fix:** Run `rm -rf dist && npm run build && npm run package` before deploying.
+  
+- **Issue:** Zip doesn't contain updated code
+  - **Solution:** Verify the zip with `unzip -l function.zip | grep index.js` or extract and check the files directly.
+  - **Quick fix:** Always run `rm -rf dist function.zip` first to ensure clean state.
+
+- **Issue:** Lambda handler errors after deployment
+  - **Solution:** Check that the handler path is correct (`index.handler` expects `index.js` at root, or adjust handler to `dist/index.handler` if using dist folder).
+  - **Note:** The `npm run package` script copies `dist/index.js` to root as `index.js`, so handler should be `index.handler`.
+
+### Create Lambda Function (Initial Setup Only)
 
 ```bash
 # Get the IAM role ARN
@@ -416,17 +512,24 @@ aws lambda create-function \
 
 ```bash
 # Test request-magic-link endpoint
+# Note: Use /auth/... path (not /v1/auth/...) since API Gateway sends path without stage
 aws lambda invoke \
   --function-name mobile-auth-handler \
+  --cli-binary-format raw-in-base64-out \
   --payload '{
-    "path": "/v1/auth/request-magic-link",
+    "path": "/auth/request-magic-link",
     "httpMethod": "POST",
     "body": "{\"email\": \"test@sigmacomputing.com\"}"
   }' \
   response.json
 
-cat response.json
+cat response.json | jq
+
+# Check logs to see path normalization in action
+aws logs tail /aws/lambda/mobile-auth-handler --since 1m
 ```
+
+**Note:** When testing Lambda directly (not via API Gateway), the path in the payload should match what API Gateway sends. Since resources are at `/auth/...` level and stage is `v1`, API Gateway sends `/auth/...` to Lambda (not `/v1/auth/...`). The Lambda code normalizes this internally.
 
 ---
 
@@ -435,6 +538,10 @@ cat response.json
 ### Create REST API
 
 ```bash
+# Get AWS account ID and region (needed for ARNs)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region || echo "us-west-2")
+
 # Create API
 API_ID=$(aws apigateway create-rest-api \
   --name "Mobile Auth API" \
@@ -444,6 +551,8 @@ API_ID=$(aws apigateway create-rest-api \
   --output text)
 
 echo "API ID: $API_ID"
+echo "AWS Account ID: $ACCOUNT_ID"
+echo "AWS Region: $AWS_REGION"
 
 # Get root resource ID
 ROOT_ID=$(aws apigateway get-resources \
@@ -455,18 +564,13 @@ ROOT_ID=$(aws apigateway get-resources \
 ### Create Resources and Methods
 
 ```bash
-# Create /v1 resource
-V1_ID=$(aws apigateway create-resource \
-  --rest-api-id $API_ID \
-  --parent-id $ROOT_ID \
-  --path-part v1 \
-  --query 'id' \
-  --output text)
-
-# Create /v1/auth resource
+# Create /auth resource directly under root
+# Note: Stage name "v1" will be prepended by API Gateway, so accessing via
+# https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/v1/auth/... 
+# will send /v1/auth/... to Lambda
 AUTH_ID=$(aws apigateway create-resource \
   --rest-api-id $API_ID \
-  --parent-id $V1_ID \
+  --parent-id $ROOT_ID \
   --path-part auth \
   --query 'id' \
   --output text)
@@ -488,7 +592,7 @@ for endpoint in request-magic-link send-to-mobile verify-magic-link refresh-toke
     --authorization-type NONE
   
   # Integrate with Lambda
-  LAMBDA_ARN="arn:aws:lambda:us-west-2:YOUR-ACCOUNT-ID:function:mobile-auth-handler"
+  LAMBDA_ARN="arn:aws:lambda:${AWS_REGION}:${ACCOUNT_ID}:function:mobile-auth-handler"
   
   aws apigateway put-integration \
     --rest-api-id $API_ID \
@@ -496,7 +600,7 @@ for endpoint in request-magic-link send-to-mobile verify-magic-link refresh-toke
     --http-method POST \
     --type AWS_PROXY \
     --integration-http-method POST \
-    --uri "arn:aws:apigateway:us-west-2:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
+    --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations"
   
   # Enable CORS
   aws apigateway put-method \
@@ -523,32 +627,40 @@ aws apigateway create-deployment \
   --stage-name v1
 
 # Get the invoke URL
-echo "API URL: https://$API_ID.execute-api.us-west-2.amazonaws.com/v1"
+echo "API URL: https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/v1"
 ```
 
 ### Grant API Gateway Permission to Invoke Lambda
 
 ```bash
-# Get AWS account ID
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
 # Add permission
 aws lambda add-permission \
   --function-name mobile-auth-handler \
   --statement-id apigateway-invoke \
   --action lambda:InvokeFunction \
   --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:us-west-2:$ACCOUNT_ID:$API_ID/*/*"
+  --source-arn "arn:aws:execute-api:${AWS_REGION}:${ACCOUNT_ID}:${API_ID}/*/*"
 ```
 
 ---
 
 ## Step 8: Test the Complete Flow
 
+**Note:** If you're running these in a new terminal session, get your API ID and region first:
+
+```bash
+# Get your API ID (from Step 7 output, or query it here)
+API_ID=$(aws apigateway get-rest-apis --query "items[?name=='Mobile Auth API'].id" --output text)
+AWS_REGION=$(aws configure get region || echo "us-west-2")
+API_URL="https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/v1"
+echo "API URL: $API_URL"
+```
+
 ### Test Email Magic Link
 
 ```bash
-curl -X POST https://YOUR-API-ID.execute-api.us-west-2.amazonaws.com/v1/auth/request-magic-link \
+# Use the API_URL variable from above, or replace with your actual URL
+curl -X POST ${API_URL}/auth/request-magic-link \
   -H "Content-Type: application/json" \
   -d '{"email": "test@sigmacomputing.com"}'
 ```
@@ -556,8 +668,9 @@ curl -X POST https://YOUR-API-ID.execute-api.us-west-2.amazonaws.com/v1/auth/req
 ### Test SMS Magic Link
 
 ```bash
-# Get the API key you saved earlier
-curl -X POST https://YOUR-API-ID.execute-api.us-west-2.amazonaws.com/v1/auth/send-to-mobile \
+# Get the API key you saved from Step 2
+# Use the API_URL variable from above, or replace with your actual URL
+curl -X POST ${API_URL}/auth/send-to-mobile \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@sigmacomputing.com",
@@ -631,6 +744,59 @@ For an internal demo tool with ~100 users:
 ---
 
 ## Troubleshooting
+
+### Lambda Code Changes Not Appearing After Deployment
+
+**Symptoms:**
+- Lambda returns old behavior after updating code
+- Logs don't show expected console.log statements
+- Direct invocation shows old code running
+
+**Solutions:**
+
+1. **Always clean before rebuilding:**
+   ```bash
+   rm -rf dist function.zip
+   npm run build
+   ```
+
+2. **Verify your code is in the zip:**
+   ```bash
+   # Check zip contents
+   unzip -l function.zip | grep index.js
+   
+   # Extract and verify code is present
+   mkdir -p /tmp/check && cd /tmp/check
+   unzip -q /path/to/lambda/function.zip
+   grep -i "your expected code" index.js || grep -i "your expected code" dist/index.js
+   ```
+
+3. **Check Lambda deployment status:**
+   ```bash
+   aws lambda get-function \
+     --function-name mobile-auth-handler \
+     --query 'Configuration.[LastUpdateStatus,LastModified,CodeSha256]' \
+     --output table
+   ```
+   If `LastUpdateStatus` is `InProgress`, wait a few seconds and check again.
+
+4. **Verify the deployed code:**
+   ```bash
+   # Test direct invocation with logging
+   aws lambda invoke \
+     --function-name mobile-auth-handler \
+     --cli-binary-format raw-in-base64-out \
+     --payload '{"path": "/auth/test", "httpMethod": "GET"}' \
+     /tmp/test.json
+   
+   # Check logs immediately
+   aws logs tail /aws/lambda/mobile-auth-handler --since 1m
+   ```
+
+5. **If using npm package script vs manual zip:**
+   - `npm run package` creates zip with `index.js` at root (handler: `index.handler`)
+   - Manual `zip -r function.zip node_modules dist/` creates zip with `dist/index.js` (handler: `dist/index.handler`)
+   - Make sure your Lambda handler setting matches your zip structure!
 
 ### Emails not sending
 - Check SES verification status
