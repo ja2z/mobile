@@ -12,16 +12,20 @@ import {
   Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
+import type { RootStackParamList } from '../_layout';
+
+type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
 /**
  * Login Screen Component
  * Branded authentication page with email input and dev bypass
  */
 export default function Login() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<LoginScreenNavigationProp>();
   const [email, setEmail] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
@@ -32,12 +36,12 @@ export default function Login() {
   const handleLogin = () => {
     // TODO: Implement actual authentication flow
     // For now, just navigate to Home
-    navigation.replace('Home' as never);
+    navigation.replace('Home');
   };
 
   const handleSkip = () => {
     // Bypass authentication for development
-    navigation.replace('Home' as never);
+    navigation.replace('Home');
   };
 
   const canSubmit = isValidEmail(email);
