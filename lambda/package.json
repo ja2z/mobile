@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "build": "tsc",
+    "package": "npm run build && cp dist/index.js index.js && zip -r function.zip node_modules index.js && rm index.js",
+    "deploy": "npm run package && aws lambda update-function-code --function-name mobile-auth-handler --zip-file fileb://function.zip",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
