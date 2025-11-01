@@ -5,18 +5,21 @@ import {
   StyleSheet, 
   TextInput, 
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
+import { AuthService } from '../../services/AuthService';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -26,17 +29,50 @@ type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'
  */
 export default function Login() {
   const navigation = useNavigation<LoginScreenNavigationProp>();
-  const [email, setEmail] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
+  const [username, setUsername] = useState('');
+  const [domain, setDomain] = useState('sigmacomputing.com');
+  const [usernameFocused, setUsernameFocused] = useState(false);
+  const [domainFocused, setDomainFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const isValidEmail = (email: string) => {
-    return email.includes('@') && email.length > 3;
+    return email.includes('@') && email.length > 3 && email.split('@').length === 2;
   };
 
-  const handleLogin = () => {
-    // TODO: Implement actual authentication flow
-    // For now, just navigate to Home
-    navigation.replace('Home');
+  const getCompleteEmail = (): string => {
+    const user = username.trim().toLowerCase();
+    const dom = domain.trim().toLowerCase();
+    if (!user || !dom) {
+      return '';
+    }
+    return `${user}@${dom}`;
+  };
+
+  const handleLogin = async () => {
+    const completeEmail = getCompleteEmail();
+    
+    if (!isValidEmail(completeEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      await AuthService.requestMagicLink(completeEmail);
+      setSuccess(true);
+      // Don't navigate yet - user needs to check their email and click the magic link
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
+      setError(errorMessage);
+      console.error('Magic link request error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSkip = () => {
@@ -44,7 +80,9 @@ export default function Login() {
     navigation.replace('Home');
   };
 
-  const canSubmit = isValidEmail(email);
+  const completeEmail = getCompleteEmail();
+  const isFocused = usernameFocused || domainFocused;
+  const canSubmit = isValidEmail(completeEmail);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -52,8 +90,15 @@ export default function Login() {
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <View style={styles.content}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
           {/* Header Section with Branding */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
@@ -66,38 +111,79 @@ export default function Login() {
             <Text style={styles.appName}>{Config.APP_NAME}</Text>
             <Text style={styles.welcomeText}>Welcome</Text>
             <Text style={styles.subtitle}>
-              Sign in to access your dashboards and analytics
+              Sign in to access your data
             </Text>
           </View>
 
           {/* Login Form */}
           <View style={styles.formContainer}>
+            {/* Error Message */}
+            {error && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={20} color={colors.error} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {/* Success Message */}
+            {success && (
+              <View style={styles.successContainer}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <Text style={styles.successText}>
+                  Magic link sent! Check your email and tap the link to sign in.
+                </Text>
+              </View>
+            )}
+
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email Address</Text>
               <View style={[
-                styles.inputWrapper,
-                isFocused && styles.inputWrapperFocused
+                styles.inputRow,
+                isFocused && styles.inputRowFocused
               ]}>
-                <Ionicons 
-                  name="mail-outline" 
-                  size={20} 
-                  color={isFocused ? colors.primary : colors.textSecondary}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="you@company.com"
-                  placeholderTextColor={colors.textSecondary}
-                  value={email}
-                  onChangeText={setEmail}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="email"
-                />
+                {/* Username Input (30%) */}
+                <View style={styles.usernameWrapper}>
+                  <TextInput
+                    style={styles.usernameInput}
+                    placeholder="username"
+                    placeholderTextColor={colors.textSecondary}
+                    value={username}
+                    onChangeText={setUsername}
+                    onFocus={() => setUsernameFocused(true)}
+                    onBlur={() => setUsernameFocused(false)}
+                    keyboardType="default"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="username"
+                    multiline={false}
+                    numberOfLines={1}
+                    scrollEnabled={false}
+                  />
+                </View>
+                
+                {/* @ Symbol */}
+                <Text style={styles.atSymbol}>@</Text>
+                
+                {/* Domain Input (remaining) */}
+                <View style={styles.domainWrapper}>
+                  <TextInput
+                    style={styles.domainInput}
+                    placeholder="domain.com"
+                    placeholderTextColor={colors.textSecondary}
+                    value={domain}
+                    onChangeText={setDomain}
+                    onFocus={() => setDomainFocused(true)}
+                    onBlur={() => setDomainFocused(false)}
+                    keyboardType="default"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    multiline={false}
+                    numberOfLines={1}
+                    scrollEnabled={false}
+                  />
+                </View>
               </View>
             </View>
 
@@ -105,14 +191,20 @@ export default function Login() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                !canSubmit && styles.submitButtonDisabled
+                (!canSubmit || loading) && styles.submitButtonDisabled
               ]}
               onPress={handleLogin}
-              disabled={!canSubmit}
+              disabled={!canSubmit || loading}
               activeOpacity={0.8}
             >
-              <Text style={styles.submitButtonText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.submitButtonText}>Continue</Text>
+                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
 
             {/* Info Text */}
@@ -133,7 +225,8 @@ export default function Login() {
             <Ionicons name="code-outline" size={18} color={colors.textSecondary} />
             <Text style={styles.skipButtonText}>Skip for Now (Dev Mode)</Text>
           </TouchableOpacity>
-        </View>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -146,6 +239,12 @@ const styles = StyleSheet.create({
   },
   keyboardAvoid: {
     flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   content: {
     flex: 1,
@@ -200,28 +299,71 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
-  inputWrapper: {
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.background,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     minHeight: 56,
   },
-  inputWrapperFocused: {
+  inputRowFocused: {
     borderColor: colors.primary,
     ...shadows.small,
   },
-  inputIcon: {
-    marginRight: spacing.sm,
+  usernameWrapper: {
+    width: '30%',
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+    flexShrink: 1,
+    height: 52,
+    maxHeight: 52,
   },
-  input: {
-    flex: 1,
+  usernameInput: {
     ...typography.body,
     color: colors.textPrimary,
-    paddingVertical: spacing.md,
+    padding: 0,
+    paddingHorizontal: spacing.sm,
+    paddingRight: spacing.xs,
+    margin: 0,
+    includeFontPadding: false,
+    height: 52,
+    maxHeight: 52,
+    flex: 1,
+  },
+  atSymbol: {
+    ...typography.body,
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    width: 20,
+    textAlign: 'center',
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    lineHeight: 24,
+  },
+  domainWrapper: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    minWidth: 0,
+    overflow: 'hidden',
+    flexShrink: 1,
+    height: 52,
+    maxHeight: 52,
+  },
+  domainInput: {
+    ...typography.body,
+    color: colors.textPrimary,
+    padding: 0,
+    paddingHorizontal: spacing.sm,
+    paddingLeft: spacing.xs,
+    margin: 0,
+    includeFontPadding: false,
+    height: 52,
+    maxHeight: 52,
+    flex: 1,
   },
   submitButton: {
     flexDirection: 'row',
@@ -269,6 +411,34 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginLeft: spacing.xs,
     fontWeight: '500',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.error,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+  },
+  successText: {
+    ...typography.bodySmall,
+    color: colors.success,
+    marginLeft: spacing.sm,
+    flex: 1,
   },
 });
 
