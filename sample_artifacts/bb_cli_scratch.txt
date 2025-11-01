@@ -1,0 +1,28 @@
+aws ses send-email \
+  --from hello@bigbuys.io \
+  --to jon@sigmacomputing.com \
+  --subject "BigBuys Magic Link" \
+  --text "Here is your <a href="bigbuys://auth/verify?token=abc123xyz">BigBuys Magic Link</a> for Expo."
+
+aws sns publish \
+  --phone-number "+16502083858" \
+  --message "SNS SMS is configured correctly!"
+
+aws lambda invoke \
+  --function-name mobile-auth-handler \
+  --payload '{
+    "path": "/v1/auth/request-magic-link",
+    "httpMethod": "POST",
+    "headers": {"Content-Type": "application/json"},
+    "body": "{\"email\": \"jon@sigmacomputing.com\"}"
+  }' \
+  response.json
+
+curl -X POST ${API_URL}/auth/verify-magic-link \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "tok_ml_6e88a6cd68dfd27272f4c3860b9566df",
+    "deviceId": "test-device-123"
+  }'
+
+curl -I "https://mobile.bigbuys.io/auth/verify?token=tok_ml_6e88a6cd68dfd27272f4c3860b9566df"
