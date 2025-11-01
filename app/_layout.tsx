@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
+import Login from './(tabs)/Login';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
@@ -9,6 +10,7 @@ import { colors } from '../constants/Theme';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
+  Login: undefined;
   Home: undefined;
   Dashboard: undefined;
   AINewsletter: undefined;
@@ -25,7 +27,7 @@ export default function RootLayout() {
     <NavigationContainer>
       <StatusBar style="auto" />
       <Stack.Navigator
-        initialRouteName="Home"
+        initialRouteName="Login"
         screenOptions={{
           headerStyle: {
             backgroundColor: colors.primary,
@@ -36,6 +38,14 @@ export default function RootLayout() {
           },
         }}
       >
+        <Stack.Screen 
+          name="Login" 
+          component={Login}
+          options={{
+            title: 'Login',
+            headerShown: false, // Full-screen branded login experience
+          }}
+        />
         <Stack.Screen 
           name="Home" 
           component={Home}
