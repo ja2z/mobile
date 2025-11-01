@@ -24,6 +24,7 @@ const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-appro
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
+const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
 
 // Cache for secrets (reduces Secrets Manager calls)
@@ -473,8 +474,13 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
     </html>
   `;
 
+  // Format "From" field: "Display Name" <email@example.com> or just email@example.com
+  const fromAddress = FROM_NAME 
+    ? `"${FROM_NAME}" <${FROM_EMAIL}>` 
+    : FROM_EMAIL;
+
   await sesClient.send(new SendEmailCommand({
-    Source: FROM_EMAIL,
+    Source: fromAddress,
     Destination: { ToAddresses: [email] },
     Message: {
       Subject: { Data: 'Sign in to Big Buys Mobile' },
