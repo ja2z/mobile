@@ -16,9 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
-      "associatedDomains": [
-        "applinks:mobile.bigbuys.io"
-      ]
+      "associatedDomains": []
     },
     "android": {
       "adaptiveIcon": {
