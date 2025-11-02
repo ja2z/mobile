@@ -140,12 +140,9 @@ async function handleRequestMagicLink(body: any) {
     }
   }));
 
-  // Build magic link based on linkType
-  // 'direct' = bigbuys://auth?token=xxx (for Expo Go)
-  // 'universal' = https://mobile.bigbuys.io/auth/verify?token=xxx (for production)
-  const magicLink = linkType === 'direct' 
-    ? buildDirectSchemeUrl(tokenId, null)
-    : buildRedirectUrl(tokenId, null);
+  // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
+  // The redirect page will convert to bigbuys:// scheme for the app
+  const magicLink = buildRedirectUrl(tokenId, null);
   
   await sendMagicLinkEmail(emailLower, magicLink);
 
