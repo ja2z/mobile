@@ -32,4 +32,13 @@ export const Config = {
     // Refresh the embed URL 5 minutes before expiry to avoid interruptions
     REFRESH_BUFFER_SECONDS: 300,
   },
+  
+  // Authentication configuration
+  AUTH: {
+    // Magic link type: 'direct' = bigbuys://auth?token=xxx (for Expo Go)
+    // 'universal' = https://mobile.bigbuys.io/auth/verify?token=xxx (for production)
+    // Default to 'universal' for production builds
+    // Override with EXPO_PUBLIC_AUTH_LINK_TYPE=direct in .env.local for Expo Go testing
+    LINK_TYPE: (process.env.EXPO_PUBLIC_AUTH_LINK_TYPE || 'universal') as 'direct' | 'universal',
+  },
 } as const;

@@ -92,11 +92,16 @@ export const handler = async (event: any) => {
  * Handle email magic link request (self-service registration)
  */
 async function handleRequestMagicLink(body: any) {
-  const { email } = body;
+  const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
 
   // Validate input
   if (!email || !isValidEmail(email)) {
     return createResponse(400, { error: 'Valid email is required' });
+  }
+
+  // Validate linkType
+  if (linkType !== 'direct' && linkType !== 'universal') {
+    return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
   }
 
   const emailLower = email.toLowerCase();
@@ -135,8 +140,13 @@ async function handleRequestMagicLink(body: any) {
     }
   }));
 
-  // Send email with magic link (using HTTPS redirect URL for better email client support)
-  const magicLink = buildRedirectUrl(tokenId, null);
+  // Build magic link based on linkType
+  // 'direct' = bigbuys://auth?token=xxx (for Expo Go)
+  // 'universal' = https://mobile.bigbuys.io/auth/verify?token=xxx (for production)
+  const magicLink = linkType === 'direct' 
+    ? buildDirectSchemeUrl(tokenId, null)
+    : buildRedirectUrl(tokenId, null);
+  
   await sendMagicLinkEmail(emailLower, magicLink);
 
   return createResponse(200, {
@@ -150,7 +160,7 @@ async function handleRequestMagicLink(body: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, apiKey: providedApiKey, dashboardId } = body;
+  const { email, phoneNumber, apiKey: providedApiKey, dashboardId, linkType = 'universal' } = body;
 
   // Validate API key
   const validApiKey = await getApiKey();
@@ -165,6 +175,11 @@ async function handleSendToMobile(body: any, event: any) {
 
   if (!isValidPhoneNumber(phoneNumber)) {
     return createResponse(400, { error: 'Invalid phone number format. Use E.164 format (e.g., +14155551234)' });
+  }
+
+  // Validate linkType
+  if (linkType !== 'direct' && linkType !== 'universal') {
+    return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
   }
 
   const emailLower = email.toLowerCase();
@@ -203,8 +218,11 @@ async function handleSendToMobile(body: any, event: any) {
     }
   }));
 
-  // Send SMS with magic link (using HTTPS redirect URL)
-  const magicLink = buildRedirectUrl(tokenId, dashboardId);
+  // Build magic link based on linkType
+  const magicLink = linkType === 'direct' 
+    ? buildDirectSchemeUrl(tokenId, dashboardId)
+    : buildRedirectUrl(tokenId, dashboardId);
+  
   await sendMagicLinkSMS(phoneNumber, magicLink);
 
   return createResponse(200, {
@@ -435,8 +453,21 @@ async function getUserIdForEmail(email: string): Promise<string> {
 }
 
 /**
+ * Build direct custom scheme URL (for Expo Go / development)
+ * Format: bigbuys://auth?token=xxx
+ */
+function buildDirectSchemeUrl(tokenId: string, dashboardId: string | null): string {
+  let url = `${APP_DEEP_LINK_SCHEME}://auth?token=${encodeURIComponent(tokenId)}`;
+  if (dashboardId) {
+    url += `&dashboardId=${encodeURIComponent(dashboardId)}`;
+  }
+  return url;
+}
+
+/**
  * Build HTTPS redirect URL that will redirect to deep link
  * This works better in email clients than direct deep links
+ * Format: https://mobile.bigbuys.io/auth/verify?token=xxx
  */
 function buildRedirectUrl(tokenId: string, dashboardId: string | null): string {
   let url = `${REDIRECT_BASE_URL}/auth/verify?token=${encodeURIComponent(tokenId)}`;

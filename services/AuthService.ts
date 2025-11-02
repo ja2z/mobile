@@ -24,6 +24,7 @@ export interface AuthSession {
 export class AuthService {
   /**
    * Request a magic link via email
+   * Automatically uses linkType from Config (based on EXPO_PUBLIC_AUTH_LINK_TYPE env var)
    */
   static async requestMagicLink(email: string): Promise<void> {
     const response = await fetch(`${AUTH_BASE_URL}/request-magic-link`, {
@@ -31,7 +32,10 @@ export class AuthService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ 
+        email,
+        linkType: Config.AUTH.LINK_TYPE // 'direct' for Expo Go, 'universal' for production
+      }),
     });
 
     const data = await response.json();
