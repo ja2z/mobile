@@ -1,10 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
+import { AuthService } from '../../services/AuthService';
+import type { RootStackParamList } from '../_layout';
 
 interface AppTile {
   id: string;
@@ -16,12 +19,14 @@ interface AppTile {
   onPress?: () => void;
 }
 
+type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
+
 /**
  * Home Page Component - Launchpad
  * Simple grid of app tiles
  */
 export default function Home() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<HomeScreenNavigationProp>();
 
   const handleNavigateToDashboard = () => {
     navigation.navigate('Dashboard' as never);
@@ -100,6 +105,43 @@ export default function Home() {
     },
   ];
 
+  /**
+   * Handle logout - clear session and navigate to Login
+   */
+  const handleLogout = useCallback(async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Clear authentication session (removes JWT and user data from SecureStore)
+              await AuthService.clearSession();
+              console.log('✅ User logged out successfully');
+              
+              // Reset navigation stack to Login screen (prevents going back)
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.error('❌ Logout error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [navigation]);
+
   const handleTilePress = (tile: AppTile) => {
     if (tile.onPress) {
       tile.onPress();
@@ -114,8 +156,19 @@ export default function Home() {
       <View style={styles.header}>
         <View style={styles.headerTopBorder} />
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>{Config.APP_NAME}</Text>
-          <Text style={styles.headerSubtitle}>Welcome back</Text>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>{Config.APP_NAME}</Text>
+            <Text style={styles.headerSubtitle}>Welcome back</Text>
+          </View>
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={styles.logoutButton}
+            activeOpacity={0.7}
+            accessibilityLabel="Sign out"
+            accessibilityHint="Signs you out and returns to the login screen"
+          >
+            <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -185,6 +238,12 @@ const styles = StyleSheet.create({
   headerContent: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
     ...typography.h2,
@@ -194,6 +253,14 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  logoutButton: {
+    padding: spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: spacing.md,
   },
   scrollView: {
     flex: 1,
