@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { AuthService } from '../../services/AuthService';
+import { ProfileMenu } from '../../components/ProfileMenu';
 import type { RootStackParamList } from '../_layout';
 
 interface AppTile {
@@ -27,6 +28,7 @@ type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
  */
 export default function Home() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const [profileMenuVisible, setProfileMenuVisible] = useState(false);
 
   const handleNavigateToDashboard = () => {
     navigation.navigate('Dashboard' as never);
@@ -109,6 +111,9 @@ export default function Home() {
    * Handle logout - clear session and navigate to Login
    */
   const handleLogout = useCallback(async () => {
+    // Close profile menu first
+    setProfileMenuVisible(false);
+    
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -160,15 +165,17 @@ export default function Home() {
             <Text style={styles.headerTitle}>{Config.APP_NAME}</Text>
             <Text style={styles.headerSubtitle}>Welcome back</Text>
           </View>
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={styles.logoutButton}
-            activeOpacity={0.7}
-            accessibilityLabel="Sign out"
-            accessibilityHint="Signs you out and returns to the login screen"
-          >
-            <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              onPress={() => setProfileMenuVisible(true)}
+              style={styles.profileButton}
+              activeOpacity={0.7}
+              accessibilityLabel="Open profile menu"
+              accessibilityHint="Opens profile menu with account information"
+            >
+              <Ionicons name="person-outline" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -217,6 +224,13 @@ export default function Home() {
           ))}
         </View>
       </ScrollView>
+
+      {/* Profile Menu Modal */}
+      <ProfileMenu
+        visible={profileMenuVisible}
+        onClose={() => setProfileMenuVisible(false)}
+        onLogout={handleLogout}
+      />
     </SafeAreaView>
   );
 }
@@ -254,13 +268,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
-  logoutButton: {
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileButton: {
     padding: spacing.sm,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: spacing.md,
   },
   scrollView: {
     flex: 1,

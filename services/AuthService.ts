@@ -115,6 +115,29 @@ export class AuthService {
   }
 
   /**
+   * Decode JWT payload (without verification - just for reading data)
+   */
+  private static decodeJWT(token: string): any | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        return null;
+      }
+
+      const payload = parts[1];
+      // Base64 decode the payload
+      const decoded = JSON.parse(
+        atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+      );
+
+      return decoded;
+    } catch (error) {
+      console.error('Error decoding JWT:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get current session if authenticated
    */
   static async getSession(): Promise<AuthSession | null> {
@@ -128,19 +151,40 @@ export class AuthService {
 
       const user = JSON.parse(userJson);
       
-      // Check if expired (basic check - could decode JWT for more accurate check)
-      const now = Math.floor(Date.now() / 1000);
-      const userObj = JSON.parse(userJson);
-      // For now, assume session is valid if JWT exists
-      // You could decode JWT to check expiration more accurately
+      // Decode JWT to get expiration and issued at dates
+      const decodedJWT = this.decodeJWT(jwt);
+      const expiresAt = decodedJWT?.exp || 0;
       
       return {
         jwt,
         user,
-        expiresAt: 0, // Would decode JWT for actual expiry
+        expiresAt,
       };
     } catch (error) {
       console.error('Error getting session:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get session start date (issued at time) from JWT
+   */
+  static async getSessionStartDate(): Promise<Date | null> {
+    try {
+      const jwt = await SecureStore.getItemAsync(JWT_STORAGE_KEY);
+      if (!jwt) {
+        return null;
+      }
+
+      const decodedJWT = this.decodeJWT(jwt);
+      if (!decodedJWT?.iat) {
+        return null;
+      }
+
+      // iat is in seconds, convert to milliseconds for Date
+      return new Date(decodedJWT.iat * 1000);
+    } catch (error) {
+      console.error('Error getting session start date:', error);
       return null;
     }
   }
