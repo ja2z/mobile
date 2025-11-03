@@ -17,8 +17,12 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
       "associatedDomains": [
+        "applinks:mobile.bigbuys.io",
         "applinks:mobile.bigbuys.io"
-      ]
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -51,6 +55,11 @@
     },
     "plugins": [
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e0618c99-4fd5-48b0-b5f4-d97de89707a9"
+      }
+    }
   }
 }
