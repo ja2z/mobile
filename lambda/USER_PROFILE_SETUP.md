@@ -111,7 +111,7 @@ The `mobile-users` table has the following structure:
 {
   "userId": "usr_abc123xyz",
   "email": "user@example.com",
-  "role": "user",
+  "role": "basic",
   "createdAt": 1698765432,
   "updatedAt": 1698765432
 }
@@ -119,8 +119,10 @@ The `mobile-users` table has the following structure:
 
 ### Role Values:
 
-- `"user"` - Default role for regular users
+- `"basic"` - Default role for regular users
 - `"admin"` - Admin role (default for @sigmacomputing.com emails, can be manually updated)
+
+**Note:** Only `"basic"` and `"admin"` roles are allowed. Any invalid role values will default to `"basic"`.
 
 ## Testing
 
@@ -139,9 +141,10 @@ aws dynamodb scan \
 
 ## Notes
 
-- **Lazy Provisioning**: User profiles are automatically created when a user first authenticates
+- **Lazy Provisioning**: User profiles are automatically created when a user first successfully authenticates (after clicking magic link and verifying token), NOT when they request a magic link
 - **Default Roles**: 
-  - `@sigmacomputing.com` emails → `"admin"` role
-  - All other emails → `"user"` role
-- **Role Management**: To change a user's role, update the `role` attribute in the `mobile-users` table directly in DynamoDB
+  - All users → `"basic"` role (including @sigmacomputing.com emails)
+  - Admins must be promoted manually by updating the role in DynamoDB
+- **Role Validation**: Only `"basic"` and `"admin"` roles are valid. Invalid roles will default to `"basic"`
+- **Role Management**: To change a user's role, update the `role` attribute in the `mobile-users` table directly in DynamoDB (must be either `"basic"` or `"admin"`)
 

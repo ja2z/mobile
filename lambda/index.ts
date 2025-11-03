@@ -117,8 +117,10 @@ async function handleRequestMagicLink(body: any) {
   }
 
   // Generate magic link token
+  // Note: Don't create user profile here - only create after successful authentication
   const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
-  const userId = await getUserIdForEmail(emailLower);
+  // Generate temporary userId for token (will be replaced with actual userId during verification)
+  const tempUserId = await getUserIdForEmail(emailLower);
   const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
 
   // Store token in DynamoDB
@@ -128,7 +130,7 @@ async function handleRequestMagicLink(body: any) {
       tokenId,
       tokenType: 'magic_link',
       email: emailLower,
-      userId,
+      userId: tempUserId,
       deviceId: null,
       createdAt: Math.floor(Date.now() / 1000),
       expiresAt,
@@ -190,8 +192,10 @@ async function handleSendToMobile(body: any, event: any) {
   }
 
   // Generate magic link token
+  // Note: Don't create user profile here - only create after successful authentication
   const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
-  const userId = await getUserIdForEmail(emailLower);
+  // Generate temporary userId for token (will be replaced with actual userId during verification)
+  const tempUserId = await getUserIdForEmail(emailLower);
   const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
 
   // Store token in DynamoDB
@@ -202,7 +206,7 @@ async function handleSendToMobile(body: any, event: any) {
       tokenType: 'magic_link',
       email: emailLower,
       phoneNumber,
-      userId,
+      userId: tempUserId,
       deviceId: null,
       createdAt: Math.floor(Date.now() / 1000),
       expiresAt,
@@ -279,10 +283,9 @@ async function handleVerifyMagicLink(body: any, event: any) {
     ExpressionAttributeValues: { ':true': true, ':now': now }
   }));
 
-  // Get or fetch user profile to include role in JWT
-  const userProfile = await getUserProfile(tokenData.userId);
-  // If user profile doesn't exist (legacy data), create it via lazy provisioning
-  const user = userProfile || await getOrCreateUserProfile(tokenData.email);
+  // Lazy provision user profile - only create when they actually authenticate
+  // This is the first time we're certain the user has successfully authenticated
+  const user = await getOrCreateUserProfile(tokenData.email);
 
   // Generate session JWT
   const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
@@ -294,15 +297,15 @@ async function handleVerifyMagicLink(body: any, event: any) {
     expiresAt: sessionExpiresAt
   });
 
-  // Store session in DynamoDB
+  // Store session in DynamoDB (use actual userId from user profile, not temporary token userId)
   const sessionId = `ses_${randomBytes(16).toString('hex')}`;
   await docClient.send(new PutCommand({
     TableName: TOKENS_TABLE,
     Item: {
       tokenId: sessionId,
       tokenType: 'session',
-      email: tokenData.email,
-      userId: tokenData.userId,
+      email: user.email,
+      userId: user.userId, // Use actual userId from user profile
       deviceId,
       createdAt: now,
       expiresAt: sessionExpiresAt,
@@ -361,7 +364,8 @@ async function handleRefreshToken(body: any, event: any) {
     // Get user profile to include current role in refreshed token
     const userProfile = await getUserProfile(decoded.userId);
     // If user profile doesn't exist (shouldn't happen, but handle gracefully)
-    const role = userProfile?.role || decoded.role || 'user';
+    // Validate role from token or use default
+    const role = validateRole(userProfile?.role || decoded.role) || 'basic';
 
     // Generate new session JWT
     const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
@@ -445,6 +449,7 @@ async function isEmailApproved(email: string): Promise<boolean> {
 /**
  * Get or create user profile with lazy provisioning
  * Returns user object with userId, email, and role
+ * Only call this after successful authentication (token verification)
  */
 async function getOrCreateUserProfile(email: string): Promise<{ userId: string; email: string; role: string }> {
   const emailLower = email.toLowerCase();
@@ -459,12 +464,13 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
   }));
 
   if (queryResult.Items && queryResult.Items.length > 0) {
-    // User exists, return their profile
+    // User exists, validate and return their profile
     const user = queryResult.Items[0];
+    const role = validateRole(user.role) || 'basic';
     return {
       userId: user.userId,
       email: user.email,
-      role: user.role || 'user'
+      role: role
     };
   }
 
@@ -472,9 +478,9 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
   const userId = `usr_${randomBytes(8).toString('hex')}`;
   const now = Math.floor(Date.now() / 1000);
   
-  // Default role: "admin" for Sigma emails, "user" for others
-  // You can customize this logic as needed
-  const defaultRole = emailLower.endsWith('@sigmacomputing.com') ? 'admin' : 'user';
+  // Default role: "basic" for all users
+  // Admins can be promoted manually in DynamoDB if needed
+  const defaultRole = 'basic';
 
   await docClient.send(new PutCommand({
     TableName: USERS_TABLE,
@@ -497,6 +503,22 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
 }
 
 /**
+ * Validate role - only allow "basic" and "admin"
+ */
+function validateRole(role: string | undefined): string | null {
+  if (!role) {
+    return null;
+  }
+  // Only allow "basic" and "admin" roles
+  if (role === 'basic' || role === 'admin') {
+    return role;
+  }
+  // Invalid role, return null to use default
+  console.warn(`Invalid role "${role}" detected, defaulting to "basic"`);
+  return null;
+}
+
+/**
  * Get user profile by userId
  */
 async function getUserProfile(userId: string): Promise<{ userId: string; email: string; role: string } | null> {
@@ -509,20 +531,36 @@ async function getUserProfile(userId: string): Promise<{ userId: string; email: 
     return null;
   }
 
+  const role = validateRole(result.Item.role) || 'basic';
+
   return {
     userId: result.Item.userId,
     email: result.Item.email,
-    role: result.Item.role || 'user'
+    role: role
   };
 }
 
 /**
- * Get or create user ID for email (deprecated - use getOrCreateUserProfile instead)
- * Kept for backward compatibility during migration
+ * Get user ID for email (without creating profile)
+ * This is used only for token storage - actual user profile is created during verification
+ * Try to find existing userId from tokens, otherwise generate a temporary one
  */
 async function getUserIdForEmail(email: string): Promise<string> {
-  const userProfile = await getOrCreateUserProfile(email);
-  return userProfile.userId;
+  // Query for existing sessions/tokens for this email to get userId
+  const result = await docClient.send(new QueryCommand({
+    TableName: TOKENS_TABLE,
+    IndexName: 'email-index',
+    KeyConditionExpression: 'email = :email',
+    ExpressionAttributeValues: { ':email': email.toLowerCase() },
+    Limit: 1
+  }));
+
+  if (result.Items && result.Items.length > 0) {
+    return result.Items[0].userId;
+  }
+
+  // No existing tokens - generate temporary userId (will be replaced during verification)
+  return `usr_${randomBytes(8).toString('hex')}`;
 }
 
 /**
