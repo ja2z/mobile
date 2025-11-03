@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build Lambda Function Script
-# This script performs a clean build of the Lambda function and creates function.zip
+# This script performs a clean build of the Lambda function and creates mobile-auth-handler.zip
 
 set -e  # Exit on any error
 
@@ -10,9 +10,9 @@ cd "$SCRIPT_DIR"
 
 echo "🧹 Cleaning previous build artifacts..."
 # Remove existing zip file if it exists
-if [ -f "function.zip" ]; then
-  rm -f function.zip
-  echo "  ✓ Removed function.zip"
+if [ -f "mobile-auth-handler.zip" ]; then
+  rm -f mobile-auth-handler.zip
+  echo "  ✓ Removed mobile-auth-handler.zip"
 fi
 
 # Remove dist directory if it exists
@@ -40,14 +40,14 @@ echo "📝 Copying compiled JavaScript..."
 cp dist/index.js index.js
 
 echo ""
-echo "🗜️  Creating function.zip..."
-zip -r function.zip node_modules index.js
+echo "🗜️  Creating mobile-auth-handler.zip..."
+zip -r mobile-auth-handler.zip node_modules index.js
 
 echo ""
 echo "🧹 Cleaning up temporary files..."
 rm index.js
 
 echo ""
-echo "✅ Build complete! function.zip is ready for upload."
-echo "📦 File size: $(du -h function.zip | cut -f1)"
+echo "✅ Build complete! mobile-auth-handler.zip is ready for upload."
+echo "📦 File size: $(du -h mobile-auth-handler.zip | cut -f1)"
 
