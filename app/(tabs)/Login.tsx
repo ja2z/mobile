@@ -110,9 +110,6 @@ export default function Login() {
             </View>
             <Text style={styles.appName}>{Config.APP_NAME}</Text>
             <Text style={styles.welcomeText}>Welcome</Text>
-            <Text style={styles.subtitle}>
-              Sign in to access your data
-            </Text>
           </View>
 
           {/* Login Form */}
@@ -159,6 +156,7 @@ export default function Login() {
                     multiline={false}
                     numberOfLines={1}
                     scrollEnabled={false}
+                    textAlignVertical="center"
                   />
                 </View>
                 
@@ -182,10 +180,16 @@ export default function Login() {
                     multiline={false}
                     numberOfLines={1}
                     scrollEnabled={false}
+                    textAlignVertical="center"
                   />
                 </View>
               </View>
             </View>
+
+            {/* Subtitle moved below email input */}
+            <Text style={styles.subtitle}>
+              Sign in to access your data
+            </Text>
 
             {/* Submit Button */}
             <TouchableOpacity
@@ -198,7 +202,7 @@ export default function Login() {
               activeOpacity={0.8}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.textPrimary} size="large" />
               ) : (
                 <>
                   <Text style={styles.submitButtonText}>Continue</Text>
@@ -253,8 +257,8 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginTop: spacing.xxl,
-    marginBottom: spacing.xl,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   logoContainer: {
     width: 120,
@@ -286,9 +290,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 300,
     lineHeight: 24,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
   },
   formContainer: {
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
   },
   inputContainer: {
     marginBottom: spacing.lg,
@@ -320,6 +326,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     height: 52,
     maxHeight: 52,
+    justifyContent: 'center',
   },
   usernameInput: {
     ...typography.body,
@@ -329,9 +336,7 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xs,
     margin: 0,
     includeFontPadding: false,
-    height: 52,
-    maxHeight: 52,
-    flex: 1,
+    lineHeight: undefined,
   },
   atSymbol: {
     ...typography.body,
@@ -352,6 +357,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     height: 52,
     maxHeight: 52,
+    justifyContent: 'center',
   },
   domainInput: {
     ...typography.body,
@@ -361,9 +367,7 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.xs,
     margin: 0,
     includeFontPadding: false,
-    height: 52,
-    maxHeight: 52,
-    flex: 1,
+    lineHeight: undefined,
   },
   submitButton: {
     flexDirection: 'row',
