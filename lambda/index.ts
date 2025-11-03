@@ -21,6 +21,7 @@ const secretsClient = new SecretsManagerClient({});
 // Environment variables
 const TOKENS_TABLE = process.env.TOKENS_TABLE || 'mobile-auth-tokens';
 const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-approved-emails';
+const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
@@ -278,11 +279,17 @@ async function handleVerifyMagicLink(body: any, event: any) {
     ExpressionAttributeValues: { ':true': true, ':now': now }
   }));
 
+  // Get or fetch user profile to include role in JWT
+  const userProfile = await getUserProfile(tokenData.userId);
+  // If user profile doesn't exist (legacy data), create it via lazy provisioning
+  const user = userProfile || await getOrCreateUserProfile(tokenData.email);
+
   // Generate session JWT
   const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
   const sessionToken = await generateSessionJWT({
-    userId: tokenData.userId,
-    email: tokenData.email,
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
     deviceId,
     expiresAt: sessionExpiresAt
   });
@@ -315,8 +322,9 @@ async function handleVerifyMagicLink(body: any, event: any) {
     token: sessionToken,
     expiresAt: sessionExpiresAt,
     user: {
-      userId: tokenData.userId,
-      email: tokenData.email
+      userId: user.userId,
+      email: user.email,
+      role: user.role
     },
     dashboardId: tokenData.metadata?.dashboardId || null
   });
@@ -350,11 +358,17 @@ async function handleRefreshToken(body: any, event: any) {
       });
     }
 
+    // Get user profile to include current role in refreshed token
+    const userProfile = await getUserProfile(decoded.userId);
+    // If user profile doesn't exist (shouldn't happen, but handle gracefully)
+    const role = userProfile?.role || decoded.role || 'user';
+
     // Generate new session JWT
     const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
     const newToken = await generateSessionJWT({
       userId: decoded.userId,
       email: decoded.email,
+      role: role,
       deviceId: decoded.deviceId,
       expiresAt: sessionExpiresAt
     });
@@ -429,24 +443,86 @@ async function isEmailApproved(email: string): Promise<boolean> {
 }
 
 /**
- * Get or create user ID for email
+ * Get or create user profile with lazy provisioning
+ * Returns user object with userId, email, and role
  */
-async function getUserIdForEmail(email: string): Promise<string> {
-  // Query for existing sessions/tokens for this email
-  const result = await docClient.send(new QueryCommand({
-    TableName: TOKENS_TABLE,
+async function getOrCreateUserProfile(email: string): Promise<{ userId: string; email: string; role: string }> {
+  const emailLower = email.toLowerCase();
+  
+  // First, try to find existing user by email using email-index GSI
+  const queryResult = await docClient.send(new QueryCommand({
+    TableName: USERS_TABLE,
     IndexName: 'email-index',
     KeyConditionExpression: 'email = :email',
-    ExpressionAttributeValues: { ':email': email },
+    ExpressionAttributeValues: { ':email': emailLower },
     Limit: 1
   }));
 
-  if (result.Items && result.Items.length > 0) {
-    return result.Items[0].userId;
+  if (queryResult.Items && queryResult.Items.length > 0) {
+    // User exists, return their profile
+    const user = queryResult.Items[0];
+    return {
+      userId: user.userId,
+      email: user.email,
+      role: user.role || 'user'
+    };
   }
 
-  // Generate new user ID
-  return `usr_${randomBytes(8).toString('hex')}`;
+  // User doesn't exist - lazy provisioning: create new user profile
+  const userId = `usr_${randomBytes(8).toString('hex')}`;
+  const now = Math.floor(Date.now() / 1000);
+  
+  // Default role: "admin" for Sigma emails, "user" for others
+  // You can customize this logic as needed
+  const defaultRole = emailLower.endsWith('@sigmacomputing.com') ? 'admin' : 'user';
+
+  await docClient.send(new PutCommand({
+    TableName: USERS_TABLE,
+    Item: {
+      userId,
+      email: emailLower,
+      role: defaultRole,
+      createdAt: now,
+      updatedAt: now
+    }
+  }));
+
+  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${defaultRole}`);
+
+  return {
+    userId,
+    email: emailLower,
+    role: defaultRole
+  };
+}
+
+/**
+ * Get user profile by userId
+ */
+async function getUserProfile(userId: string): Promise<{ userId: string; email: string; role: string } | null> {
+  const result = await docClient.send(new GetCommand({
+    TableName: USERS_TABLE,
+    Key: { userId }
+  }));
+
+  if (!result.Item) {
+    return null;
+  }
+
+  return {
+    userId: result.Item.userId,
+    email: result.Item.email,
+    role: result.Item.role || 'user'
+  };
+}
+
+/**
+ * Get or create user ID for email (deprecated - use getOrCreateUserProfile instead)
+ * Kept for backward compatibility during migration
+ */
+async function getUserIdForEmail(email: string): Promise<string> {
+  const userProfile = await getOrCreateUserProfile(email);
+  return userProfile.userId;
 }
 
 /**
@@ -480,6 +556,7 @@ function buildRedirectUrl(tokenId: string, dashboardId: string | null): string {
 async function generateSessionJWT(payload: {
   userId: string;
   email: string;
+  role: string;
   deviceId: string;
   expiresAt: number;
 }): Promise<string> {
@@ -489,6 +566,7 @@ async function generateSessionJWT(payload: {
     {
       userId: payload.userId,
       email: payload.email,
+      role: payload.role,
       deviceId: payload.deviceId,
       iat: Math.floor(Date.now() / 1000),
       exp: payload.expiresAt
