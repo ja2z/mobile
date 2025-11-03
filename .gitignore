@@ -44,3 +44,6 @@ yarn-error.*
 lambda/node_modules/
 lambda/dist/
 lambda/*.zip
+
+# ios build
+build-*.ipa
