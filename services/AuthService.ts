@@ -49,7 +49,27 @@ export class AuthService {
    * Verify magic link token and get session JWT
    */
   static async verifyMagicLink(token: string, dashboardId?: string): Promise<AuthSession> {
-    const deviceId = await Device.modelId || 'unknown';
+    // Get device ID - create a persistent identifier for this device
+    let deviceId = 'unknown';
+    try {
+      // Try to get or create a persistent device ID
+      const storedDeviceId = await SecureStore.getItemAsync('device_id');
+      if (storedDeviceId) {
+        deviceId = storedDeviceId;
+      } else {
+        // Generate a new device ID based on device info
+        const platform = Device.osName || 'unknown';
+        const deviceName = Device.deviceName || 'unknown';
+        const deviceIdBase = `${platform}_${deviceName}_${Date.now()}`;
+        deviceId = deviceIdBase.replace(/\s+/g, '_').toLowerCase();
+        // Store it for future use
+        await SecureStore.setItemAsync('device_id', deviceId);
+      }
+    } catch (error) {
+      console.warn('Could not get device ID:', error);
+      // Fallback: generate a simple ID
+      deviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    }
     
     const response = await fetch(`${AUTH_BASE_URL}/verify-magic-link`, {
       method: 'POST',
@@ -65,23 +85,32 @@ export class AuthService {
       throw new Error(data.message || data.error || 'Failed to verify magic link');
     }
 
+    // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email } }
+    const sessionToken = data.token || data.sessionToken; // Support both field names
+    const userEmail = data.user?.email || data.email;
+    const userId = data.user?.userId || data.userId;
+
+    if (!sessionToken || !userEmail || !userId) {
+      throw new Error('Invalid response from server: missing required fields');
+    }
+
     // Store session
     await this.saveSession({
-      jwt: data.sessionToken,
+      jwt: sessionToken,
       user: {
-        email: data.email,
-        userId: data.userId,
+        email: userEmail,
+        userId: userId,
       },
-      expiresAt: data.expiresAt,
+      expiresAt: data.expiresAt || 0,
     });
 
     return {
-      jwt: data.sessionToken,
+      jwt: sessionToken,
       user: {
-        email: data.email,
-        userId: data.userId,
+        email: userEmail,
+        userId: userId,
       },
-      expiresAt: data.expiresAt,
+      expiresAt: data.expiresAt || 0,
     };
   }
 

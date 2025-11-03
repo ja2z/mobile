@@ -48,9 +48,10 @@ export default function RootLayout() {
 
     // Handle deep links
     const handleDeepLink = async (url: string) => {
-      console.log('Deep link received:', url);
+      console.log('🔗 Deep link received:', url);
       
       const parsed = Linking.parse(url);
+      console.log('📋 Parsed deep link:', JSON.stringify(parsed, null, 2));
       
       // Handle both bigbuys://auth?token=xxx and https://mobile.bigbuys.io/auth/verify?token=xxx
       let token: string | undefined;
@@ -58,30 +59,75 @@ export default function RootLayout() {
       if (parsed.scheme === 'bigbuys' && parsed.hostname === 'auth') {
         // Custom URL scheme: bigbuys://auth?token=xxx
         token = parsed.queryParams?.token as string;
-      } else if (parsed.hostname === 'mobile.bigbuys.io' && parsed.path === '/auth/verify') {
+        console.log('✅ Parsed custom scheme token:', token ? 'found' : 'missing');
+      } else if (parsed.hostname === 'mobile.bigbuys.io') {
         // Universal link: https://mobile.bigbuys.io/auth/verify?token=xxx
-        token = parsed.queryParams?.token as string;
+        // Path might be "auth/verify" or "/auth/verify" - both are valid
+        const path = parsed.path || '';
+        // Check if this is an auth verify path OR just check for token in queryParams
+        if (path.includes('auth/verify') || path === '' || parsed.queryParams?.token) {
+          token = parsed.queryParams?.token as string;
+          console.log('✅ Parsed universal link token:', token ? 'found' : 'missing', { path });
+        }
       }
 
       if (token) {
+        console.log('🔐 Verifying magic link token...');
         try {
           const dashboardId = parsed.queryParams?.dashboardId as string | undefined;
-          await AuthService.verifyMagicLink(token, dashboardId);
+          const session = await AuthService.verifyMagicLink(token, dashboardId);
+          console.log('✅ Authentication successful!', { email: session.user.email });
+          
+          // Update initial route if it hasn't been set yet (for when deep link comes before initial auth check)
+          setInitialRoute('Home');
+          setIsCheckingAuth(false);
           
           // Navigate to Home after successful auth
-          // Wait a bit for navigation to be ready
-          setTimeout(() => {
+          // Use a retry mechanism since navigation might not be ready immediately
+          let retryCount = 0;
+          const maxRetries = 10;
+          
+          const navigateToHome = () => {
             if (navigationRef.current) {
-              navigationRef.current.reset({
-                index: 0,
-                routes: [{ name: 'Home' }],
-              });
+              try {
+                navigationRef.current.reset({
+                  index: 0,
+                  routes: [{ name: 'Home' }],
+                });
+                console.log('✅ Navigated to Home');
+              } catch (error) {
+                console.warn('Navigation error (will retry):', error);
+                if (retryCount < maxRetries) {
+                  retryCount++;
+                  setTimeout(navigateToHome, 200);
+                }
+              }
+            } else {
+              // Navigation ref not ready yet, retry
+              if (retryCount < maxRetries) {
+                retryCount++;
+                setTimeout(navigateToHome, 200);
+              } else {
+                console.warn('⚠️ Navigation ref not ready after max retries');
+              }
             }
-          }, 100);
+          };
+          
+          // Start navigation attempt after a brief delay to ensure navigation is initialized
+          setTimeout(navigateToHome, 300);
         } catch (error) {
-          console.error('Deep link auth error:', error);
-          // Could show error to user - for now just log it
+          console.error('❌ Deep link auth error:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+          // For now, just log the error - in a real app, you'd show this to the user
+          console.error('Error details:', errorMessage);
+          // Still set initial route to Login on error
+          if (isCheckingAuth) {
+            setInitialRoute('Login');
+            setIsCheckingAuth(false);
+          }
         }
+      } else {
+        console.warn('⚠️ No token found in deep link');
       }
     };
 
