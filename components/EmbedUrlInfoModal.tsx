@@ -279,7 +279,7 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt }: EmbedUrlI
           >
                   {/* URL DETAILS Section */}
                   <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>URL DETAILS</Text>
+                    <Text style={styles.sectionTitle}>EMBED URL</Text>
                     {renderHighlightedUrl()}
                   </View>
 
