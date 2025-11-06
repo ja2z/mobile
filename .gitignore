@@ -47,3 +47,4 @@ lambda/*.zip
 
 # ios build
 build-*.ipa
+eas-build*.log
