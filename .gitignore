@@ -40,10 +40,10 @@ yarn-error.*
 /ios
 /android
 
-# lambda
-lambda/node_modules/
-lambda/dist/
-lambda/*.zip
+# lambdas
+lambdas/**/node_modules/
+lambdas/**/dist/
+lambdas/**/*.zip
 
 # ios build
 build-*.ipa

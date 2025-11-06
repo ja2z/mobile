@@ -33,6 +33,8 @@ export class EmbedUrlService {
    */
   static async fetchEmbedUrl(params?: EmbedUrlParams): Promise<EmbedUrlResponse> {
     try {
+      console.log('📡 Fetching embed URL from:', Config.API.EMBED_URL_ENDPOINT);
+      
       const response = await fetch(Config.API.EMBED_URL_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -41,20 +43,49 @@ export class EmbedUrlService {
         body: JSON.stringify(params || {}),
       });
 
+      console.log('📡 API response status:', response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`API returned status ${response.status}`);
+        // Try to get error details from response body
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+          console.error('📡 API error response body:', errorBody);
+          // Try to parse as JSON for better error message
+          try {
+            const errorJson = JSON.parse(errorBody);
+            errorBody = JSON.stringify(errorJson);
+          } catch {
+            // Not JSON, use as-is
+          }
+        } catch (e) {
+          // Ignore errors reading error body
+        }
+        throw new Error(`API returned status ${response.status}${errorBody ? `: ${errorBody}` : ''}`);
       }
 
       const data: EmbedUrlResponse = await response.json();
+      console.log('📡 API response data:', { success: data.success, hasUrl: !!data.url });
 
       if (!data.success || !data.url) {
-        throw new Error('Invalid response from embed URL API');
+        throw new Error(`Invalid response from embed URL API: ${JSON.stringify(data)}`);
       }
 
       return data;
     } catch (error) {
-      console.error('Failed to fetch embed URL:', error);
-      throw new Error('Unable to fetch dashboard URL. Please try again later.');
+      // Preserve original error details for debugging
+      const originalError = error instanceof Error ? error : new Error(String(error));
+      console.error('❌ Failed to fetch embed URL:', {
+        message: originalError.message,
+        name: originalError.name,
+        stack: originalError.stack,
+      });
+      
+      // Re-throw with more context but preserve original error
+      if (originalError.message.includes('API returned status')) {
+        throw originalError; // Already has good error message
+      }
+      throw new Error(`Unable to fetch dashboard URL: ${originalError.message}`);
     }
   }
 

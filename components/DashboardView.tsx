@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Animated } from 'react-nativ
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
+import { AuthService } from '../services/AuthService';
 import { colors, spacing, typography } from '../constants/Theme';
 
 interface DashboardViewProps {
@@ -166,8 +167,31 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       setError(null);
       setWorkbookLoaded(false); // Reset workbook loaded state when fetching new URL
       
-      // Pass workbook_id if provided
-      const params = workbookId ? { workbook_id: workbookId } : undefined;
+      // Get user's email from session (gracefully handle errors)
+      let userEmail: string | undefined;
+      try {
+        const session = await AuthService.getSession();
+        userEmail = session?.user?.email;
+        if (userEmail) {
+          console.log('👤 Using user email:', userEmail);
+        } else {
+          console.warn('⚠️ No user email found in session, lambda will use default');
+        }
+      } catch (sessionError) {
+        console.warn('⚠️ Error retrieving session (proceeding without email):', sessionError);
+        // Continue without email - lambda will use default
+      }
+      
+      // Build params object with workbook_id and user_email
+      const params: { workbook_id?: string; user_email?: string } = {};
+      if (workbookId) {
+        params.workbook_id = workbookId;
+      }
+      if (userEmail) {
+        params.user_email = userEmail;
+      }
+      
+      console.log('📤 Calling embed URL API with params:', JSON.stringify(params));
       const response = await EmbedUrlService.fetchEmbedUrl(params);
       console.log('🌐 Setting new dashboard URL:', response.url);
       console.log('📚 Workbook ID:', workbookId || 'default');
@@ -188,8 +212,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       }, refreshTimeout);
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load dashboard URL');
-      console.error('Error fetching embed URL:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard URL';
+      
+      // Log detailed error information for debugging
+      if (err instanceof Error) {
+        console.error('❌ Error fetching embed URL:', errorMessage);
+        console.error('❌ Error name:', err.name);
+        console.error('❌ Error stack:', err.stack);
+      } else {
+        console.error('❌ Error fetching embed URL:', errorMessage);
+        console.error('❌ Error object:', String(err));
+      }
+      
+      setError(errorMessage);
     } finally {
       setFetchingUrl(false);
     }
