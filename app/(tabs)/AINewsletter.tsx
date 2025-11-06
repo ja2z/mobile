@@ -2,7 +2,9 @@ import React, { useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
+import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { Config } from '../../constants/Config';
+import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 
 /**
  * AI Newsletter Page Component
@@ -10,6 +12,9 @@ import { Config } from '../../constants/Config';
  */
 export default function AINewsletter() {
   const dashboardRef = useRef<DashboardViewRef>(null);
+  
+  // Use custom hook for embed URL info modal and header button
+  const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -19,6 +24,12 @@ export default function AINewsletter() {
           workbookId={Config.WORKBOOKS.AI_NEWSLETTER}
         />
       </View>
+      <EmbedUrlInfoModal
+        visible={infoModalVisible}
+        onClose={() => setInfoModalVisible(false)}
+        embedUrl={getEmbedUrl()}
+        jwt={getJWT()}
+      />
     </SafeAreaView>
   );
 }

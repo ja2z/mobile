@@ -12,6 +12,8 @@ interface DashboardViewProps {
 
 export interface DashboardViewRef {
   sendMessage: (message: any) => void;
+  getUrl: () => string | null;
+  getJWT: () => string | null;
 }
 
 /**
@@ -74,6 +76,7 @@ const SkeletonPlaceholder: React.FC = () => {
  */
 export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
+  const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [workbookLoaded, setWorkbookLoaded] = useState(false); // Track workbook:loaded event
   const [error, setError] = useState<string | null>(null);
@@ -153,9 +156,11 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     console.log('✅ JavaScript injected');
   };
 
-  // Expose sendMessage method via ref
+  // Expose methods via ref
   useImperativeHandle(ref, () => ({
-    sendMessage
+    sendMessage,
+    getUrl: () => url,
+    getJWT: () => jwt,
   }));
 
   /**
@@ -196,6 +201,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       console.log('🌐 Setting new dashboard URL:', response.url);
       console.log('📚 Workbook ID:', workbookId || 'default');
       setUrl(response.url);
+      setJwt(response.jwt || null);
       
       // Clear any existing refresh timeout
       if (refreshTimeoutRef.current) {

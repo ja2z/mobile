@@ -107,7 +107,7 @@ export const handler = async (event) => {
         // Extract parameters from request (with defaults)
         const merchantId = body.merchant_id || "acme";
         // Get user email from body and add +embed to username if provided, otherwise use default
-        const rawUserEmail = body.user_email || "jon@sigmacomputing.com";
+        const rawUserEmail = body.user_email;
         const userEmail = addEmbedToEmail(rawUserEmail);
         const workbookId = body.workbook_id || "6vzpQFMQkEiBIbnybiwrH3";
         const embedPath = body.embed_path || "papercrane-embedding-gcp/workbook";
