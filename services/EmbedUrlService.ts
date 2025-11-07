@@ -1,4 +1,5 @@
 import { Config } from '../constants/Config';
+import { AuthService } from './AuthService';
 
 /**
  * Response from the Sigma embed URL API
@@ -35,11 +36,23 @@ export class EmbedUrlService {
     try {
       console.log('📡 Fetching embed URL from:', Config.API.EMBED_URL_ENDPOINT);
       
+      // Get authentication token
+      const session = await AuthService.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please sign in to view dashboards.');
+      }
+      
+      // Build headers with Authorization
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add Authorization header with JWT
+      headers['Authorization'] = `Bearer ${session.jwt}`;
+      
       const response = await fetch(Config.API.EMBED_URL_ENDPOINT, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(params || {}),
       });
 
