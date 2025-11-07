@@ -48,7 +48,7 @@ export class AuthService {
   /**
    * Verify magic link token and get session JWT
    */
-  static async verifyMagicLink(token: string, dashboardId?: string): Promise<AuthSession> {
+  static async verifyMagicLink(token: string): Promise<AuthSession> {
     // Get device ID - create a persistent identifier for this device
     let deviceId = 'unknown';
     try {

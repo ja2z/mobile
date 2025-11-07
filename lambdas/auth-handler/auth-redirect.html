@@ -94,13 +94,13 @@
     // Extract token from URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
-    const dashboardId = urlParams.get('dashboardId');
+    const app = urlParams.get('app');
     
     if (token) {
       // Build deep link URL
       let deepLink = 'bigbuys://auth?token=' + encodeURIComponent(token);
-      if (dashboardId) {
-        deepLink += '&dashboardId=' + encodeURIComponent(dashboardId);
+      if (app) {
+        deepLink += '&app=' + encodeURIComponent(app);
       }
       
       // Update the fallback link

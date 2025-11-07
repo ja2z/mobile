@@ -160,7 +160,7 @@ async function handleRequestMagicLink(body: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, dashboardId, linkType = 'universal' } = body;
+  const { email, phoneNumber, app, linkType = 'universal' } = body;
 
   // Get API key from header (API Gateway may lowercase headers)
   const headers = event.headers || {};
@@ -232,15 +232,15 @@ async function handleSendToMobile(body: any, event: any) {
       sessionJWT: null,
       metadata: {
         sourceFlow: 'sms',
-        dashboardId: dashboardId || null
+        app: app || null
       }
     }
   }));
 
   // Build magic link based on linkType
   const magicLink = linkType === 'direct' 
-    ? buildDirectSchemeUrl(tokenId, dashboardId)
-    : buildRedirectUrl(tokenId, dashboardId);
+    ? buildDirectSchemeUrl(tokenId, app)
+    : buildRedirectUrl(tokenId, app);
   
   // Log magic link for debugging/workaround (especially when SNS isn't configured)
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
@@ -334,7 +334,7 @@ async function handleVerifyMagicLink(body: any, event: any) {
       sessionJWT: sessionToken,
       metadata: {
         sourceFlow: tokenData.metadata?.sourceFlow || 'unknown',
-        dashboardId: tokenData.metadata?.dashboardId || null,
+        app: tokenData.metadata?.app || null,
         lastUsedAt: now
       }
     }
@@ -349,7 +349,7 @@ async function handleVerifyMagicLink(body: any, event: any) {
       email: user.email,
       role: user.role
     },
-    dashboardId: tokenData.metadata?.dashboardId || null
+    app: tokenData.metadata?.app || null
   });
 }
 
@@ -585,12 +585,12 @@ async function getUserIdForEmail(email: string): Promise<string> {
 
 /**
  * Build direct custom scheme URL (for Expo Go / development)
- * Format: bigbuys://auth?token=xxx
+ * Format: bigbuys://auth?token=xxx&app=dashboard
  */
-function buildDirectSchemeUrl(tokenId: string, dashboardId: string | null): string {
+function buildDirectSchemeUrl(tokenId: string, app: string | null): string {
   let url = `${APP_DEEP_LINK_SCHEME}://auth?token=${encodeURIComponent(tokenId)}`;
-  if (dashboardId) {
-    url += `&dashboardId=${encodeURIComponent(dashboardId)}`;
+  if (app) {
+    url += `&app=${encodeURIComponent(app)}`;
   }
   return url;
 }
@@ -598,12 +598,12 @@ function buildDirectSchemeUrl(tokenId: string, dashboardId: string | null): stri
 /**
  * Build HTTPS redirect URL that will redirect to deep link
  * This works better in email clients than direct deep links
- * Format: https://mobile.bigbuys.io/auth/verify?token=xxx
+ * Format: https://mobile.bigbuys.io/auth/verify?token=xxx&app=dashboard
  */
-function buildRedirectUrl(tokenId: string, dashboardId: string | null): string {
+function buildRedirectUrl(tokenId: string, app: string | null): string {
   let url = `${REDIRECT_BASE_URL}/auth/verify?token=${encodeURIComponent(tokenId)}`;
-  if (dashboardId) {
-    url += `&dashboardId=${encodeURIComponent(dashboardId)}`;
+  if (app) {
+    url += `&app=${encodeURIComponent(app)}`;
   }
   return url;
 }

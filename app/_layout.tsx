@@ -74,39 +74,65 @@ export default function RootLayout() {
       if (token) {
         console.log('🔐 Verifying magic link token...');
         try {
-          const dashboardId = parsed.queryParams?.dashboardId as string | undefined;
-          const session = await AuthService.verifyMagicLink(token, dashboardId);
+          const app = parsed.queryParams?.app as string | undefined;
+          const session = await AuthService.verifyMagicLink(token);
           console.log('✅ Authentication successful!', { email: session.user.email });
           
+          // Map app name to screen name
+          // Valid app names: "dashboard", "ainewsletter" (case-insensitive)
+          // Default to "Home" if no app specified or invalid app name
+          let targetScreen: 'Home' | 'Dashboard' | 'AINewsletter' = 'Home';
+          if (app) {
+            const appLower = app.toLowerCase();
+            if (appLower === 'dashboard') {
+              targetScreen = 'Dashboard';
+            } else if (appLower === 'ainewsletter' || appLower === 'ai-newsletter') {
+              targetScreen = 'AINewsletter';
+            } else {
+              console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+            }
+          }
+          
           // Update initial route if it hasn't been set yet (for when deep link comes before initial auth check)
-          setInitialRoute('Home');
+          setInitialRoute(targetScreen);
           setIsCheckingAuth(false);
           
-          // Navigate to Home after successful auth
+          // Navigate to target screen after successful auth
           // Use a retry mechanism since navigation might not be ready immediately
           let retryCount = 0;
           const maxRetries = 10;
           
-          const navigateToHome = () => {
+          const navigateToScreen = () => {
             if (navigationRef.current) {
               try {
-                navigationRef.current.reset({
-                  index: 0,
-                  routes: [{ name: 'Home' }],
-                });
-                console.log('✅ Navigated to Home');
+                // If navigating to a specific app, we need to navigate to Home first, then to the app
+                if (targetScreen === 'Dashboard' || targetScreen === 'AINewsletter') {
+                  navigationRef.current.reset({
+                    index: 1,
+                    routes: [
+                      { name: 'Home' },
+                      { name: targetScreen }
+                    ],
+                  });
+                } else {
+                  navigationRef.current.reset({
+                    index: 0,
+                    routes: [{ name: 'Home' }],
+                  });
+                }
+                console.log(`✅ Navigated to ${targetScreen}`);
               } catch (error) {
                 console.warn('Navigation error (will retry):', error);
                 if (retryCount < maxRetries) {
                   retryCount++;
-                  setTimeout(navigateToHome, 200);
+                  setTimeout(navigateToScreen, 200);
                 }
               }
             } else {
               // Navigation ref not ready yet, retry
               if (retryCount < maxRetries) {
                 retryCount++;
-                setTimeout(navigateToHome, 200);
+                setTimeout(navigateToScreen, 200);
               } else {
                 console.warn('⚠️ Navigation ref not ready after max retries');
               }
@@ -114,7 +140,7 @@ export default function RootLayout() {
           };
           
           // Start navigation attempt after a brief delay to ensure navigation is initialized
-          setTimeout(navigateToHome, 300);
+          setTimeout(navigateToScreen, 300);
         } catch (error) {
           console.error('❌ Deep link auth error:', error);
           const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
