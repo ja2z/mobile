@@ -160,11 +160,26 @@ async function handleRequestMagicLink(body: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, apiKey: providedApiKey, dashboardId, linkType = 'universal' } = body;
+  const { email, phoneNumber, dashboardId, linkType = 'universal' } = body;
+
+  // Get API key from header (API Gateway may lowercase headers)
+  const headers = event.headers || {};
+  const providedApiKey = headers['X-API-Key'] || headers['x-api-key'] || headers['X-Api-Key'];
+  
+  if (!providedApiKey) {
+    return createResponse(401, { error: 'API key required in X-API-Key header' });
+  }
 
   // Validate API key
   const validApiKey = await getApiKey();
-  if (providedApiKey !== validApiKey) {
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  const trimmedProvided = (providedApiKey || '').trim();
+  const trimmedValid = (validApiKey || '').trim();
+  
+  // Debug logging (remove in production if sensitive)
+  console.log(`API key validation: provided length=${trimmedProvided.length}, valid length=${trimmedValid.length}, match=${trimmedProvided === trimmedValid}`);
+  
+  if (trimmedProvided !== trimmedValid) {
     return createResponse(401, { error: 'Invalid API key' });
   }
 
@@ -184,11 +199,13 @@ async function handleSendToMobile(body: any, event: any) {
 
   const emailLower = email.toLowerCase();
 
-  // Email should already be approved (user authenticated in desktop app)
-  // But we'll check anyway for safety
+  // Check if email is approved (same validation as email magic link flow)
   const isApproved = await isEmailApproved(emailLower);
   if (!isApproved) {
-    return createResponse(403, { error: 'Email not approved' });
+    return createResponse(403, { 
+      error: 'Email not approved',
+      message: 'This email is not approved for access. Please contact your administrator.'
+    });
   }
 
   // Generate magic link token
@@ -224,6 +241,9 @@ async function handleSendToMobile(body: any, event: any) {
   const magicLink = linkType === 'direct' 
     ? buildDirectSchemeUrl(tokenId, dashboardId)
     : buildRedirectUrl(tokenId, dashboardId);
+  
+  // Log magic link for debugging/workaround (especially when SNS isn't configured)
+  console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
   
   await sendMagicLinkSMS(phoneNumber, magicLink);
 
@@ -672,6 +692,9 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
 async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise<void> {
   const message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
 
+  // Log the magic link for debugging/workaround when SNS isn't configured
+  console.log(`Magic link SMS would be sent to ${phoneNumber}: ${magicLink}`);
+
   await snsClient.send(new PublishCommand({
     PhoneNumber: phoneNumber,
     Message: message
@@ -708,7 +731,8 @@ async function getApiKey(): Promise<string> {
     SecretId: API_KEY_SECRET_NAME
   }));
 
-  apiKey = result.SecretString || '';
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  apiKey = (result.SecretString || '').trim();
   return apiKey;
 }
 
