@@ -264,7 +264,7 @@ export const handler = async (event) => {
         const merchantId = body.merchant_id || "acme";
         // Use email from verified JWT (ignore user_email from body for security)
         const userEmailForEmbed = addEmbedToEmail(userEmail);
-        const workbookId = body.workbook_id || "6vzpQFMQkEiBIbnybiwrH3";
+        const workbookId = body.workbook_id;
         const embedPath = body.embed_path || "papercrane-embedding-gcp/workbook";
         const teams = body.teams || ["all_clients_team", "acme_team"];
         
