@@ -9,7 +9,7 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -160,7 +160,7 @@ async function handleRequestMagicLink(body: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, app, linkType = 'universal' } = body;
+  const { email, phoneNumber, app, linkType = 'universal', emailhash } = body;
 
   // Get API key from header (API Gateway may lowercase headers)
   const headers = event.headers || {};
@@ -187,6 +187,29 @@ async function handleSendToMobile(body: any, event: any) {
   if (!email || !phoneNumber) {
     return createResponse(400, { error: 'Email and phone number are required' });
   }
+
+  // Validate email hash (required for security)
+  if (!emailhash) {
+    return createResponse(400, { error: 'Email hash is required' });
+  }
+
+  // Get the secret key (same as API key secret) for hash verification
+  const secretKey = await getApiKey();
+  
+  // Compute expected hash: SHA256(secretKey + email)
+  const hashInput = secretKey + email;
+  const expectedHash = createHash('sha256').update(hashInput).digest('hex');
+  
+  // Compare hashes (case-insensitive for safety)
+  if (emailhash.toLowerCase() !== expectedHash.toLowerCase()) {
+    console.warn(`Email hash verification failed for email: ${email}`);
+    return createResponse(401, { 
+      error: 'Invalid email signature',
+      message: 'The email signature is invalid. This request may have been tampered with.'
+    });
+  }
+  
+  console.log(`Email hash verified successfully for email: ${email}`);
 
   if (!isValidPhoneNumber(phoneNumber)) {
     return createResponse(400, { error: 'Invalid phone number format. Use E.164 format (e.g., +14155551234)' });
