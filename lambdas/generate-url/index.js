@@ -296,7 +296,7 @@ export const handler = async (event) => {
             user_attributes: {
                 merchant_id: merchantId
             },
-            account_type: "Viewer",
+            account_type: "Creator",
             teams: teams,
             iss: "ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355"
         };
