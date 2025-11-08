@@ -7,6 +7,7 @@ import Login from './(tabs)/Login';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
+import ConversationalAI from './(tabs)/ConversationalAI';
 import { colors } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 
@@ -16,6 +17,7 @@ export type RootStackParamList = {
   Home: undefined;
   Dashboard: undefined;
   AINewsletter: undefined;
+  ConversationalAI: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -223,6 +225,14 @@ export default function RootLayout() {
           component={AINewsletter}
           options={{
             title: 'AI Newsletter',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="ConversationalAI" 
+          component={ConversationalAI}
+          options={{
+            title: 'Conversational AI',
             headerShown: true,
           }}
         />
