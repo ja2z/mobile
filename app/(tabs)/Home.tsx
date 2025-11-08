@@ -49,6 +49,10 @@ export default function Home() {
     navigation.navigate('AINewsletter' as never);
   };
 
+  const handleNavigateToConversationalAI = () => {
+    navigation.navigate('ConversationalAI' as never);
+  };
+
   const appTiles: AppTile[] = [
     { 
       id: '1', 
@@ -90,12 +94,13 @@ export default function Home() {
     },
     { 
       id: '5', 
-      title: 'Team Analytics', 
-      subtitle: 'Performance', 
-      description: 'Track team performance metrics and identify areas for improvement with detailed analytics.',
+      title: 'Conversational AI', 
+      subtitle: 'AI Assistant', 
+      description: 'Interact with your data using natural language. Ask questions and get instant insights powered by AI.',
       color: colors.tileColors.orange1,
-      iconName: 'people-outline',
-      isActive: false,
+      iconName: 'chatbubbles-outline',
+      isActive: true,
+      onPress: handleNavigateToConversationalAI,
     },
     { 
       id: '6', 
