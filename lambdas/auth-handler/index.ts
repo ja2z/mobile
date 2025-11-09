@@ -4,12 +4,14 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
+import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateRole } from '../shared/user-validation';
+import { logActivity, logActivityAndUpdateLastActive } from '../shared/activity-logger';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -28,6 +30,7 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
 const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
+const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
@@ -69,7 +72,7 @@ export const handler = async (event: any) => {
 
     // Route to appropriate handler
     if (path === '/v1/auth/request-magic-link' && method === 'POST') {
-      return await handleRequestMagicLink(body);
+      return await handleRequestMagicLink(body, event);
     } else if (path === '/v1/auth/send-to-mobile' && method === 'POST') {
       return await handleSendToMobile(body, event);
     } else if (path === '/v1/auth/verify-magic-link' && method === 'POST') {
@@ -90,13 +93,29 @@ export const handler = async (event: any) => {
 };
 
 /**
+ * Get IP address from event
+ */
+function getIpAddress(event: any): string | undefined {
+  return event.requestContext?.identity?.sourceIp || 
+         event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
+         event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim();
+}
+
+/**
  * Handle email magic link request (self-service registration)
  */
-async function handleRequestMagicLink(body: any) {
+async function handleRequestMagicLink(body: any, event?: any) {
   const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
 
   // Validate input
   if (!email || !isValidEmail(email)) {
+    // Log failed login attempt
+    const ipAddress = event ? getIpAddress(event) : undefined;
+    await logActivity('failed_login', 'unknown', email, {
+      reason: 'Invalid email format',
+      sourceFlow: 'email'
+    }, undefined, ipAddress);
+    
     return createResponse(400, { error: 'Valid email is required' });
   }
 
@@ -110,6 +129,13 @@ async function handleRequestMagicLink(body: any) {
   // Check if email is approved
   const isApproved = await isEmailApproved(emailLower);
   if (!isApproved) {
+    // Log failed login attempt
+    const ipAddress = event ? getIpAddress(event) : undefined;
+    await logActivity('failed_login', 'unknown', emailLower, {
+      reason: 'Email not approved',
+      sourceFlow: 'email'
+    }, undefined, ipAddress);
+    
     return createResponse(403, { 
       error: 'Email not approved',
       message: 'This email is not approved for access. Please contact your administrator.'
@@ -298,6 +324,13 @@ async function handleVerifyMagicLink(body: any, event: any) {
   }));
 
   if (!result.Item) {
+    // Log failed login attempt
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', 'unknown', {
+      reason: 'Invalid token',
+      sourceFlow: 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(404, { error: 'Invalid or expired token' });
   }
 
@@ -305,15 +338,33 @@ async function handleVerifyMagicLink(body: any, event: any) {
 
   // Validate token
   if (tokenData.tokenType !== 'magic_link') {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Invalid token type',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(400, { error: 'Invalid token type' });
   }
 
   if (tokenData.used) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Token already used',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(400, { error: 'Token already used' });
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (now > tokenData.expiresAt) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Token expired',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(400, { error: 'Token expired' });
   }
 
@@ -328,7 +379,37 @@ async function handleVerifyMagicLink(body: any, event: any) {
 
   // Lazy provision user profile - only create when they actually authenticate
   // This is the first time we're certain the user has successfully authenticated
-  const user = await getOrCreateUserProfile(tokenData.email);
+  const user = await getOrCreateUserProfile(tokenData.email, tokenData.metadata?.sourceFlow || 'email');
+
+  // Check if user is deactivated
+  const isDeactivated = await checkUserDeactivated(user.userId);
+  if (isDeactivated) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, user.email, {
+      reason: 'User is deactivated',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account deactivated',
+      message: 'Your account has been deactivated. Please contact your administrator.'
+    });
+  }
+
+  // Check user expiration
+  const expirationCheck = await validateUserExpiration(user.userId);
+  if (expirationCheck.expired) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, user.email, {
+      reason: expirationCheck.reason || 'Account expired',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account expired',
+      message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+    });
+  }
 
   // Generate session JWT
   const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
@@ -363,6 +444,20 @@ async function handleVerifyMagicLink(body: any, event: any) {
     }
   }));
 
+  // Log successful login
+  const ipAddress = getIpAddress(event);
+  await logActivityAndUpdateLastActive(
+    'login',
+    user.userId,
+    user.email,
+    {
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email',
+      app: tokenData.metadata?.app || null
+    },
+    deviceId,
+    ipAddress
+  );
+
   return createResponse(200, {
     success: true,
     token: sessionToken,
@@ -393,9 +488,37 @@ async function handleRefreshToken(body: any, event: any) {
 
     const now = Math.floor(Date.now() / 1000);
     
+    // Check if user is deactivated
+    const isDeactivated = await checkUserDeactivated(decoded.userId);
+    if (isDeactivated) {
+      return createResponse(403, { 
+        error: 'Account deactivated',
+        message: 'Your account has been deactivated. Please contact your administrator.'
+      });
+    }
+
+    // Check user expiration
+    const expirationCheck = await validateUserExpiration(decoded.userId, decoded.exp);
+    if (expirationCheck.expired) {
+      return createResponse(403, { 
+        error: 'Account expired',
+        message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+      });
+    }
+    
     // Check if token is close to expiry (within 7 days)
     const timeUntilExpiry = decoded.exp - now;
     if (timeUntilExpiry > 7 * 24 * 60 * 60) {
+      // Update last active time even if not refreshing token
+      await logActivityAndUpdateLastActive(
+        'token_refresh',
+        decoded.userId,
+        decoded.email,
+        { action: 'no_refresh_needed' },
+        decoded.deviceId,
+        getIpAddress(event)
+      );
+      
       return createResponse(200, {
         success: true,
         message: 'Token still valid, no refresh needed',
@@ -441,6 +564,16 @@ async function handleRefreshToken(body: any, event: any) {
         }
       }
     }));
+
+    // Update last active time
+    await logActivityAndUpdateLastActive(
+      'token_refresh',
+      decoded.userId,
+      decoded.email,
+      { action: 'token_refreshed' },
+      decoded.deviceId,
+      getIpAddress(event)
+    );
 
     return createResponse(200, {
       success: true,
@@ -494,7 +627,7 @@ async function isEmailApproved(email: string): Promise<boolean> {
  * Returns user object with userId, email, and role
  * Only call this after successful authentication (token verification)
  */
-async function getOrCreateUserProfile(email: string): Promise<{ userId: string; email: string; role: string }> {
+async function getOrCreateUserProfile(email: string, registrationMethod: string = 'email'): Promise<{ userId: string; email: string; role: string }> {
   const emailLower = email.toLowerCase();
   
   // First, try to find existing user by email using email-index GSI
@@ -510,6 +643,17 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
     // User exists, validate and return their profile
     const user = queryResult.Items[0];
     const role = validateRole(user.role) || 'basic';
+    
+    // Update registration method if not set
+    if (!user.registrationMethod) {
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: user.userId },
+        UpdateExpression: 'SET registrationMethod = :method',
+        ExpressionAttributeValues: { ':method': registrationMethod }
+      }));
+    }
+    
     return {
       userId: user.userId,
       email: user.email,
@@ -518,70 +662,80 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
   }
 
   // User doesn't exist - lazy provisioning: create new user profile
+  // Check whitelist for role and expiration
+  let userRole = 'basic';
+  let expirationDate: number | undefined = undefined;
+  
+  // Check whitelist if not a Sigma email
+  if (!emailLower.endsWith('@sigmacomputing.com')) {
+    try {
+      const whitelistResult = await docClient.send(new GetCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower }
+      }));
+
+      if (whitelistResult.Item) {
+        // Check if whitelist entry has expired
+        if (whitelistResult.Item.expiresAt) {
+          const now = Math.floor(Date.now() / 1000);
+          if (now >= whitelistResult.Item.expiresAt) {
+            throw new Error('Whitelist entry has expired');
+          }
+          // Set user expiration to whitelist expiration
+          expirationDate = whitelistResult.Item.expiresAt;
+        }
+        
+        // Use role from whitelist if specified
+        if (whitelistResult.Item.role) {
+          userRole = validateRole(whitelistResult.Item.role) || 'basic';
+        }
+        
+        // Mark user as registered in whitelist
+        const now = Math.floor(Date.now() / 1000);
+        await docClient.send(new UpdateCommand({
+          TableName: APPROVED_EMAILS_TABLE,
+          Key: { email: emailLower },
+          UpdateExpression: 'SET registeredAt = :now',
+          ExpressionAttributeValues: { ':now': now }
+        }));
+      }
+    } catch (error) {
+      console.error('Error checking whitelist:', error);
+      // Continue with default role if whitelist check fails
+    }
+  }
+
   const userId = `usr_${randomBytes(8).toString('hex')}`;
   const now = Math.floor(Date.now() / 1000);
-  
-  // Default role: "basic" for all users
-  // Admins can be promoted manually in DynamoDB if needed
-  const defaultRole = 'basic';
+
+  const userItem: any = {
+    userId,
+    email: emailLower,
+    role: userRole,
+    registrationMethod,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  if (expirationDate) {
+    userItem.expirationDate = expirationDate;
+  }
 
   await docClient.send(new PutCommand({
     TableName: USERS_TABLE,
-    Item: {
-      userId,
-      email: emailLower,
-      role: defaultRole,
-      createdAt: now,
-      updatedAt: now
-    }
+    Item: userItem
   }));
 
-  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${defaultRole}`);
+  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${userRole}${expirationDate ? `, expires: ${expirationDate}` : ''}`);
 
   return {
     userId,
     email: emailLower,
-    role: defaultRole
+    role: userRole
   };
 }
 
-/**
- * Validate role - only allow "basic" and "admin"
- */
-function validateRole(role: string | undefined): string | null {
-  if (!role) {
-    return null;
-  }
-  // Only allow "basic" and "admin" roles
-  if (role === 'basic' || role === 'admin') {
-    return role;
-  }
-  // Invalid role, return null to use default
-  console.warn(`Invalid role "${role}" detected, defaulting to "basic"`);
-  return null;
-}
-
-/**
- * Get user profile by userId
- */
-async function getUserProfile(userId: string): Promise<{ userId: string; email: string; role: string } | null> {
-  const result = await docClient.send(new GetCommand({
-    TableName: USERS_TABLE,
-    Key: { userId }
-  }));
-
-  if (!result.Item) {
-    return null;
-  }
-
-  const role = validateRole(result.Item.role) || 'basic';
-
-  return {
-    userId: result.Item.userId,
-    email: result.Item.email,
-    role: role
-  };
-}
+// validateRole and getUserProfile are now imported from shared/user-validation
 
 /**
  * Get user ID for email (without creating profile)
