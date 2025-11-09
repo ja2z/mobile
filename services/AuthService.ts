@@ -9,6 +9,7 @@ const USER_STORAGE_KEY = 'auth_user';
 export interface User {
   email: string;
   userId: string;
+  role?: 'basic' | 'admin';
 }
 
 export interface AuthSession {
@@ -85,10 +86,11 @@ export class AuthService {
       throw new Error(data.message || data.error || 'Failed to verify magic link');
     }
 
-    // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email } }
+    // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email, role } }
     const sessionToken = data.token || data.sessionToken; // Support both field names
     const userEmail = data.user?.email || data.email;
     const userId = data.user?.userId || data.userId;
+    const userRole = data.user?.role || 'basic';
 
     if (!sessionToken || !userEmail || !userId) {
       throw new Error('Invalid response from server: missing required fields');
@@ -100,6 +102,7 @@ export class AuthService {
       user: {
         email: userEmail,
         userId: userId,
+        role: userRole as 'basic' | 'admin',
       },
       expiresAt: data.expiresAt || 0,
     });
@@ -109,6 +112,7 @@ export class AuthService {
       user: {
         email: userEmail,
         userId: userId,
+        role: userRole as 'basic' | 'admin',
       },
       expiresAt: data.expiresAt || 0,
     };
@@ -151,13 +155,21 @@ export class AuthService {
 
       const user = JSON.parse(userJson);
       
-      // Decode JWT to get expiration and issued at dates
+      // Decode JWT to get expiration, issued at dates, and role
       const decodedJWT = this.decodeJWT(jwt);
       const expiresAt = decodedJWT?.exp || 0;
       
+      // Update user role from JWT if not in stored user (for backward compatibility)
+      if (!user.role && decodedJWT?.role) {
+        user.role = decodedJWT.role;
+      }
+      
       return {
         jwt,
-        user,
+        user: {
+          ...user,
+          role: user.role || decodedJWT?.role || 'basic',
+        },
         expiresAt,
       };
     } catch (error) {
@@ -211,5 +223,66 @@ export class AuthService {
   static async isAuthenticated(): Promise<boolean> {
     const session = await this.getSession();
     return session !== null;
+  }
+
+  /**
+   * Get user role from JWT
+   */
+  static async getUserRole(): Promise<'basic' | 'admin' | null> {
+    try {
+      const jwt = await SecureStore.getItemAsync(JWT_STORAGE_KEY);
+      if (!jwt) {
+        return null;
+      }
+
+      const decodedJWT = this.decodeJWT(jwt);
+      const role = decodedJWT?.role;
+      
+      if (role === 'basic' || role === 'admin') {
+        return role;
+      }
+      
+      return 'basic'; // Default to basic
+    } catch (error) {
+      console.error('Error getting user role:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if user is admin
+   */
+  static async isAdmin(): Promise<boolean> {
+    const role = await this.getUserRole();
+    return role === 'admin';
+  }
+
+  /**
+   * Handle API response and check for expiration errors
+   * Throws error if account is expired or deactivated
+   * This should be caught by the caller to show an alert
+   */
+  static async handleApiResponse(response: Response): Promise<Response> {
+    if (!response.ok) {
+      // Clone response to read body without consuming it
+      const clonedResponse = response.clone();
+      const data = await clonedResponse.json().catch(() => ({}));
+      
+      // Check for expiration or deactivation errors
+      if (response.status === 403 && (data.error === 'Account expired' || data.error === 'Account deactivated')) {
+        // Clear session
+        await this.clearSession();
+        // Throw specific error that can be caught and shown as alert
+        const errorMessage = data.message || data.error || 'Your account has expired. You can no longer use the app.';
+        const error = new Error(errorMessage) as any;
+        error.isExpirationError = true;
+        throw error;
+      }
+      
+      // Re-throw with original error
+      throw new Error(data.message || data.error || `API error: ${response.status}`);
+    }
+    
+    return response;
   }
 }

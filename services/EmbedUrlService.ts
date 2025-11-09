@@ -58,6 +58,9 @@ export class EmbedUrlService {
 
       console.log('📡 API response status:', response.status, response.statusText);
 
+      // Handle expiration errors
+      await AuthService.handleApiResponse(response);
+
       if (!response.ok) {
         // Try to get error details from response body
         let errorBody = '';
