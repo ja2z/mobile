@@ -8,8 +8,12 @@ import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
+import Admin from './(tabs)/Admin';
+import ActivityLog from './(tabs)/ActivityLog';
+import { Alert } from 'react-native';
 import { colors } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
+import { ActivityService } from '../services/ActivityService';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
@@ -18,6 +22,8 @@ export type RootStackParamList = {
   Dashboard: undefined;
   AINewsletter: undefined;
   ConversationalAI: undefined;
+  Admin: undefined;
+  ActivityLog: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -28,7 +34,7 @@ const Stack = createStackNavigator<RootStackParamList>();
  * Handles authentication checks and deep link routing
  */
 export default function RootLayout() {
-  const [initialRoute, setInitialRoute] = useState<'Login' | 'Home' | null>(null);
+  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigationRef = useRef<any>(null);
 
@@ -37,7 +43,15 @@ export default function RootLayout() {
     const checkAuth = async () => {
       try {
         const isAuthenticated = await AuthService.isAuthenticated();
-        setInitialRoute(isAuthenticated ? 'Home' : 'Login');
+        if (isAuthenticated) {
+          setInitialRoute('Home');
+          // Log app launch
+          await ActivityService.logActivity('app_launch', {
+            source: 'cold_start',
+          });
+        } else {
+          setInitialRoute('Login');
+        }
       } catch (error) {
         console.error('Error checking authentication:', error);
         setInitialRoute('Login');
@@ -99,6 +113,12 @@ export default function RootLayout() {
           setInitialRoute(targetScreen);
           setIsCheckingAuth(false);
           
+          // Log app launch (from deep link)
+          await ActivityService.logActivity('app_launch', {
+            source: 'deep_link',
+            app: app || null,
+          });
+          
           // Navigate to target screen after successful auth
           // Use a retry mechanism since navigation might not be ready immediately
           let retryCount = 0;
@@ -143,15 +163,35 @@ export default function RootLayout() {
           
           // Start navigation attempt after a brief delay to ensure navigation is initialized
           setTimeout(navigateToScreen, 300);
-        } catch (error) {
+        } catch (error: any) {
           console.error('❌ Deep link auth error:', error);
           const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-          // For now, just log the error - in a real app, you'd show this to the user
-          console.error('Error details:', errorMessage);
-          // Still set initial route to Login on error
-          if (isCheckingAuth) {
-            setInitialRoute('Login');
-            setIsCheckingAuth(false);
+          
+          // Handle expiration errors
+          if (error.isExpirationError) {
+            Alert.alert(
+              'Account Expired',
+              errorMessage,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    if (isCheckingAuth) {
+                      setInitialRoute('Login');
+                      setIsCheckingAuth(false);
+                    }
+                  },
+                },
+              ]
+            );
+          } else {
+            // For other errors, just log
+            console.error('Error details:', errorMessage);
+            // Still set initial route to Login on error
+            if (isCheckingAuth) {
+              setInitialRoute('Login');
+              setIsCheckingAuth(false);
+            }
           }
         }
       } else {
@@ -233,6 +273,22 @@ export default function RootLayout() {
           component={ConversationalAI}
           options={{
             title: 'Conversational AI',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="Admin" 
+          component={Admin}
+          options={{
+            title: 'Admin',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="ActivityLog" 
+          component={ActivityLog}
+          options={{
+            title: 'Activity Log',
             headerShown: true,
           }}
         />

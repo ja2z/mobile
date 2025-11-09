@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { AuthService } from '../../services/AuthService';
+import { ActivityService } from '../../services/ActivityService';
 import { ProfileMenu } from '../../components/ProfileMenu';
 import type { RootStackParamList } from '../_layout';
 
@@ -221,9 +222,16 @@ export default function Home() {
     expandTile(tile);
   };
 
-  const handleLaunchPress = () => {
+  const handleLaunchPress = async () => {
     if (selectedTile && selectedTile.onPress) {
       collapseTile();
+      
+      // Log applet launch
+      await ActivityService.logActivity('applet_launch', {
+        appletId: selectedTile.id,
+        appletName: selectedTile.title,
+      });
+      
       // Delay navigation to allow animation to complete
       setTimeout(() => {
         selectedTile.onPress?.();

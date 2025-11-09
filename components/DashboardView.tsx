@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Animated, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
@@ -258,8 +258,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         fetchUrl();
       }, refreshTimeout);
       
-    } catch (err) {
+    } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard URL';
+      
+      // Handle expiration errors
+      if (err.isExpirationError) {
+        Alert.alert(
+          'Account Expired',
+          errorMessage,
+          [{ text: 'OK' }]
+        );
+        setError(errorMessage);
+        return;
+      }
       
       // Log detailed error information for debugging
       if (err instanceof Error) {

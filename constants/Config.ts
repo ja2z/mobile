@@ -8,6 +8,7 @@ export const Config = {
   API: {
     EMBED_URL_ENDPOINT: 'https://3x4hwcq05f.execute-api.us-west-2.amazonaws.com/v1/generateSigmaEmbedURL',
     AUTH_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/auth',
+    ADMIN_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/admin',
   },
   
   // App configuration
