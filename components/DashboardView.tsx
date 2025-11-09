@@ -14,6 +14,9 @@ export interface DashboardViewRef {
   sendMessage: (message: any) => void;
   getUrl: () => string | null;
   getJWT: () => string | null;
+  sendChatPrompt: (prompt: string) => void;
+  onChatOpen: (callback: (sessionId: string) => void) => void;
+  onChatResponse: (callback: (response: any) => void) => void;
 }
 
 /**
@@ -83,6 +86,10 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const [fetchingUrl, setFetchingUrl] = useState(true);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webViewRef = useRef<WebView>(null);
+  
+  // Chat-related callback refs
+  const chatOpenCallbackRef = useRef<((sessionId: string) => void) | null>(null);
+  const chatResponseCallbackRef = useRef<((response: any) => void) | null>(null);
 
   /**
    * Send a message to the embedded iframe
@@ -156,11 +163,45 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     console.log('✅ JavaScript injected');
   };
 
+  /**
+   * Send a chat prompt to the Sigma workbook
+   * Updates the p_bubble_chat_bot_prompt variable which triggers the onLoad plugin
+   */
+  const sendChatPrompt = (prompt: string) => {
+    console.log('🚀 Sending chat prompt to Sigma:', prompt);
+    
+    const message = {
+      type: 'workbook:variables:update',
+      variables: {
+        'p_bubble_chat_bot_prompt': prompt,
+      },
+    };
+    
+    sendMessage(message);
+  };
+
+  /**
+   * Register callback for when chat should open (sessionId change)
+   */
+  const onChatOpen = (callback: (sessionId: string) => void) => {
+    chatOpenCallbackRef.current = callback;
+  };
+
+  /**
+   * Register callback for when chat response is received
+   */
+  const onChatResponse = (callback: (response: any) => void) => {
+    chatResponseCallbackRef.current = callback;
+  };
+
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     sendMessage,
     getUrl: () => url,
     getJWT: () => jwt,
+    sendChatPrompt,
+    onChatOpen,
+    onChatResponse,
   }));
 
   /**
@@ -280,6 +321,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   /**
    * Handle postMessage events from the embedded dashboard
    * Listens for 'workbook:loaded' event to hide loading overlay
+   * Also handles chat-related messages (sessionId changes, chat responses)
    */
   const handleMessage = (event: any) => {
     console.log('🔔 ===== POSTMESSAGE RECEIVED =====');
@@ -301,6 +343,50 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         console.log('📊 Workbook variables:', data.workbook?.variables || 'none');
         setWorkbookLoaded(true);
         setLoading(false);
+      } else if (data.type === 'chat:open') {
+        // Handle sessionId change - open native chat modal
+        console.log('💬 Chat open requested with sessionId:', data.sessionId);
+        if (chatOpenCallbackRef.current && data.sessionId) {
+          chatOpenCallbackRef.current(data.sessionId);
+        }
+      } else if (data.type === 'chat:response') {
+        // Handle chat response from Sigma workbook
+        console.log('💬 Chat response received:', data.message);
+        if (chatResponseCallbackRef.current && data.message) {
+          chatResponseCallbackRef.current(data.message);
+        }
+      } else if (data.type === 'workbook:variables:onchange') {
+        // Handle variable changes - check for sessionId and chat response
+        console.log('📊 Variable changes detected:', data);
+        
+        const variables = data.workbook?.variables || {};
+        
+        // Check for sessionId change (opens chat modal)
+        if (variables['p_bubble_session_id']) {
+          console.log('💬 SessionId changed to:', variables['p_bubble_session_id']);
+          if (chatOpenCallbackRef.current) {
+            chatOpenCallbackRef.current(String(variables['p_bubble_session_id']));
+          }
+        }
+        
+        // Check for chat response (AI message)
+        if (variables['p_bubble_chat_bot_response']) {
+          const rawContent = String(variables['p_bubble_chat_bot_response']);
+          console.log('💬 Chat response received from variable (RAW):', rawContent);
+          console.log('💬 First 200 chars:', rawContent.substring(0, 200));
+          console.log('💬 Contains %:', rawContent.includes('%'));
+          
+          if (chatResponseCallbackRef.current) {
+            // Convert to the expected message format
+            const responseMessage = {
+              id: `assistant-${Date.now()}`,
+              content: rawContent,
+              sender: 'assistant',
+              timestamp: new Date().toISOString(),
+            };
+            chatResponseCallbackRef.current(responseMessage);
+          }
+        }
       } else {
         console.log(`ℹ️  Received different message type: ${data.type}`);
       }
