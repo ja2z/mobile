@@ -42,4 +42,15 @@ export const Config = {
     // Override with EXPO_PUBLIC_AUTH_LINK_TYPE=direct in .env.local for Expo Go testing
     LINK_TYPE: (process.env.EXPO_PUBLIC_AUTH_LINK_TYPE || 'universal') as 'direct' | 'universal',
   },
+  
+  // Chat configuration
+  CHAT: {
+    // Variable names in Sigma workbook
+    PROMPT_VARIABLE: 'p_bubble_chat_bot_prompt',
+    RESPONSE_VARIABLE: 'p_bubble_chat_bot_response',
+    SESSION_ID_VARIABLE: 'p_bubble_session_id',
+    
+    // Timeout for waiting for response from Sigma (in milliseconds)
+    RESPONSE_TIMEOUT: 30000, // 30 seconds
+  },
 } as const;
