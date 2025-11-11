@@ -211,11 +211,17 @@ async function handleListUsers(params: any, adminUser: any) {
  */
 async function handleGetUser(userId: string, adminUser: any) {
   try {
-    const user = await getUserProfile(userId);
-    
-    if (!user) {
+    // Fetch user directly from DynamoDB to get all fields
+    const result = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+    }));
+
+    if (!result.Item) {
       return createResponse(404, { error: 'User not found' });
     }
+
+    const user = result.Item as any;
 
     return createResponse(200, {
       userId: user.userId,
@@ -666,8 +672,13 @@ async function getJWTSecret(): Promise<string> {
     SecretId: JWT_SECRET_NAME
   }));
 
-  jwtSecret = result.SecretString || '';
-  return jwtSecret;
+  const secret = result.SecretString;
+  if (!secret) {
+    throw new Error('JWT secret is empty');
+  }
+  
+  jwtSecret = secret;
+  return secret;
 }
 
 /**

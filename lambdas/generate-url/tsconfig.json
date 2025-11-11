@@ -11,7 +11,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-    "types": ["node", "aws-lambda"]
+    "types": ["node"],
+    "noResolve": false
   },
   "include": ["index.ts", "../shared/**/*.ts"],
   "exclude": ["node_modules", "dist"]

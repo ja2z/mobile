@@ -85,17 +85,71 @@ aws iam put-role-policy \
 
 ### For generate-url Lambda
 
+**Note:** The actual role name may vary. To find it, run:
+```bash
+aws lambda get-function-configuration \
+  --function-name generateSigmaEmbedURL \
+  --region us-west-2 \
+  --query 'Role' \
+  --output text
+```
+Extract the role name from the ARN (e.g., `generateSigmaEmbedURL-role-6yynxf12`).
+
+To find the policy name:
+```bash
+aws iam list-role-policies \
+  --role-name generateSigmaEmbedURL-role-6yynxf12 \
+  --region us-west-2
+```
+
+**Update the SecretsManagerAccess policy to include DynamoDB permissions:**
+
 ```bash
 # Get current policy
 aws iam get-role-policy \
-  --role-name generate-url-lambda-role \
-  --policy-name generate-url-lambda-policy \
+  --role-name generateSigmaEmbedURL-role-6yynxf12 \
+  --policy-name SecretsManagerAccess \
   --region us-west-2 > current-policy.json
 
-# Edit the policy JSON to add mobile-user-activity permissions, then:
+# Create updated policy with DynamoDB permissions added
+# The updated-policy.json should include both Secrets Manager and DynamoDB permissions:
+cat > updated-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:us-west-2:*:secret:mobile-app/jwt-secret*",
+        "arn:aws:secretsmanager:us-west-2:*:secret:sigma/jwt-secret*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-west-2:*:table/mobile-users",
+        "arn:aws:dynamodb:us-west-2:*:table/mobile-users/index/*",
+        "arn:aws:dynamodb:us-west-2:*:table/mobile-user-activity",
+        "arn:aws:dynamodb:us-west-2:*:table/mobile-user-activity/index/*"
+      ]
+    }
+  ]
+}
+EOF
+
+# Update the policy
 aws iam put-role-policy \
-  --role-name generate-url-lambda-role \
-  --policy-name generate-url-lambda-policy \
+  --role-name generateSigmaEmbedURL-role-6yynxf12 \
+  --policy-name SecretsManagerAccess \
   --policy-document file://updated-policy.json \
   --region us-west-2
 ```
