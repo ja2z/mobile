@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "package": "npm run build && cp dist/index.js index.js && zip -r generateSigmaEmbedURL.zip node_modules index.js && rm index.js",
+    "package": "./build-lambda.sh",
     "deploy": "npm run package && aws lambda update-function-code --function-name generateSigmaEmbedURL --zip-file fileb://generateSigmaEmbedURL.zip"
   },
   "dependencies": {

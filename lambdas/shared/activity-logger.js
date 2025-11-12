@@ -88,8 +88,15 @@ async function updateLastActiveTime(userId) {
  */
 async function logActivityAndUpdateLastActive(eventType, userId, email, metadata = {}, deviceId, ipAddress) {
     // Log activity and update last active time in parallel
+    // Wrap each in a promise that always resolves to ensure Promise.all never rejects
     await Promise.all([
-        logActivity(eventType, userId, email, metadata, deviceId, ipAddress),
-        updateLastActiveTime(userId),
+        logActivity(eventType, userId, email, metadata, deviceId, ipAddress).catch((error) => {
+            console.error('Error in logActivity (caught in Promise.all):', error);
+            // Return void to ensure Promise.all doesn't reject
+        }),
+        updateLastActiveTime(userId).catch((error) => {
+            console.error('Error in updateLastActiveTime (caught in Promise.all):', error);
+            // Return void to ensure Promise.all doesn't reject
+        }),
     ]);
 }

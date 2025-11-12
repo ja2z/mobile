@@ -280,7 +280,14 @@ export const handler = async (event: any) => {
         }
 
         // Check if user is deactivated
-        const isDeactivated = await checkUserDeactivated(userId);
+        let isDeactivated = false;
+        try {
+            isDeactivated = await checkUserDeactivated(userId);
+        } catch (validationError: any) {
+            console.error('Error checking if user is deactivated:', validationError);
+            // If validation fails, allow the request to proceed (fail open for availability)
+            // Log the error for investigation
+        }
         if (isDeactivated) {
             return {
                 statusCode: 403,
@@ -297,7 +304,14 @@ export const handler = async (event: any) => {
         }
 
         // Check user expiration
-        const expirationCheck = await validateUserExpiration(userId, sessionPayload.exp);
+        let expirationCheck: any = { expired: false };
+        try {
+            expirationCheck = await validateUserExpiration(userId, sessionPayload.exp);
+        } catch (validationError: any) {
+            console.error('Error validating user expiration:', validationError);
+            // If validation fails, allow the request to proceed (fail open for availability)
+            // Log the error for investigation
+        }
         if (expirationCheck.expired) {
             return {
                 statusCode: 403,
@@ -372,20 +386,26 @@ export const handler = async (event: any) => {
         // Construct the full embedding URL
         const embeddingUrl = `https://app.sigmacomputing.com/${embedPath}/${workbookId}?:jwt=${jwtToken}&:embed=true&:menu_position=none`;
         
-        // Log activity and update last active time
+        // Log activity and update last active time (don't let failures break the main flow)
         const ipAddress = getIpAddress(event);
-        await logActivityAndUpdateLastActive(
-            'applet_launch',
-            userId,
-            userEmail,
-            {
-                workbookId: workbookId || 'default',
-                embedPath,
-                merchantId
-            },
-            deviceId,
-            ipAddress
-        );
+        try {
+            await logActivityAndUpdateLastActive(
+                'applet_launch',
+                userId,
+                userEmail,
+                {
+                    workbookId: workbookId || 'default',
+                    embedPath,
+                    merchantId
+                },
+                deviceId,
+                ipAddress
+            );
+        } catch (activityError: any) {
+            // Log the error but don't fail the request - activity logging is non-critical
+            console.error('Failed to log activity:', activityError?.statusCode || activityError?.message || activityError);
+            // Continue with the response even if activity logging failed
+        }
         
         console.log('Returning success response');
         // Return success response
@@ -410,6 +430,13 @@ export const handler = async (event: any) => {
         console.error('❌ Error stack:', error.stack);
         console.error('❌ Error name:', error.name);
         console.error('❌ Error message:', error.message);
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error statusCode:', error.statusCode);
+        
+        // Log additional context for debugging
+        if (error.$metadata) {
+            console.error('❌ AWS SDK metadata:', JSON.stringify(error.$metadata, null, 2));
+        }
         
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         
@@ -424,7 +451,9 @@ export const handler = async (event: any) => {
                 error: errorMessage,
                 details: error instanceof Error ? {
                     name: error.name,
-                    message: error.message
+                    message: error.message,
+                    code: (error as any).code,
+                    statusCode: (error as any).statusCode
                 } : undefined
             })
         };

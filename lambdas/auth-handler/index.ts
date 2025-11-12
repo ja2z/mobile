@@ -40,13 +40,16 @@ let apiKey: string | null = null;
  * Main Lambda handler - routes to appropriate function based on path
  */
 export const handler = async (event: any) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
+  console.log('[handler] ========== LAMBDA INVOCATION START ==========');
+  console.log('[handler] Received event:', JSON.stringify(event, null, 2));
+  console.log('[handler] Event type:', typeof event);
+  console.log('[handler] Event keys:', Object.keys(event || {}));
 
   try {
     let path = event.path || event.rawPath;
     const method = event.httpMethod || event.requestContext?.http?.method;
 
-    console.log(`Original path: ${path}, method: ${method}`);
+    console.log('[handler] Original path:', path, 'method:', method);
 
     // Normalize path - API Gateway with AWS_PROXY does NOT include stage name in path
     // If resources are at /auth/... level, path will be /auth/...
@@ -67,12 +70,24 @@ export const handler = async (event: any) => {
     // Parse body for POST requests
     let body = {};
     if (method === 'POST' && event.body) {
-      body = JSON.parse(event.body);
+      console.log('[handler] Parsing request body, body type:', typeof event.body);
+      try {
+        body = JSON.parse(event.body);
+        console.log('[handler] Parsed body:', JSON.stringify(body));
+      } catch (parseError) {
+        console.error('[handler] Error parsing body:', parseError);
+        console.error('[handler] Body content:', event.body);
+        return createResponse(400, { error: 'Invalid JSON in request body' });
+      }
     }
 
     // Route to appropriate handler
+    console.log('[handler] Routing to handler, path:', path, 'method:', method);
     if (path === '/v1/auth/request-magic-link' && method === 'POST') {
-      return await handleRequestMagicLink(body, event);
+      console.log('[handler] Routing to handleRequestMagicLink');
+      const response = await handleRequestMagicLink(body, event);
+      console.log('[handler] handleRequestMagicLink returned, status:', response.statusCode);
+      return response;
     } else if (path === '/v1/auth/send-to-mobile' && method === 'POST') {
       return await handleSendToMobile(body, event);
     } else if (path === '/v1/auth/verify-magic-link' && method === 'POST') {
@@ -84,7 +99,16 @@ export const handler = async (event: any) => {
       return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
     }
   } catch (error) {
-    console.error('Unhandled error:', error);
+    console.error('[handler] ========== UNHANDLED ERROR IN MAIN HANDLER ==========');
+    console.error('[handler] Error type:', typeof error);
+    console.error('[handler] Error:', error);
+    console.error('[handler] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handler] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handler] Error name:', error.name);
+      console.error('[handler] Error code:', (error as any).code);
+    }
+    console.error('[handler] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return createResponse(500, { 
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error'
@@ -105,81 +129,195 @@ function getIpAddress(event: any): string | undefined {
  * Handle email magic link request (self-service registration)
  */
 async function handleRequestMagicLink(body: any, event?: any) {
-  const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
+  console.log('[handleRequestMagicLink] Starting magic link request');
+  console.log('[handleRequestMagicLink] Body:', JSON.stringify(body));
+  console.log('[handleRequestMagicLink] Event keys:', Object.keys(event || {}));
+  
+  try {
+    const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
+    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType);
 
-  // Validate input
-  if (!email || !isValidEmail(email)) {
-    // Log failed login attempt
-    const ipAddress = event ? getIpAddress(event) : undefined;
-    await logActivity('failed_login', 'unknown', email, {
-      reason: 'Invalid email format',
-      sourceFlow: 'email'
-    }, undefined, ipAddress);
+    // Validate input
+    if (!email || !isValidEmail(email)) {
+      console.log('[handleRequestMagicLink] Invalid email format:', email);
+      // Log failed login attempt (don't let failures break the flow)
+      try {
+        const ipAddress = event ? getIpAddress(event) : undefined;
+        console.log('[handleRequestMagicLink] Logging failed login attempt, IP:', ipAddress);
+        await logActivity('failed_login', 'unknown', email, {
+          reason: 'Invalid email format',
+          sourceFlow: 'email'
+        }, undefined, ipAddress);
+        console.log('[handleRequestMagicLink] Failed login activity logged successfully');
+      } catch (activityError) {
+        console.error('[handleRequestMagicLink] Failed to log activity:', activityError);
+        console.error('[handleRequestMagicLink] Activity error stack:', activityError instanceof Error ? activityError.stack : 'No stack');
+      }
+      
+      return createResponse(400, { error: 'Valid email is required' });
+    }
+
+    // Validate linkType
+    if (linkType !== 'direct' && linkType !== 'universal') {
+      console.log('[handleRequestMagicLink] Invalid linkType:', linkType);
+      return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
+    }
+
+    const emailLower = email.toLowerCase();
+    console.log('[handleRequestMagicLink] Normalized email:', emailLower);
+
+    // Check if email is approved
+    console.log('[handleRequestMagicLink] Checking if email is approved...');
+    let isApproved = false;
+    try {
+      isApproved = await isEmailApproved(emailLower);
+      console.log('[handleRequestMagicLink] Email approval check result:', isApproved);
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error checking email approval:', error);
+      console.error('[handleRequestMagicLink] Approval check error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] Approval check error stack:', error instanceof Error ? error.stack : 'No stack');
+      // Fail closed - if we can't check approval, don't allow access
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: 'Unable to verify email approval. Please try again later.'
+      });
+    }
+
+    if (!isApproved) {
+      console.log('[handleRequestMagicLink] Email not approved:', emailLower);
+      // Log failed login attempt (don't let failures break the flow)
+      try {
+        const ipAddress = event ? getIpAddress(event) : undefined;
+        console.log('[handleRequestMagicLink] Logging failed login (not approved), IP:', ipAddress);
+        await logActivity('failed_login', 'unknown', emailLower, {
+          reason: 'Email not approved',
+          sourceFlow: 'email'
+        }, undefined, ipAddress);
+        console.log('[handleRequestMagicLink] Failed login activity logged successfully');
+      } catch (activityError) {
+        console.error('[handleRequestMagicLink] Failed to log activity:', activityError);
+        console.error('[handleRequestMagicLink] Activity error stack:', activityError instanceof Error ? activityError.stack : 'No stack');
+      }
+      
+      return createResponse(403, { 
+        error: 'Email not approved',
+        message: 'This email is not approved for access. Please contact your administrator.'
+      });
+    }
+
+    // Generate magic link token
+    // Note: Don't create user profile here - only create after successful authentication
+    console.log('[handleRequestMagicLink] Generating magic link token...');
+    const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
+    console.log('[handleRequestMagicLink] Generated tokenId:', tokenId);
     
-    return createResponse(400, { error: 'Valid email is required' });
-  }
-
-  // Validate linkType
-  if (linkType !== 'direct' && linkType !== 'universal') {
-    return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
-  }
-
-  const emailLower = email.toLowerCase();
-
-  // Check if email is approved
-  const isApproved = await isEmailApproved(emailLower);
-  if (!isApproved) {
-    // Log failed login attempt
-    const ipAddress = event ? getIpAddress(event) : undefined;
-    await logActivity('failed_login', 'unknown', emailLower, {
-      reason: 'Email not approved',
-      sourceFlow: 'email'
-    }, undefined, ipAddress);
+    // Generate temporary userId for token (will be replaced with actual userId during verification)
+    console.log('[handleRequestMagicLink] Getting userId for email...');
+    let tempUserId: string;
+    try {
+      tempUserId = await getUserIdForEmail(emailLower);
+      console.log('[handleRequestMagicLink] Retrieved tempUserId:', tempUserId);
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error getting userId for email:', error);
+      console.error('[handleRequestMagicLink] getUserIdForEmail error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] getUserIdForEmail error stack:', error instanceof Error ? error.stack : 'No stack');
+      // Generate a temporary userId if lookup fails
+      tempUserId = `usr_${randomBytes(8).toString('hex')}`;
+      console.log('[handleRequestMagicLink] Generated fallback tempUserId:', tempUserId);
+    }
     
-    return createResponse(403, { 
-      error: 'Email not approved',
-      message: 'This email is not approved for access. Please contact your administrator.'
+    if (!tempUserId) {
+      console.error('[handleRequestMagicLink] CRITICAL: tempUserId is undefined!');
+      throw new Error('tempUserId is undefined after getUserIdForEmail');
+    }
+    
+    const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
+    console.log('[handleRequestMagicLink] Token expiresAt:', expiresAt);
+
+    // Store token in DynamoDB
+    console.log('[handleRequestMagicLink] Storing token in DynamoDB, table:', TOKENS_TABLE);
+    try {
+      const tokenItem = {
+        tokenId,
+        tokenType: 'magic_link',
+        email: emailLower,
+        userId: tempUserId,
+        deviceId: null,
+        createdAt: Math.floor(Date.now() / 1000),
+        expiresAt,
+        used: false,
+        usedAt: null,
+        sessionJWT: null,
+        metadata: {
+          sourceFlow: 'email'
+        }
+      };
+      console.log('[handleRequestMagicLink] Token item to store:', JSON.stringify(tokenItem));
+      
+      await docClient.send(new PutCommand({
+        TableName: TOKENS_TABLE,
+        Item: tokenItem
+      }));
+      console.log('[handleRequestMagicLink] Token stored successfully in DynamoDB');
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error storing token in DynamoDB:', error);
+      console.error('[handleRequestMagicLink] DynamoDB error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] DynamoDB error stack:', error instanceof Error ? error.stack : 'No stack');
+      if (error instanceof Error) {
+        console.error('[handleRequestMagicLink] DynamoDB error name:', error.name);
+        console.error('[handleRequestMagicLink] DynamoDB error code:', (error as any).code);
+      }
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: 'Failed to create magic link. Please try again later.'
+      });
+    }
+
+    // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
+    // The redirect page will convert to bigbuys:// scheme for the app
+    console.log('[handleRequestMagicLink] Building redirect URL...');
+    const magicLink = buildRedirectUrl(tokenId, null);
+    console.log('[handleRequestMagicLink] Generated magic link:', magicLink);
+    
+    console.log('[handleRequestMagicLink] Sending magic link email...');
+    try {
+      await sendMagicLinkEmail(emailLower, magicLink);
+      console.log('[handleRequestMagicLink] Magic link email sent successfully');
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error sending magic link email:', error);
+      console.error('[handleRequestMagicLink] Email error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] Email error stack:', error instanceof Error ? error.stack : 'No stack');
+      if (error instanceof Error) {
+        console.error('[handleRequestMagicLink] Email error name:', error.name);
+        console.error('[handleRequestMagicLink] Email error code:', (error as any).code);
+      }
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: 'Failed to send magic link email. Please try again later.'
+      });
+    }
+
+    console.log('[handleRequestMagicLink] Magic link request completed successfully');
+    return createResponse(200, {
+      success: true,
+      message: 'Magic link sent to your email',
+      expiresIn: 900
+    });
+  } catch (error: any) {
+    console.error('[handleRequestMagicLink] UNEXPECTED ERROR:', error);
+    console.error('[handleRequestMagicLink] Error type:', typeof error);
+    console.error('[handleRequestMagicLink] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleRequestMagicLink] Error stack:', error?.stack);
+    if (error instanceof Error) {
+      console.error('[handleRequestMagicLink] Error name:', error.name);
+      console.error('[handleRequestMagicLink] Error code:', (error as any).code);
+    }
+    console.error('[handleRequestMagicLink] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'An unexpected error occurred. Please try again later.'
     });
   }
-
-  // Generate magic link token
-  // Note: Don't create user profile here - only create after successful authentication
-  const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
-  // Generate temporary userId for token (will be replaced with actual userId during verification)
-  const tempUserId = await getUserIdForEmail(emailLower);
-  const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
-
-  // Store token in DynamoDB
-  await docClient.send(new PutCommand({
-    TableName: TOKENS_TABLE,
-    Item: {
-      tokenId,
-      tokenType: 'magic_link',
-      email: emailLower,
-      userId: tempUserId,
-      deviceId: null,
-      createdAt: Math.floor(Date.now() / 1000),
-      expiresAt,
-      used: false,
-      usedAt: null,
-      sessionJWT: null,
-      metadata: {
-        sourceFlow: 'email'
-      }
-    }
-  }));
-
-  // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
-  // The redirect page will convert to bigbuys:// scheme for the app
-  const magicLink = buildRedirectUrl(tokenId, null);
-  
-  await sendMagicLinkEmail(emailLower, magicLink);
-
-  return createResponse(200, {
-    success: true,
-    message: 'Magic link sent to your email',
-    expiresIn: 900
-  });
 }
 
 /**
@@ -591,34 +729,50 @@ async function handleRefreshToken(body: any, event: any) {
  * Check if email is approved for access
  */
 async function isEmailApproved(email: string): Promise<boolean> {
+  console.log('[isEmailApproved] Checking approval for email:', email);
   const emailLower = email.toLowerCase();
 
   // Auto-approve Sigma emails
   if (emailLower.endsWith('@sigmacomputing.com')) {
+    console.log('[isEmailApproved] Email is Sigma domain, auto-approved');
     return true;
   }
 
   // Check approved emails table
+  console.log('[isEmailApproved] Checking approved emails table:', APPROVED_EMAILS_TABLE);
   try {
     const result = await docClient.send(new GetCommand({
       TableName: APPROVED_EMAILS_TABLE,
       Key: { email: emailLower }
     }));
 
+    console.log('[isEmailApproved] DynamoDB query result:', result.Item ? 'Found item' : 'No item found');
+
     if (!result.Item) {
+      console.log('[isEmailApproved] Email not found in approved emails table');
       return false;
     }
 
     // Check if approval has expiration date
     if (result.Item.expiresAt) {
       const now = Math.floor(Date.now() / 1000);
-      return now < result.Item.expiresAt;
+      const isNotExpired = now < result.Item.expiresAt;
+      console.log('[isEmailApproved] Email has expiration date:', result.Item.expiresAt, 'now:', now, 'isNotExpired:', isNotExpired);
+      return isNotExpired;
     }
 
+    console.log('[isEmailApproved] Email approved (no expiration)');
     return true;
   } catch (error) {
-    console.error('Error checking email approval:', error);
-    return false;
+    console.error('[isEmailApproved] Error checking email approval:', error);
+    console.error('[isEmailApproved] Error details:', error instanceof Error ? error.message : String(error));
+    console.error('[isEmailApproved] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[isEmailApproved] Error name:', error.name);
+      console.error('[isEmailApproved] Error code:', (error as any).code);
+    }
+    // Re-throw to let caller handle it
+    throw error;
   }
 }
 
@@ -743,21 +897,44 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
  * Try to find existing userId from tokens, otherwise generate a temporary one
  */
 async function getUserIdForEmail(email: string): Promise<string> {
-  // Query for existing sessions/tokens for this email to get userId
-  const result = await docClient.send(new QueryCommand({
-    TableName: TOKENS_TABLE,
-    IndexName: 'email-index',
-    KeyConditionExpression: 'email = :email',
-    ExpressionAttributeValues: { ':email': email.toLowerCase() },
-    Limit: 1
-  }));
+  console.log('[getUserIdForEmail] Looking up userId for email:', email);
+  console.log('[getUserIdForEmail] Using TOKENS_TABLE:', TOKENS_TABLE);
+  
+  try {
+    // Query for existing sessions/tokens for this email to get userId
+    console.log('[getUserIdForEmail] Querying DynamoDB with email-index...');
+    const result = await docClient.send(new QueryCommand({
+      TableName: TOKENS_TABLE,
+      IndexName: 'email-index',
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: { ':email': email.toLowerCase() },
+      Limit: 1
+    }));
 
-  if (result.Items && result.Items.length > 0) {
-    return result.Items[0].userId;
+    console.log('[getUserIdForEmail] Query result items count:', result.Items?.length || 0);
+
+    if (result.Items && result.Items.length > 0) {
+      const userId = result.Items[0].userId;
+      console.log('[getUserIdForEmail] Found existing userId:', userId);
+      return userId;
+    }
+    
+    console.log('[getUserIdForEmail] No existing tokens found, will generate new userId');
+  } catch (error) {
+    console.error('[getUserIdForEmail] Error querying for userId by email:', error);
+    console.error('[getUserIdForEmail] Error details:', error instanceof Error ? error.message : String(error));
+    console.error('[getUserIdForEmail] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[getUserIdForEmail] Error name:', error.name);
+      console.error('[getUserIdForEmail] Error code:', (error as any).code);
+    }
+    // Fall through to generate new userId
   }
 
   // No existing tokens - generate temporary userId (will be replaced during verification)
-  return `usr_${randomBytes(8).toString('hex')}`;
+  const newUserId = `usr_${randomBytes(8).toString('hex')}`;
+  console.log('[getUserIdForEmail] Generated new temporary userId:', newUserId);
+  return newUserId;
 }
 
 /**
