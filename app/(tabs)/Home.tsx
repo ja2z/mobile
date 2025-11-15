@@ -43,15 +43,24 @@ export default function Home() {
   const gridOpacity = useRef(new Animated.Value(1)).current;
 
   const handleNavigateToDashboard = () => {
-    navigation.navigate('Dashboard' as never);
+    navigation.navigate('Dashboard' as never, { 
+      appletId: '2', 
+      appletName: 'AOP Exec Dashboard' 
+    } as never);
   };
 
   const handleNavigateToAINewsletter = () => {
-    navigation.navigate('AINewsletter' as never);
+    navigation.navigate('AINewsletter' as never, { 
+      appletId: '3', 
+      appletName: 'AI Newsletter' 
+    } as never);
   };
 
   const handleNavigateToConversationalAI = () => {
-    navigation.navigate('ConversationalAI' as never);
+    navigation.navigate('ConversationalAI' as never, { 
+      appletId: '5', 
+      appletName: 'Conversational AI' 
+    } as never);
   };
 
   const appTiles: AppTile[] = [
@@ -225,12 +234,6 @@ export default function Home() {
   const handleLaunchPress = async () => {
     if (selectedTile && selectedTile.onPress) {
       collapseTile();
-      
-      // Log applet launch
-      await ActivityService.logActivity('applet_launch', {
-        appletId: selectedTile.id,
-        appletName: selectedTile.title,
-      });
       
       // Delay navigation to allow animation to complete
       setTimeout(() => {

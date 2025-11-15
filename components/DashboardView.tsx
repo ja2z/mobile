@@ -8,6 +8,8 @@ import { colors, spacing, typography } from '../constants/Theme';
 
 interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
+  appletId?: string; // Optional applet ID for activity logging
+  appletName?: string; // Optional applet name for activity logging
 }
 
 export interface DashboardViewRef {
@@ -77,7 +79,7 @@ const SkeletonPlaceholder: React.FC = () => {
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId }, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -228,13 +230,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         // Continue without email - lambda will use default
       }
       
-      // Build params object with workbook_id and user_email
-      const params: { workbook_id?: string; user_email?: string } = {};
+      // Build params object with workbook_id, user_email, and applet info
+      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string } = {};
       if (workbookId) {
         params.workbook_id = workbookId;
       }
       if (userEmail) {
         params.user_email = userEmail;
+      }
+      if (appletId) {
+        params.applet_id = appletId;
+      }
+      if (appletName) {
+        params.applet_name = appletName;
       }
       
       console.log('📤 Calling embed URL API with params:', JSON.stringify(params));

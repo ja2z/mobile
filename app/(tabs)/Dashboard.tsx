@@ -1,17 +1,24 @@
 import React, { useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 
+type DashboardRouteProp = RouteProp<RootStackParamList, 'Dashboard'>;
+
 /**
  * Dashboard Page Component
  * Contains the WebView with embedded dashboard content and bottom navigation
  */
 export default function Dashboard() {
+  const route = useRoute<DashboardRouteProp>();
+  const { appletId, appletName } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
   const [selectedPage, setSelectedPage] = useState('nVSaruy7Wf'); // Default to 'Dash'
   const [isFilterActive, setIsFilterActive] = useState(false);
@@ -75,6 +82,8 @@ export default function Dashboard() {
         <DashboardView 
           ref={dashboardRef}
           workbookId={Config.WORKBOOKS.AOP_EXEC_DASHBOARD}
+          appletId={appletId}
+          appletName={appletName}
         />
       </View>
       <NavigationBar

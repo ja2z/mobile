@@ -344,6 +344,8 @@ export const handler = async (event: any) => {
         const workbookId = body.workbook_id;
         const embedPath = body.embed_path || "papercrane-embedding-gcp/workbook";
         const teams = body.teams || ["all_clients_team", "acme_team"];
+        const appletId = body.applet_id;
+        const appletName = body.applet_name;
         
         console.log('Processing request with:', {
             merchantId,
@@ -351,6 +353,8 @@ export const handler = async (event: any) => {
             workbookId,
             embedPath,
             teams,
+            appletId,
+            appletName,
             authenticatedUser: userEmail
         });
         
@@ -389,15 +393,21 @@ export const handler = async (event: any) => {
         // Log activity and update last active time (don't let failures break the main flow)
         const ipAddress = getIpAddress(event);
         try {
+            const activityMetadata: Record<string, any> = {
+                merchantId
+            };
+            if (appletId) {
+                activityMetadata.appletId = appletId;
+            }
+            if (appletName) {
+                activityMetadata.appletName = appletName;
+            }
+            
             await logActivityAndUpdateLastActive(
                 'applet_launch',
                 userId,
                 userEmail,
-                {
-                    workbookId: workbookId || 'default',
-                    embedPath,
-                    merchantId
-                },
+                activityMetadata,
                 deviceId,
                 ipAddress
             );

@@ -102,6 +102,35 @@ export function ActivityLogView() {
     });
   };
 
+  const formatMetadataValue = (key: string, value: any): string => {
+    // Check if this is a date field (key contains "date" or "Date")
+    const isDateField = /date|Date|time|Time|at|At/.test(key);
+    
+    // Check if value is a number that could be a Unix timestamp
+    // Unix timestamps are typically 10 digits (seconds) or 13 digits (milliseconds)
+    if (isDateField && typeof value === 'number') {
+      // Check if it's a reasonable Unix timestamp (between 2000 and 2100)
+      const timestampSeconds = value < 10000000000 ? value : Math.floor(value / 1000);
+      const date = new Date(timestampSeconds * 1000);
+      const year = date.getFullYear();
+      
+      if (year >= 2000 && year <= 2100) {
+        // Format as local date/time
+        return date.toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+      }
+    }
+    
+    // Return as string for non-date values
+    return String(value);
+  };
+
   const getEventTypeLabel = (eventType: string): string => {
     const labels: Record<string, string> = {
       login: 'Login',
@@ -130,7 +159,7 @@ export function ActivityLogView() {
             .filter(([_, value]) => value !== null && value !== undefined)
             .map(([key, value]) => (
               <Text key={key} style={styles.metadataText}>
-                {key}: {String(value)}
+                {key}: {formatMetadataValue(key, value)}
               </Text>
             ))}
         </View>

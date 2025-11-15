@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -27,6 +28,7 @@ export function UserList() {
   const navigation = useNavigation<UserListNavigationProp>();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
@@ -44,9 +46,13 @@ export function UserList() {
     }, [page, emailFilter, sortBy, showDeactivated])
   );
 
-  const loadUsers = async () => {
+  const loadUsers = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       const response = await AdminService.listUsers({
         page,
         limit: 20,
@@ -80,7 +86,12 @@ export function UserList() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    loadUsers(true);
   };
 
   const handleEdit = (user: User) => {
@@ -245,6 +256,14 @@ export function UserList() {
             renderItem={renderUserItem}
             keyExtractor={(item) => item.userId}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No users found</Text>
@@ -343,6 +362,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: spacing.md,
+    flexGrow: 1,
   },
   userItem: {
     flexDirection: 'row',

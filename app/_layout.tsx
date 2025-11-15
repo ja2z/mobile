@@ -25,9 +25,9 @@ export type RootStackParamList = {
   Login: undefined;
   ExpiredLink: { email?: string; errorType?: 'expired' | 'invalid' | 'used' };
   Home: undefined;
-  Dashboard: undefined;
-  AINewsletter: undefined;
-  ConversationalAI: undefined;
+  Dashboard: { appletId?: string; appletName?: string };
+  AINewsletter: { appletId?: string; appletName?: string };
+  ConversationalAI: { appletId?: string; appletName?: string };
   Admin: undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };

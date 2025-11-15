@@ -20,6 +20,8 @@ interface EmbedUrlParams {
   user_email?: string;
   embed_path?: string;
   teams?: string[];
+  applet_id?: string;
+  applet_name?: string;
 }
 
 /**

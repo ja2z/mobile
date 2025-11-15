@@ -160,7 +160,25 @@ export default function AddWhitelistUser() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>Expiration Date</Text>
+        <View style={styles.labelContainer}>
+          <Text style={styles.label}>Account Expiration</Text>
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert(
+                'Account Expiration',
+                'This date serves two purposes:\n\n' +
+                '• Sign-up deadline: User must register before this date\n' +
+                '• Account expiration: If they register, their account expires on this date\n\n' +
+                'If "No expiration" is selected, the user can sign up anytime and their account will never expire.',
+                [{ text: 'Got it', style: 'default' }]
+              );
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           style={styles.checkboxContainer}
           onPress={() => {
@@ -267,22 +285,32 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginLeft: spacing.sm,
   },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+  },
   label: {
     ...typography.body,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
   },
   input: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     backgroundColor: colors.surface,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
     marginBottom: spacing.md,
+    minHeight: 48,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   roleContainer: {
     flexDirection: 'row',
