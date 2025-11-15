@@ -10,6 +10,8 @@ import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
 import Admin from './(tabs)/Admin';
 import ActivityLog from './(tabs)/ActivityLog';
+import EditUser from './(tabs)/EditUser';
+import AddWhitelistUser from './(tabs)/AddWhitelistUser';
 import { Alert } from 'react-native';
 import { colors } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
@@ -24,6 +26,8 @@ export type RootStackParamList = {
   ConversationalAI: undefined;
   Admin: undefined;
   ActivityLog: undefined;
+  EditUser: { user: import('../services/AdminService').User };
+  AddWhitelistUser: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -289,6 +293,22 @@ export default function RootLayout() {
           component={ActivityLog}
           options={{
             title: 'Activity Log',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="EditUser" 
+          component={EditUser}
+          options={{
+            title: 'Edit User',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="AddWhitelistUser" 
+          component={AddWhitelistUser}
+          options={{
+            title: 'Add Whitelist User',
             headerShown: true,
           }}
         />

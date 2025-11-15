@@ -102,9 +102,9 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
   };
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
+    // Always hide the picker after interaction
+    setShowDatePicker(false);
+    
     if (selectedDate) {
       setExpirationDate(selectedDate);
       setNoExpiration(false);
@@ -167,9 +167,16 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
             <TouchableOpacity
               style={styles.checkboxContainer}
               onPress={() => {
-                setNoExpiration(!noExpiration);
-                if (!noExpiration) {
+                const newNoExpiration = !noExpiration;
+                setNoExpiration(newNoExpiration);
+                if (newNoExpiration) {
+                  // If checking "no expiration", clear the date
                   setExpirationDate(null);
+                } else {
+                  // If unchecking "no expiration", initialize with a default date if null
+                  if (!expirationDate) {
+                    setExpirationDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)); // Default to 2 weeks from now
+                  }
                 }
               }}
               activeOpacity={0.7}
@@ -186,7 +193,13 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
               <>
                 <TouchableOpacity
                   style={styles.dateButton}
-                  onPress={() => setShowDatePicker(true)}
+                  onPress={() => {
+                    // Ensure we have a valid date before showing picker
+                    if (!expirationDate) {
+                      setExpirationDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
+                    }
+                    setShowDatePicker(true);
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.dateButtonText}>
@@ -196,13 +209,25 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
                 </TouchableOpacity>
 
                 {showDatePicker && (
-                  <DateTimePicker
-                    value={expirationDate || new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={handleDateChange}
-                    minimumDate={new Date()}
-                  />
+                  <View style={styles.datePickerWrapper}>
+                    <DateTimePicker
+                      value={expirationDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      onChange={handleDateChange}
+                      minimumDate={new Date()}
+                      style={Platform.OS === 'ios' ? styles.iosDatePicker : undefined}
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={styles.doneButton}
+                        onPress={() => setShowDatePicker(false)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.doneButtonText}>Done</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 )}
               </>
             )}
@@ -339,6 +364,26 @@ const styles = StyleSheet.create({
   dateButtonText: {
     ...typography.body,
     color: colors.textPrimary,
+  },
+  datePickerWrapper: {
+    marginBottom: spacing.md,
+  },
+  iosDatePicker: {
+    width: '100%',
+    height: 200,
+  },
+  doneButton: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-end',
+  },
+  doneButtonText: {
+    ...typography.body,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   deactivatedWarning: {
     flexDirection: 'row',

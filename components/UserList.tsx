@@ -10,12 +10,11 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService, type User } from '../services/AdminService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
-import { EditUserModal } from './EditUserModal';
 import type { RootStackParamList } from '../app/_layout';
 
 type UserListNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -33,12 +32,17 @@ export function UserList() {
   const [emailFilter, setEmailFilter] = useState('');
   const [sortBy, setSortBy] = useState<'email' | 'createdAt' | 'lastActiveAt'>('createdAt');
   const [showDeactivated, setShowDeactivated] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [editModalVisible, setEditModalVisible] = useState(false);
 
   useEffect(() => {
     loadUsers();
   }, [page, emailFilter, sortBy, showDeactivated]);
+
+  // Refresh when screen comes into focus (e.g., returning from EditUser)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUsers();
+    }, [page, emailFilter, sortBy, showDeactivated])
+  );
 
   const loadUsers = async () => {
     try {
@@ -80,8 +84,7 @@ export function UserList() {
   };
 
   const handleEdit = (user: User) => {
-    setSelectedUser(user);
-    setEditModalVisible(true);
+    navigation.navigate('EditUser' as never, { user } as never);
   };
 
   const handleDeactivate = (user: User) => {
@@ -127,11 +130,6 @@ export function UserList() {
     );
   };
 
-  const handleUserUpdated = () => {
-    setEditModalVisible(false);
-    setSelectedUser(null);
-    loadUsers();
-  };
 
   const formatDate = (timestamp?: number): string => {
     if (!timestamp) return 'Never';
@@ -277,19 +275,6 @@ export function UserList() {
             </TouchableOpacity>
           </View>
         </>
-      )}
-
-      {/* Edit User Modal */}
-      {selectedUser && (
-        <EditUserModal
-          visible={editModalVisible}
-          user={selectedUser}
-          onClose={() => {
-            setEditModalVisible(false);
-            setSelectedUser(null);
-          }}
-          onUserUpdated={handleUserUpdated}
-        />
       )}
     </View>
   );

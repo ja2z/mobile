@@ -9,12 +9,11 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService, type WhitelistUser } from '../services/AdminService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
-import { AddWhitelistUserModal } from './AddWhitelistUserModal';
 import type { RootStackParamList } from '../app/_layout';
 
 type WhitelistListNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -27,11 +26,17 @@ export function WhitelistList() {
   const navigation = useNavigation<WhitelistListNavigationProp>();
   const [whitelistUsers, setWhitelistUsers] = useState<WhitelistUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
     loadWhitelist();
   }, []);
+
+  // Refresh when screen comes into focus (e.g., returning from AddWhitelistUser)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadWhitelist();
+    }, [])
+  );
 
   const loadWhitelist = async () => {
     try {
@@ -210,7 +215,7 @@ export function WhitelistList() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => setAddModalVisible(true)}
+          onPress={() => navigation.navigate('AddWhitelistUser' as never)}
           activeOpacity={0.7}
         >
           <Ionicons name="add" size={20} color="#FFFFFF" />
@@ -236,13 +241,6 @@ export function WhitelistList() {
           }
         />
       )}
-
-      {/* Add Whitelist User Modal */}
-      <AddWhitelistUserModal
-        visible={addModalVisible}
-        onClose={() => setAddModalVisible(false)}
-        onUserAdded={loadWhitelist}
-      />
     </View>
   );
 }
