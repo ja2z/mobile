@@ -152,10 +152,7 @@ export default function Login() {
                     keyboardType="default"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    autoComplete="username"
-                    multiline={false}
-                    numberOfLines={1}
-                    scrollEnabled={false}
+                    autoComplete="off"
                     textAlignVertical="center"
                   />
                 </View>
@@ -177,9 +174,6 @@ export default function Login() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     autoComplete="off"
-                    multiline={false}
-                    numberOfLines={1}
-                    scrollEnabled={false}
                     textAlignVertical="center"
                   />
                 </View>
@@ -322,21 +316,18 @@ const styles = StyleSheet.create({
   usernameWrapper: {
     width: '30%',
     backgroundColor: 'transparent',
-    overflow: 'hidden',
-    flexShrink: 1,
-    height: 52,
-    maxHeight: 52,
-    justifyContent: 'center',
   },
   usernameInput: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     color: colors.textPrimary,
-    padding: 0,
     paddingHorizontal: spacing.sm,
     paddingRight: spacing.xs,
-    margin: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 56,
     includeFontPadding: false,
-    lineHeight: undefined,
+    textAlignVertical: 'center',
   },
   atSymbol: {
     ...typography.body,
@@ -353,21 +344,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     minWidth: 0,
-    overflow: 'hidden',
-    flexShrink: 1,
-    height: 52,
-    maxHeight: 52,
-    justifyContent: 'center',
   },
   domainInput: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     color: colors.textPrimary,
-    padding: 0,
     paddingHorizontal: spacing.sm,
     paddingLeft: spacing.xs,
-    margin: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 56,
     includeFontPadding: false,
-    lineHeight: undefined,
+    textAlignVertical: 'center',
   },
   submitButton: {
     flexDirection: 'row',
