@@ -7,6 +7,7 @@ import {
   TextInput,
   ActivityIndicator,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -27,6 +28,7 @@ export function ActivityLogView() {
   const navigation = useNavigation<ActivityLogViewNavigationProp>();
   const [activities, setActivities] = useState<ActivityLogType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
@@ -35,9 +37,13 @@ export function ActivityLogView() {
     loadActivities();
   }, [page, emailFilter]);
 
-  const loadActivities = async () => {
+  const loadActivities = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       const response = await AdminService.getActivityLogs({
         page,
         limit: 50,
@@ -67,7 +73,12 @@ export function ActivityLogView() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    loadActivities(true);
   };
 
   const formatDateTime = (timestamp: number): string => {
@@ -144,6 +155,14 @@ export function ActivityLogView() {
             renderItem={renderActivityItem}
             keyExtractor={(item) => item.activityId}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No activity logs found</Text>

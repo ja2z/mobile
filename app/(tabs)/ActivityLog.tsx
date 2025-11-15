@@ -7,6 +7,7 @@ import {
   TextInput,
   ActivityIndicator,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -27,6 +28,7 @@ export default function ActivityLog() {
   const navigation = useNavigation<ActivityLogNavigationProp>();
   const [activities, setActivities] = useState<ActivityLogType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
@@ -35,9 +37,13 @@ export default function ActivityLog() {
     loadActivities();
   }, [page, emailFilter]);
 
-  const loadActivities = async () => {
+  const loadActivities = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       const response = await AdminService.getActivityLogs({
         page,
         limit: 50,
@@ -67,7 +73,12 @@ export default function ActivityLog() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    loadActivities(true);
   };
 
   const formatDateTime = (timestamp: number): string => {
@@ -145,6 +156,14 @@ export default function ActivityLog() {
               renderItem={renderActivityItem}
               keyExtractor={(item) => item.activityId}
               contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={colors.primary}
+                  colors={[colors.primary]}
+                />
+              }
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No activity logs found</Text>
