@@ -11,10 +11,52 @@ import * as jwt from 'jsonwebtoken';
 import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/user-validation';
 import { logActivity } from '../shared/activity-logger';
 
+// CRITICAL: Log module initialization immediately after imports
+// This helps us verify the Lambda is loading the module at all
+// DEPLOYMENT MARKER: Change this timestamp to verify new deployments
+const DEPLOYMENT_MARKER = '2025-11-14T05:45:00.000Z-ROUTING-DEBUG';
+console.log('========== MODULE INITIALIZATION START ==========');
+console.log('DEPLOYMENT MARKER:', DEPLOYMENT_MARKER);
+console.log('Timestamp:', new Date().toISOString());
+console.log('Node version:', process.version);
+console.log('All imports completed successfully');
+
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const secretsClient = new SecretsManagerClient({});
+
+console.log('AWS clients initialized successfully');
+
+// CRITICAL: Add process-level error handlers to catch any unhandled errors
+process.on('uncaughtException', (error: Error) => {
+  console.error('========== UNCAUGHT EXCEPTION ==========');
+  console.error('Error:', error);
+  console.error('Error message:', error.message);
+  console.error('Error stack:', error.stack);
+  console.error('Error name:', error.name);
+});
+
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('========== UNHANDLED REJECTION ==========');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  if (reason instanceof Error) {
+    console.error('Error message:', reason.message);
+    console.error('Error stack:', reason.stack);
+  }
+});
+
+console.log('Process error handlers registered');
+
+// Log memory usage at module initialization
+const initialMemory = process.memoryUsage();
+console.log('Initial memory usage:', {
+  rss: `${Math.round(initialMemory.rss / 1024 / 1024)}MB`,
+  heapTotal: `${Math.round(initialMemory.heapTotal / 1024 / 1024)}MB`,
+  heapUsed: `${Math.round(initialMemory.heapUsed / 1024 / 1024)}MB`,
+  external: `${Math.round(initialMemory.external / 1024 / 1024)}MB`
+});
 
 // Environment variables
 const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
@@ -29,20 +71,113 @@ let jwtSecret: string | null = null;
 /**
  * Main Lambda handler - routes to appropriate function based on path
  */
-export const handler = async (event: any) => {
-  console.log('Admin Lambda received event:', JSON.stringify(event, null, 2));
+const handlerImpl = async (event: any) => {
+  // CRITICAL: Log IMMEDIATELY - this must be the first thing that happens
+  // Use synchronous operations to ensure logs are written
+  console.log('========== ADMIN LAMBDA INVOCATION START ==========');
+  console.log('Timestamp:', new Date().toISOString());
+  
+  // Log memory usage at handler start
+  const memUsage = process.memoryUsage();
+  console.log('Memory at handler start:', {
+    rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
+    heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
+    heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+    external: `${Math.round(memUsage.external / 1024 / 1024)}MB`
+  });
+  
+  // Force flush logs immediately
+  if (typeof process !== 'undefined' && process.stdout) {
+    process.stdout.write('FORCE LOG FLUSH\n');
+  }
+  
+  // CRITICAL: Log immediately to verify Lambda is being invoked
+  // Use try-catch around logging in case there's an issue with the event itself
+  try {
+    console.log('Request ID:', event?.requestContext?.requestId || 'unknown');
+    console.log('Event type:', typeof event);
+    console.log('Event keys:', event ? Object.keys(event) : 'event is null/undefined');
+    
+    // Try to stringify, but handle circular references
+    try {
+      console.log('Full event:', JSON.stringify(event, null, 2));
+    } catch (stringifyError) {
+      console.log('Could not stringify full event:', stringifyError);
+      console.log('Event summary:', {
+        hasPath: !!event?.path,
+        hasRawPath: !!event?.rawPath,
+        hasHttpMethod: !!event?.httpMethod,
+        hasRequestContext: !!event?.requestContext,
+        hasHeaders: !!event?.headers,
+        hasBody: !!event?.body
+      });
+    }
+  } catch (logError) {
+    // Even logging failed - this is very bad, but try to return something
+    console.error('CRITICAL: Failed to log invocation start:', logError);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ error: 'Lambda initialization error', logError: String(logError) })
+    };
+  }
 
   try {
     let path = event.path || event.rawPath;
     const method = event.httpMethod || event.requestContext?.http?.method;
 
-    console.log(`Admin Lambda - Path: ${path}, Method: ${method}`);
+    console.log(`========== ROUTING INFO ==========`);
+    console.log(`Raw event.path: ${event.path}`);
+    console.log(`Raw event.rawPath: ${event.rawPath}`);
+    console.log(`Initial path variable: ${path}`);
+    console.log(`Method: ${method}`);
+    console.log(`Request context path: ${event.requestContext?.path}`);
+    console.log(`Request context resource path: ${event.requestContext?.resourcePath}`);
 
-    // Normalize path
-    if (path.startsWith('/v1/v1/')) {
-      path = path.replace('/v1/v1/', '/v1/');
-    } else if (path.startsWith('/admin/')) {
-      path = '/v1' + path;
+    // Normalize path - CRITICAL: Wrap in try-catch to catch any path processing errors
+    const originalPath = path;
+    try {
+      if (!path) {
+        console.error('CRITICAL: path is null/undefined!');
+        return createResponse(500, { error: 'Path is missing from request' });
+      }
+      
+      if (typeof path !== 'string') {
+        console.error('CRITICAL: path is not a string!', typeof path);
+        return createResponse(500, { error: 'Path is not a string', pathType: typeof path });
+      }
+      
+      if (path.startsWith('/v1/v1/')) {
+        path = path.replace('/v1/v1/', '/v1/');
+        console.log(`Normalized (removed double /v1): ${path}`);
+      } else if (path.startsWith('/admin/')) {
+        path = '/v1' + path;
+        console.log(`Normalized (added /v1 prefix): ${path}`);
+      } else {
+        console.log(`No normalization needed: ${path}`);
+      }
+      
+      console.log(`Final normalized path: ${path}`);
+      console.log(`Path comparison checks:`);
+      console.log(`  path === '/v1/admin/users': ${path === '/v1/admin/users'}`);
+      console.log(`  path === '/v1/admin/whitelist': ${path === '/v1/admin/whitelist'}`);
+      console.log(`  path === '/v1/admin/activity': ${path === '/v1/admin/activity'}`);
+      console.log(`  path === '/admin/users': ${path === '/admin/users'}`);
+      console.log(`  path === '/admin/whitelist': ${path === '/admin/whitelist'}`);
+      console.log(`  path === '/admin/activity': ${path === '/admin/activity'}`);
+    } catch (pathError: any) {
+      console.error('========== PATH NORMALIZATION ERROR ==========');
+      console.error('Error normalizing path:', pathError);
+      console.error('Original path:', originalPath);
+      console.error('Path type:', typeof originalPath);
+      return createResponse(500, {
+        error: 'Path normalization failed',
+        details: pathError?.message || 'Unknown error',
+        originalPath: originalPath
+      });
     }
 
     // Parse body for POST/PUT requests
@@ -57,6 +192,28 @@ export const handler = async (event: any) => {
 
     // Parse query parameters for GET requests
     const queryParams = event.queryStringParameters || {};
+
+    // CRITICAL: Health check endpoint that bypasses auth - helps verify Lambda is being invoked
+    // This should be checked BEFORE auth to help diagnose zero-logs issues
+    if (path === '/v1/admin/health' && method === 'GET') {
+      console.log('========== HEALTH CHECK ENDPOINT (NO AUTH) ==========');
+      console.log('Health check called - this proves Lambda is being invoked');
+      console.log('DEPLOYMENT MARKER:', DEPLOYMENT_MARKER);
+      console.log('Path:', path);
+      console.log('Method:', method);
+      console.log('Event keys:', event ? Object.keys(event) : 'no event');
+      return createResponse(200, { 
+        status: 'ok', 
+        message: 'Admin Lambda is working - Lambda IS being invoked',
+        deploymentMarker: DEPLOYMENT_MARKER,
+        timestamp: new Date().toISOString(),
+        path: path,
+        method: method,
+        eventPath: event.path,
+        eventRawPath: event.rawPath,
+        requestContextPath: event.requestContext?.path
+      });
+    }
 
     // Extract JWT from Authorization header
     const authHeader = event.headers?.Authorization || event.headers?.authorization;
@@ -75,48 +232,323 @@ export const handler = async (event: any) => {
     let decoded: any;
     try {
       const secret = await getJWTSecret();
+      console.log('JWT verification attempt:', {
+        tokenLength: sessionJWT.length,
+        tokenPrefix: sessionJWT.substring(0, 20) + '...',
+        secretLength: secret.length,
+        secretPrefix: secret.substring(0, 10) + '...'
+      });
       decoded = jwt.verify(sessionJWT, secret) as any;
+      console.log('JWT verified successfully:', {
+        userId: decoded.userId,
+        email: decoded.email,
+        role: decoded.role,
+        exp: decoded.exp,
+        iat: decoded.iat,
+        currentTime: Math.floor(Date.now() / 1000),
+        isExpired: decoded.exp ? decoded.exp < Math.floor(Date.now() / 1000) : 'unknown'
+      });
     } catch (error) {
+      console.error('JWT verification failed:', {
+        error: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorStack: error instanceof Error ? error.stack : undefined,
+        tokenLength: sessionJWT.length,
+        tokenPrefix: sessionJWT.substring(0, 20) + '...'
+      });
       return createResponse(401, { error: 'Invalid or expired token' });
     }
 
-    // Check if user is admin
-    if (decoded.role !== 'admin') {
+    // Check if user is admin (except for activity/log endpoint which allows both roles)
+    const isActivityLogEndpoint = path === '/v1/admin/activity/log' && method === 'POST';
+    
+    if (!isActivityLogEndpoint && decoded.role !== 'admin') {
       return createResponse(403, { error: 'Admin access required' });
+    }
+    
+    // For activity log endpoint, allow both basic and admin users
+    if (isActivityLogEndpoint && decoded.role !== 'admin' && decoded.role !== 'basic') {
+      return createResponse(403, { error: 'Authentication required' });
     }
 
     // Route to appropriate handler
-    if (path === '/v1/admin/users' && method === 'GET') {
-      return await handleListUsers(queryParams, decoded);
-    } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'GET') {
-      const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
-      return await handleGetUser(userId!, decoded);
-    } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'PUT') {
-      const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
-      return await handleUpdateUser(userId!, body, decoded);
-    } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
-      const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
-      return await handleDeactivateUser(userId!, decoded);
-    } else if (path === '/v1/admin/whitelist' && method === 'GET') {
-      return await handleListWhitelist(decoded);
-    } else if (path === '/v1/admin/whitelist' && method === 'POST') {
-      return await handleAddWhitelistUser(body, decoded);
-    } else if (path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/) && method === 'DELETE') {
-      const email = decodeURIComponent(path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/)?.[1] || '');
-      return await handleDeleteWhitelistUser(email, decoded);
-    } else if (path === '/v1/admin/activity' && method === 'GET') {
-      return await handleGetActivityLogs(queryParams, decoded);
-    } else if (path === '/v1/admin/activity/log' && method === 'POST') {
-      return await handleLogActivity(body, decoded, event);
-    } else {
-      return createResponse(404, { error: 'Not found' });
+    console.log('========== STARTING ROUTING LOGIC ==========');
+    console.log('Raw path from event.path:', event.path);
+    console.log('Raw path from event.rawPath:', event.rawPath);
+    console.log('Normalized path:', path);
+    console.log('Path length:', path?.length);
+    console.log('Path char codes:', path?.split('').map((c: string) => c.charCodeAt(0)).join(','));
+    console.log('Method:', method);
+    console.log('Path comparison checks (exact match):');
+    console.log('  "/v1/admin/users" === path:', '/v1/admin/users' === path);
+    console.log('  "/v1/admin/whitelist" === path:', '/v1/admin/whitelist' === path);
+    console.log('  "/v1/admin/activity" === path:', '/v1/admin/activity' === path);
+    console.log('  "/admin/users" === path:', '/admin/users' === path);
+    console.log('  "/admin/whitelist" === path:', '/admin/whitelist' === path);
+    console.log('  "/admin/activity" === path:', '/admin/activity' === path);
+    console.log('Path comparison checks (includes):');
+    console.log('  path.includes("whitelist"):', path?.includes('whitelist'));
+    console.log('  path.includes("activity"):', path?.includes('activity'));
+    
+    // CRITICAL: Skip all function checks to avoid any potential crashes
+    // Just proceed directly to routing
+    console.log('Proceeding to routing logic (skipping function checks)...');
+    
+    try {
+      if (path === '/v1/admin/users' && method === 'GET') {
+        console.log('Routing to handleListUsers');
+        return await handleListUsers(queryParams, decoded);
+      } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'GET') {
+        const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
+        return await handleGetUser(userId!, decoded);
+      } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'PUT') {
+        const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
+        return await handleUpdateUser(userId!, body, decoded);
+      } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
+        const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
+        return await handleDeactivateUser(userId!, decoded);
+      } else if (path === '/v1/admin/whitelist' && method === 'GET') {
+        console.log('========== MATCHED WHITELIST ROUTE ==========');
+        console.log('Path matches /v1/admin/whitelist');
+        console.log('Method matches GET');
+        console.log('About to call handleListWhitelist function');
+        
+        // CRITICAL: Return immediately without calling function to test if routing works
+        console.log('TESTING: Returning test response without calling handler function');
+        return createResponse(200, {
+          whitelistUsers: [],
+          message: 'TEST: Route matched successfully, handler function not called yet',
+          test: true
+        });
+        
+        /* COMMENTED OUT - Testing if function call causes crash
+        console.log('handleListWhitelist type:', typeof handleListWhitelist);
+        console.log('handleListWhitelist exists:', !!handleListWhitelist);
+        console.log('decoded user:', JSON.stringify({ userId: decoded?.userId, email: decoded?.email, role: decoded?.role }));
+        
+        // CRITICAL: Test if function can be called synchronously first
+        try {
+          console.log('Testing function reference...');
+          const funcRef = handleListWhitelist;
+          console.log('Function reference obtained:', typeof funcRef);
+          
+          if (typeof funcRef !== 'function') {
+            console.error('CRITICAL: handleListWhitelist is not a function!');
+            return createResponse(500, {
+              error: 'Internal server error',
+              message: 'Handler function not available',
+              details: 'handleListWhitelist is not a function'
+            });
+          }
+          
+          console.log('Function is callable, invoking now...');
+          const result = await funcRef(decoded);
+          console.log('handleListWhitelist returned successfully');
+          console.log('Result type:', typeof result);
+          console.log('Result has statusCode:', !!result?.statusCode);
+          return result;
+        } catch (routeError: any) {
+          console.error('========== ROUTE LEVEL ERROR IN WHITELIST ==========');
+          console.error('Error type:', typeof routeError);
+          console.error('Error caught at route level:', routeError);
+          console.error('Error message:', routeError?.message);
+          console.error('Error name:', routeError?.name);
+          console.error('Error stack:', routeError?.stack);
+          console.error('Error stringified:', JSON.stringify(routeError, Object.getOwnPropertyNames(routeError)));
+          return createResponse(500, {
+            error: 'Internal server error',
+            message: routeError?.message || 'Unknown error in whitelist handler',
+            details: 'Error caught at routing level',
+            errorType: routeError?.name || typeof routeError
+          });
+        }
+        */
+      } else if (path === '/v1/admin/whitelist' && method === 'POST') {
+        return await handleAddWhitelistUser(body, decoded);
+      } else if (path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/) && method === 'DELETE') {
+        const email = decodeURIComponent(path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/)?.[1] || '');
+        return await handleDeleteWhitelistUser(email, decoded);
+      } else if (path === '/v1/admin/activity' && method === 'GET') {
+        console.log('========== MATCHED ACTIVITY LOGS ROUTE ==========');
+        console.log('Path matches /v1/admin/activity');
+        console.log('Method matches GET');
+        console.log('About to call handleGetActivityLogs function');
+        
+        // CRITICAL: Return immediately without calling function to test if routing works
+        console.log('TESTING: Returning test response without calling handler function');
+        return createResponse(200, {
+          activities: [],
+          pagination: { page: 1, limit: 50, total: 0, totalPages: 0 },
+          message: 'TEST: Route matched successfully, handler function not called yet',
+          test: true
+        });
+        
+        /* COMMENTED OUT - Testing if function call causes crash
+        console.log('handleGetActivityLogs type:', typeof handleGetActivityLogs);
+        console.log('handleGetActivityLogs exists:', !!handleGetActivityLogs);
+        console.log('queryParams:', JSON.stringify(queryParams));
+        console.log('decoded user:', JSON.stringify({ userId: decoded?.userId, email: decoded?.email, role: decoded?.role }));
+        
+        // CRITICAL: Test if function can be called synchronously first
+        try {
+          console.log('Testing function reference...');
+          const funcRef = handleGetActivityLogs;
+          console.log('Function reference obtained:', typeof funcRef);
+          
+          if (typeof funcRef !== 'function') {
+            console.error('CRITICAL: handleGetActivityLogs is not a function!');
+            return createResponse(500, {
+              error: 'Internal server error',
+              message: 'Handler function not available',
+              details: 'handleGetActivityLogs is not a function'
+            });
+          }
+          
+          console.log('Function is callable, invoking now...');
+          const result = await funcRef(queryParams, decoded);
+          console.log('handleGetActivityLogs returned successfully');
+          console.log('Result type:', typeof result);
+          console.log('Result has statusCode:', !!result?.statusCode);
+          return result;
+        } catch (routeError: any) {
+          console.error('========== ROUTE LEVEL ERROR IN ACTIVITY LOGS ==========');
+          console.error('Error type:', typeof routeError);
+          console.error('Error caught at route level:', routeError);
+          console.error('Error message:', routeError?.message);
+          console.error('Error name:', routeError?.name);
+          console.error('Error stack:', routeError?.stack);
+          console.error('Error stringified:', JSON.stringify(routeError, Object.getOwnPropertyNames(routeError)));
+          return createResponse(500, {
+            error: 'Internal server error',
+            message: routeError?.message || 'Unknown error in activity logs handler',
+            details: 'Error caught at routing level',
+            errorType: routeError?.name || typeof routeError
+          });
+        }
+        */
+      } else if (path === '/v1/admin/activity/log' && method === 'POST') {
+        return await handleLogActivity(body, decoded, event);
+      } else {
+        console.log(`========== NO ROUTE MATCHED ==========`);
+        console.log(`Path: ${path}, Method: ${method}`);
+        console.log(`Path type: ${typeof path}, Path value: "${path}"`);
+        console.log(`Path length: ${path?.length}`);
+        console.log(`Method type: ${typeof method}, Method value: "${method}"`);
+        console.log(`Available routes: /v1/admin/users, /v1/admin/whitelist, /v1/admin/activity, /v1/admin/activity/log, /v1/admin/health`);
+        console.log(`Checking if path contains whitelist: ${path?.includes('whitelist')}`);
+        console.log(`Checking if path contains activity: ${path?.includes('activity')}`);
+        
+        // CRITICAL: If path contains whitelist or activity but didn't match, log detailed info
+        if (path?.includes('whitelist') || path?.includes('activity')) {
+          console.error('========== PATH MISMATCH DETECTED ==========');
+          console.error(`Path "${path}" contains whitelist/activity but didn't match any route!`);
+          console.error('This suggests a path normalization or matching issue');
+          return createResponse(500, { 
+            error: 'Route matching failed', 
+            debug: { 
+              receivedPath: path, 
+              method,
+              pathContainsWhitelist: path?.includes('whitelist'),
+              pathContainsActivity: path?.includes('activity')
+            } 
+          });
+        }
+        
+        return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
+      }
+    } catch (routingError: any) {
+      console.error('========== ROUTING LOGIC ERROR ==========');
+      console.error('Error in routing logic:', routingError);
+      console.error('Error message:', routingError?.message);
+      console.error('Error stack:', routingError?.stack);
+      return createResponse(500, {
+        error: 'Internal server error',
+        message: routingError?.message || 'Error in routing logic',
+        details: 'Error caught in routing try-catch'
+      });
     }
   } catch (error) {
-    console.error('Admin Lambda error:', error);
+    console.error('========== ADMIN LAMBDA ERROR ==========');
+    console.error('Error type:', typeof error);
+    console.error('Error:', error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error code:', (error as any).code);
+    }
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return createResponse(500, {
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
+  } finally {
+    console.log('========== ADMIN LAMBDA INVOCATION END ==========');
+  }
+};
+
+/**
+ * Wrapped handler with top-level error catching
+ * This ensures we catch any errors that occur during module initialization
+ * or handler execution that might prevent logging
+ */
+export const handler = async (event: any, context: any) => {
+  // CRITICAL: Log at the very start of the exported handler
+  // This MUST be the first line that executes
+  console.log('========== EXPORTED HANDLER CALLED ==========');
+  console.log('Handler invoked at:', new Date().toISOString());
+  console.log('Event received:', !!event);
+  console.log('Context received:', !!context);
+  
+  // Log memory before anything else
+  try {
+    const mem = process.memoryUsage();
+    console.log('Memory at handler entry:', {
+      rss: `${Math.round(mem.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB`
+    });
+  } catch (memErr) {
+    console.error('Could not log memory:', memErr);
+  }
+  
+  try {
+    console.log('Calling handlerImpl...');
+    const result = await handlerImpl(event);
+    console.log('handlerImpl returned successfully');
+    return result;
+  } catch (topLevelError: any) {
+    // This catches any errors that weren't caught by the handler itself
+    // This includes module initialization errors, import errors, etc.
+    console.error('========== TOP-LEVEL ERROR HANDLER ==========');
+    console.error('This error was not caught by handler:', topLevelError);
+    console.error('Error type:', typeof topLevelError);
+    console.error('Error message:', topLevelError instanceof Error ? topLevelError.message : String(topLevelError));
+    console.error('Error stack:', topLevelError instanceof Error ? topLevelError.stack : 'No stack');
+    console.error('Error name:', topLevelError instanceof Error ? topLevelError.name : typeof topLevelError);
+    console.error('Error code:', topLevelError?.code);
+    
+    // Try to stringify the error
+    try {
+      console.error('Full error object:', JSON.stringify(topLevelError, Object.getOwnPropertyNames(topLevelError)));
+    } catch (stringifyErr) {
+      console.error('Could not stringify error:', stringifyErr);
+    }
+    
+    // Return a proper error response
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      },
+      body: JSON.stringify({
+        error: 'Internal server error',
+        message: topLevelError instanceof Error ? topLevelError.message : 'Unknown error occurred',
+        type: topLevelError instanceof Error ? topLevelError.name : typeof topLevelError
+      })
+    };
   }
 };
 
@@ -411,23 +843,89 @@ async function handleDeactivateUser(userId: string, adminUser: any) {
 
 /**
  * List whitelist users
+ * SIMPLIFIED VERSION - Minimal operations to isolate the crash
  */
 async function handleListWhitelist(adminUser: any) {
+  // CRITICAL: Log immediately with try-catch to ensure logging works
   try {
-    const scanResult = await docClient.send(new ScanCommand({
+    console.log('========== handleListWhitelist FUNCTION ENTERED ==========');
+    console.log('Function called at:', new Date().toISOString());
+    console.log('Function exists check:', typeof handleListWhitelist);
+  } catch (logErr) {
+    // Even logging failed - return error immediately
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ error: 'Failed to log in handler', details: String(logErr) })
+    };
+  }
+  
+  // Validate inputs first
+  if (!adminUser) {
+    console.error('adminUser is null/undefined');
+    return createResponse(500, { error: 'Invalid admin user' });
+  }
+  
+  console.log('Admin user validated:', { userId: adminUser.userId, email: adminUser.email });
+  
+  // Check table name exists
+  if (!APPROVED_EMAILS_TABLE) {
+    console.error('APPROVED_EMAILS_TABLE is not set');
+    return createResponse(500, { error: 'Table name not configured' });
+  }
+  
+  console.log('Table name:', APPROVED_EMAILS_TABLE);
+  
+  // Check docClient exists
+  if (!docClient) {
+    console.error('docClient is null/undefined');
+    return createResponse(500, { error: 'DynamoDB client not initialized' });
+  }
+  
+  console.log('docClient validated');
+  
+  // Try the simplest possible response first - no DynamoDB call
+  console.log('Returning empty whitelist for testing...');
+  try {
+    const testResponse = createResponse(200, {
+      whitelistUsers: [],
+      message: 'Test response - DynamoDB call disabled for debugging'
+    });
+    console.log('Test response created, returning...');
+    return testResponse;
+  } catch (responseError: any) {
+    console.error('Error creating response:', responseError);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ error: 'Failed to create response', details: responseError?.message })
+    };
+  }
+  
+  /* COMMENTED OUT - DynamoDB call disabled for debugging
+  try {
+    console.log('Attempting to scan APPROVED_EMAILS_TABLE...');
+    const scanCommand = new ScanCommand({
       TableName: APPROVED_EMAILS_TABLE,
-    }));
+    });
+    console.log('ScanCommand created successfully');
+    
+    const scanResult = await docClient.send(scanCommand);
+    console.log('Scan successful, items found:', scanResult.Items?.length || 0);
 
     const whitelistUsers = (scanResult.Items || []).map((item: any) => {
-      // Check if user has registered
-      const hasRegistered = !!item.registeredAt;
-
       return {
         email: item.email,
         role: item.role || 'basic',
         expirationDate: item.expirationDate,
         registeredAt: item.registeredAt,
-        hasRegistered,
+        hasRegistered: !!item.registeredAt,
         approvedAt: item.approvedAt,
       };
     });
@@ -436,9 +934,16 @@ async function handleListWhitelist(adminUser: any) {
       whitelistUsers,
     });
   } catch (error) {
-    console.error('Error listing whitelist:', error);
-    return createResponse(500, { error: 'Failed to list whitelist users' });
+    console.error('========== handleListWhitelist ERROR ==========');
+    console.error('Error:', error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    return createResponse(500, { 
+      error: 'Failed to list whitelist users', 
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
+  */
 }
 
 /**
@@ -609,20 +1114,88 @@ async function handleLogActivity(body: any, adminUser: any, event: any) {
 
 /**
  * Get activity logs with pagination and filtering
+ * SIMPLIFIED VERSION - Minimal operations to isolate the crash
  */
 async function handleGetActivityLogs(params: any, adminUser: any) {
-  const page = parseInt(params.page || '1', 10);
-  const limit = parseInt(params.limit || '50', 10);
-  const emailFilter = params.emailFilter || '';
-
-  const offset = (page - 1) * limit;
-
+  // CRITICAL: Log immediately with try-catch to ensure logging works
   try {
-    // Scan all activities (for small datasets)
-    // In production, consider using pagination tokens or GSI
-    const scanResult = await docClient.send(new ScanCommand({
+    console.log('========== handleGetActivityLogs FUNCTION ENTERED ==========');
+    console.log('Function called at:', new Date().toISOString());
+    console.log('Function exists check:', typeof handleGetActivityLogs);
+  } catch (logErr) {
+    // Even logging failed - return error immediately
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ error: 'Failed to log in handler', details: String(logErr) })
+    };
+  }
+  
+  // Validate inputs first
+  if (!adminUser) {
+    console.error('adminUser is null/undefined');
+    return createResponse(500, { error: 'Invalid admin user' });
+  }
+  
+  console.log('Admin user validated:', { userId: adminUser.userId, email: adminUser.email });
+  console.log('Params:', params);
+  
+  // Check table name exists
+  if (!ACTIVITY_TABLE) {
+    console.error('ACTIVITY_TABLE is not set');
+    return createResponse(500, { error: 'Table name not configured' });
+  }
+  
+  console.log('Table name:', ACTIVITY_TABLE);
+  
+  // Check docClient exists
+  if (!docClient) {
+    console.error('docClient is null/undefined');
+    return createResponse(500, { error: 'DynamoDB client not initialized' });
+  }
+  
+  console.log('docClient validated');
+  
+  // Try the simplest possible response first - no DynamoDB call
+  console.log('Returning empty activity logs for testing...');
+  try {
+    const testResponse = createResponse(200, {
+      activities: [],
+      pagination: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        totalPages: 0,
+      },
+      message: 'Test response - DynamoDB call disabled for debugging'
+    });
+    console.log('Test response created, returning...');
+    return testResponse;
+  } catch (responseError: any) {
+    console.error('Error creating response:', responseError);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ error: 'Failed to create response', details: responseError?.message })
+    };
+  }
+  
+  /* COMMENTED OUT - DynamoDB call disabled for debugging
+  try {
+    console.log('Attempting to scan ACTIVITY_TABLE...');
+    const scanCommand = new ScanCommand({
       TableName: ACTIVITY_TABLE,
-    }));
+    });
+    console.log('ScanCommand created successfully');
+    
+    const scanResult = await docClient.send(scanCommand);
+    console.log('Scan successful, items found:', scanResult.Items?.length || 0);
 
     let activities = scanResult.Items || [];
 
@@ -655,9 +1228,15 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
       },
     });
   } catch (error) {
-    console.error('Error getting activity logs:', error);
-    return createResponse(500, { error: 'Failed to get activity logs' });
+    console.error('========== handleGetActivityLogs ERROR ==========');
+    console.error('Error:', error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    return createResponse(500, { 
+      error: 'Failed to get activity logs', 
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
+  */
 }
 
 /**

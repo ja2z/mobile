@@ -95,15 +95,49 @@ export class AdminService {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers = await this.getAuthHeaders();
-    
-    const response = await fetch(`${ADMIN_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        ...headers,
-        ...(options.headers || {}),
-      },
+    const fullUrl = `${ADMIN_BASE_URL}${endpoint}`;
+    console.log(`[AdminService] Making API call:`, {
+      method: options.method || 'GET',
+      url: fullUrl,
+      endpoint: endpoint,
+      hasBody: !!options.body
     });
+
+    const headers = await this.getAuthHeaders();
+    console.log(`[AdminService] Request headers:`, {
+      hasAuth: !!headers.Authorization,
+      authLength: headers.Authorization?.length || 0,
+      contentType: headers['Content-Type']
+    });
+    
+    const requestStartTime = Date.now();
+    let response: Response;
+    
+    try {
+      response = await fetch(fullUrl, {
+        ...options,
+        headers: {
+          ...headers,
+          ...(options.headers || {}),
+        },
+      });
+
+      const requestDuration = Date.now() - requestStartTime;
+      console.log(`[AdminService] Response received:`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        duration: `${requestDuration}ms`,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+    } catch (fetchError) {
+      console.error(`[AdminService] Fetch error:`, {
+        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        stack: fetchError instanceof Error ? fetchError.stack : undefined,
+        url: fullUrl
+      });
+      throw fetchError;
+    }
 
     // Handle expiration errors (this will throw if expired)
     try {
@@ -115,11 +149,45 @@ export class AdminService {
       }
     }
 
-    const data = await response.json();
+    // Try to parse JSON, but handle errors gracefully
+    let data: any;
+    try {
+      const responseText = await response.text();
+      console.log(`[AdminService] Response body (first 500 chars):`, responseText.substring(0, 500));
+      
+      if (responseText) {
+        data = JSON.parse(responseText);
+      } else {
+        data = {};
+      }
+    } catch (parseError) {
+      console.error(`[AdminService] JSON parse error:`, {
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        status: response.status,
+        statusText: response.statusText
+      });
+      // If we can't parse JSON, create an error object
+      data = {
+        error: 'Invalid JSON response',
+        status: response.status,
+        statusText: response.statusText
+      };
+    }
 
     if (!response.ok) {
+      console.error(`[AdminService] API call failed:`, {
+        endpoint: endpoint,
+        status: response.status,
+        statusText: response.statusText,
+        errorData: data
+      });
       throw new Error(data.message || data.error || `API error: ${response.status}`);
     }
+
+    console.log(`[AdminService] API call succeeded:`, {
+      endpoint: endpoint,
+      dataKeys: data ? Object.keys(data) : 'no data'
+    });
 
     return data;
   }
@@ -223,6 +291,13 @@ export class AdminService {
 
     const queryString = queryParams.toString();
     return this.apiCall<ListActivityLogsResponse>(`/activity${queryString ? `?${queryString}` : ''}`);
+  }
+
+  /**
+   * Health check endpoint - tests if Lambda is being invoked
+   */
+  static async healthCheck(): Promise<{ status: string; message: string; timestamp: number }> {
+    return this.apiCall<{ status: string; message: string; timestamp: number }>('/health');
   }
 }
 
