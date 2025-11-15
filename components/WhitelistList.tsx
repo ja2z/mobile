@@ -219,6 +219,25 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
     });
   };
 
+  const formatDateTime = (timestamp?: number): string => {
+    if (!timestamp) return 'Never';
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Los_Angeles',
+    });
+  };
+
+  const isExpired = (expirationDate?: number): boolean => {
+    if (!expirationDate) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return now >= expirationDate;
+  };
+
   // Sort the whitelist users based on selected field and direction
   const sortedWhitelistUsers = useMemo(() => {
     if (!sortField) return whitelistUsers;
@@ -288,51 +307,63 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
     }
   };
 
-  const renderWhitelistItem = ({ item }: { item: WhitelistUser }) => (
-    <View style={styles.whitelistItem}>
-      <View style={styles.whitelistInfo}>
-        <Text style={styles.whitelistEmail}>{item.email}</Text>
-        <View style={styles.whitelistMeta}>
-          <Text style={styles.whitelistMetaText}>
-            Role: {item.role}
-          </Text>
-          {item.approvedAt && (
+  const renderWhitelistItem = ({ item }: { item: WhitelistUser }) => {
+    const expired = isExpired(item.expirationDate);
+    
+    return (
+      <View style={styles.whitelistItem}>
+        <View style={styles.whitelistInfo}>
+          <Text style={styles.whitelistEmail}>{item.email}</Text>
+          <View style={styles.whitelistMeta}>
             <Text style={styles.whitelistMetaText}>
-              Whitelisted: {formatDate(item.approvedAt)}
+              Role: {item.role}
             </Text>
-          )}
-          <Text style={styles.whitelistMetaText}>
-            Expires: {formatDate(item.expirationDate)}
-          </Text>
-          {item.hasRegistered ? (
-            <Text style={styles.registeredText}>
-              Registered: {item.registeredAt ? formatDate(item.registeredAt) : 'Yes'}
+            {item.approvedAt && (
+              <Text style={styles.whitelistMetaText}>
+                Whitelisted: {formatDateTime(item.approvedAt)}
+              </Text>
+            )}
+            <Text style={[
+              styles.whitelistMetaText,
+              expired && styles.expiredText
+            ]}>
+              Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
             </Text>
-          ) : (
-            <Text style={styles.notRegisteredText}>Not registered yet</Text>
-          )}
+            {expired && (
+              <Text style={[styles.whitelistMetaText, styles.expiredText]}>
+                Expired
+              </Text>
+            )}
+            {item.hasRegistered ? (
+              <Text style={styles.registeredText}>
+                Registered: {item.registeredAt ? formatDateTime(item.registeredAt) : 'Yes'}
+              </Text>
+            ) : (
+              <Text style={styles.notRegisteredText}>Not registered yet</Text>
+            )}
+          </View>
         </View>
-      </View>
-      <View style={styles.whitelistActions}>
-        {item.hasRegistered && (
+        <View style={styles.whitelistActions}>
+          {item.hasRegistered && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleEditUser(item.email)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="create-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => handleEditUser(item.email)}
+            onPress={() => handleDelete(item.email)}
             activeOpacity={0.7}
           >
-            <Ionicons name="create-outline" size={20} color={colors.primary} />
+            <Ionicons name="trash-outline" size={20} color={colors.error} />
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleDelete(item.email)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="trash-outline" size={20} color={colors.error} />
-        </TouchableOpacity>
-      </View>
+        </View>
     </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -574,6 +605,10 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     fontStyle: 'italic',
+  },
+  expiredText: {
+    color: colors.error,
+    fontWeight: '600',
   },
   whitelistActions: {
     flexDirection: 'row',
