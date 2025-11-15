@@ -8,23 +8,23 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { AdminService, type ActivityLog as ActivityLogType } from '../../services/AdminService';
-import { AuthService } from '../../services/AuthService';
-import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
-import type { RootStackParamList } from '../_layout';
+import { AdminService, type ActivityLog as ActivityLogType } from '../services/AdminService';
+import { AuthService } from '../services/AuthService';
+import { colors, spacing, borderRadius, typography } from '../constants/Theme';
+import type { RootStackParamList } from '../app/_layout';
 import { Alert } from 'react-native';
 
-type ActivityLogNavigationProp = StackNavigationProp<RootStackParamList>;
+type ActivityLogViewNavigationProp = StackNavigationProp<RootStackParamList>;
 
 /**
- * Activity Log Screen Component
+ * Activity Log View Component
  * Displays paginated activity logs with email filtering
+ * Can be embedded in other screens (e.g., Admin tabs)
  */
-export default function ActivityLog() {
-  const navigation = useNavigation<ActivityLogNavigationProp>();
+export function ActivityLogView() {
+  const navigation = useNavigation<ActivityLogViewNavigationProp>();
   const [activities, setActivities] = useState<ActivityLogType[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -120,68 +120,66 @@ export default function ActivityLog() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <View style={styles.content}>
-        {/* Filter */}
-        <View style={styles.filterContainer}>
-          <TextInput
-            style={styles.filterInput}
-            placeholder="Filter by email..."
-            value={emailFilter}
-            onChangeText={setEmailFilter}
-            placeholderTextColor={colors.textSecondary}
-          />
-        </View>
-
-        {/* Activity List */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <>
-            <FlatList
-              data={activities}
-              renderItem={renderActivityItem}
-              keyExtractor={(item) => item.activityId}
-              contentContainerStyle={styles.listContent}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No activity logs found</Text>
-                </View>
-              }
-            />
-
-            {/* Pagination */}
-            <View style={styles.pagination}>
-              <TouchableOpacity
-                style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}
-                onPress={() => setPage(Math.max(1, page - 1))}
-                disabled={page === 1}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pageButtonText, page === 1 && styles.pageButtonTextDisabled]}>
-                  Previous
-                </Text>
-              </TouchableOpacity>
-              <Text style={styles.pageText}>
-                Page {page} of {totalPages}
-              </Text>
-              <TouchableOpacity
-                style={[styles.pageButton, page >= totalPages && styles.pageButtonDisabled]}
-                onPress={() => setPage(Math.min(totalPages, page + 1))}
-                disabled={page >= totalPages}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pageButtonText, page >= totalPages && styles.pageButtonTextDisabled]}>
-                  Next
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+    <View style={styles.container}>
+      {/* Filter */}
+      <View style={styles.filterContainer}>
+        <TextInput
+          style={styles.filterInput}
+          placeholder="Filter by email..."
+          value={emailFilter}
+          onChangeText={setEmailFilter}
+          placeholderTextColor={colors.textSecondary}
+        />
       </View>
-    </SafeAreaView>
+
+      {/* Activity List */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <>
+          <FlatList
+            data={activities}
+            renderItem={renderActivityItem}
+            keyExtractor={(item) => item.activityId}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No activity logs found</Text>
+              </View>
+            }
+          />
+
+          {/* Pagination */}
+          <View style={styles.pagination}>
+            <TouchableOpacity
+              style={[styles.pageButton, page === 1 && styles.pageButtonDisabled]}
+              onPress={() => setPage(Math.max(1, page - 1))}
+              disabled={page === 1}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.pageButtonText, page === 1 && styles.pageButtonTextDisabled]}>
+                Previous
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.pageText}>
+              Page {page} of {totalPages}
+            </Text>
+            <TouchableOpacity
+              style={[styles.pageButton, page >= totalPages && styles.pageButtonDisabled]}
+              onPress={() => setPage(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.pageButtonText, page >= totalPages && styles.pageButtonTextDisabled]}>
+                Next
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -189,9 +187,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
-  },
-  content: {
-    flex: 1,
   },
   filterContainer: {
     padding: spacing.md,

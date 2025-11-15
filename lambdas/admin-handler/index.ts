@@ -308,61 +308,7 @@ const handlerImpl = async (event: any) => {
         const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
         return await handleDeactivateUser(userId!, decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'GET') {
-        console.log('========== MATCHED WHITELIST ROUTE ==========');
-        console.log('Path matches /v1/admin/whitelist');
-        console.log('Method matches GET');
-        console.log('About to call handleListWhitelist function');
-        
-        // CRITICAL: Return immediately without calling function to test if routing works
-        console.log('TESTING: Returning test response without calling handler function');
-        return createResponse(200, {
-          whitelistUsers: [],
-          message: 'TEST: Route matched successfully, handler function not called yet',
-          test: true
-        });
-        
-        /* COMMENTED OUT - Testing if function call causes crash
-        console.log('handleListWhitelist type:', typeof handleListWhitelist);
-        console.log('handleListWhitelist exists:', !!handleListWhitelist);
-        console.log('decoded user:', JSON.stringify({ userId: decoded?.userId, email: decoded?.email, role: decoded?.role }));
-        
-        // CRITICAL: Test if function can be called synchronously first
-        try {
-          console.log('Testing function reference...');
-          const funcRef = handleListWhitelist;
-          console.log('Function reference obtained:', typeof funcRef);
-          
-          if (typeof funcRef !== 'function') {
-            console.error('CRITICAL: handleListWhitelist is not a function!');
-            return createResponse(500, {
-              error: 'Internal server error',
-              message: 'Handler function not available',
-              details: 'handleListWhitelist is not a function'
-            });
-          }
-          
-          console.log('Function is callable, invoking now...');
-          const result = await funcRef(decoded);
-          console.log('handleListWhitelist returned successfully');
-          console.log('Result type:', typeof result);
-          console.log('Result has statusCode:', !!result?.statusCode);
-          return result;
-        } catch (routeError: any) {
-          console.error('========== ROUTE LEVEL ERROR IN WHITELIST ==========');
-          console.error('Error type:', typeof routeError);
-          console.error('Error caught at route level:', routeError);
-          console.error('Error message:', routeError?.message);
-          console.error('Error name:', routeError?.name);
-          console.error('Error stack:', routeError?.stack);
-          console.error('Error stringified:', JSON.stringify(routeError, Object.getOwnPropertyNames(routeError)));
-          return createResponse(500, {
-            error: 'Internal server error',
-            message: routeError?.message || 'Unknown error in whitelist handler',
-            details: 'Error caught at routing level',
-            errorType: routeError?.name || typeof routeError
-          });
-        }
-        */
+        return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
         return await handleAddWhitelistUser(body, decoded);
       } else if (path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/) && method === 'DELETE') {
@@ -373,59 +319,7 @@ const handlerImpl = async (event: any) => {
         console.log('Path matches /v1/admin/activity');
         console.log('Method matches GET');
         console.log('About to call handleGetActivityLogs function');
-        
-        // CRITICAL: Return immediately without calling function to test if routing works
-        console.log('TESTING: Returning test response without calling handler function');
-        return createResponse(200, {
-          activities: [],
-          pagination: { page: 1, limit: 50, total: 0, totalPages: 0 },
-          message: 'TEST: Route matched successfully, handler function not called yet',
-          test: true
-        });
-        
-        /* COMMENTED OUT - Testing if function call causes crash
-        console.log('handleGetActivityLogs type:', typeof handleGetActivityLogs);
-        console.log('handleGetActivityLogs exists:', !!handleGetActivityLogs);
-        console.log('queryParams:', JSON.stringify(queryParams));
-        console.log('decoded user:', JSON.stringify({ userId: decoded?.userId, email: decoded?.email, role: decoded?.role }));
-        
-        // CRITICAL: Test if function can be called synchronously first
-        try {
-          console.log('Testing function reference...');
-          const funcRef = handleGetActivityLogs;
-          console.log('Function reference obtained:', typeof funcRef);
-          
-          if (typeof funcRef !== 'function') {
-            console.error('CRITICAL: handleGetActivityLogs is not a function!');
-            return createResponse(500, {
-              error: 'Internal server error',
-              message: 'Handler function not available',
-              details: 'handleGetActivityLogs is not a function'
-            });
-          }
-          
-          console.log('Function is callable, invoking now...');
-          const result = await funcRef(queryParams, decoded);
-          console.log('handleGetActivityLogs returned successfully');
-          console.log('Result type:', typeof result);
-          console.log('Result has statusCode:', !!result?.statusCode);
-          return result;
-        } catch (routeError: any) {
-          console.error('========== ROUTE LEVEL ERROR IN ACTIVITY LOGS ==========');
-          console.error('Error type:', typeof routeError);
-          console.error('Error caught at route level:', routeError);
-          console.error('Error message:', routeError?.message);
-          console.error('Error name:', routeError?.name);
-          console.error('Error stack:', routeError?.stack);
-          console.error('Error stringified:', JSON.stringify(routeError, Object.getOwnPropertyNames(routeError)));
-          return createResponse(500, {
-            error: 'Internal server error',
-            message: routeError?.message || 'Unknown error in activity logs handler',
-            details: 'Error caught at routing level',
-            errorType: routeError?.name || typeof routeError
-          });
-        }
-        */
+        return await handleGetActivityLogs(queryParams, decoded);
       } else if (path === '/v1/admin/activity/log' && method === 'POST') {
         return await handleLogActivity(body, decoded, event);
       } else {
@@ -887,28 +781,6 @@ async function handleListWhitelist(adminUser: any) {
   
   console.log('docClient validated');
   
-  // Try the simplest possible response first - no DynamoDB call
-  console.log('Returning empty whitelist for testing...');
-  try {
-    const testResponse = createResponse(200, {
-      whitelistUsers: [],
-      message: 'Test response - DynamoDB call disabled for debugging'
-    });
-    console.log('Test response created, returning...');
-    return testResponse;
-  } catch (responseError: any) {
-    console.error('Error creating response:', responseError);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({ error: 'Failed to create response', details: responseError?.message })
-    };
-  }
-  
-  /* COMMENTED OUT - DynamoDB call disabled for debugging
   try {
     console.log('Attempting to scan APPROVED_EMAILS_TABLE...');
     const scanCommand = new ScanCommand({
@@ -943,7 +815,6 @@ async function handleListWhitelist(adminUser: any) {
       details: error instanceof Error ? error.message : String(error)
     });
   }
-  */
 }
 
 /**
@@ -1159,34 +1030,14 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
   
   console.log('docClient validated');
   
-  // Try the simplest possible response first - no DynamoDB call
-  console.log('Returning empty activity logs for testing...');
-  try {
-    const testResponse = createResponse(200, {
-      activities: [],
-      pagination: {
-        page: 1,
-        limit: 50,
-        total: 0,
-        totalPages: 0,
-      },
-      message: 'Test response - DynamoDB call disabled for debugging'
-    });
-    console.log('Test response created, returning...');
-    return testResponse;
-  } catch (responseError: any) {
-    console.error('Error creating response:', responseError);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({ error: 'Failed to create response', details: responseError?.message })
-    };
-  }
+  // Parse pagination parameters
+  const page = parseInt(params.page || '1', 10);
+  const limit = parseInt(params.limit || '50', 10);
+  const emailFilter = params.emailFilter || '';
+  const offset = (page - 1) * limit;
   
-  /* COMMENTED OUT - DynamoDB call disabled for debugging
+  console.log('Pagination params:', { page, limit, emailFilter, offset });
+  
   try {
     console.log('Attempting to scan ACTIVITY_TABLE...');
     const scanCommand = new ScanCommand({
@@ -1205,6 +1056,7 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
       activities = activities.filter((a: any) => 
         a.email?.toLowerCase().includes(filterLower)
       );
+      console.log('After email filter, activities count:', activities.length);
     }
 
     // Sort by timestamp (most recent first)
@@ -1217,9 +1069,29 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
     // Paginate
     const total = activities.length;
     const paginatedActivities = activities.slice(offset, offset + limit);
+    
+    console.log('Pagination result:', {
+      total,
+      offset,
+      limit,
+      returned: paginatedActivities.length,
+      totalPages: Math.ceil(total / limit)
+    });
+
+    // Format activities to match expected response structure
+    const formattedActivities = paginatedActivities.map((item: any) => ({
+      activityId: item.activityId || item.userId + '_' + item.timestamp,
+      userId: item.userId,
+      email: item.email,
+      eventType: item.eventType,
+      timestamp: item.timestamp,
+      deviceId: item.deviceId,
+      ipAddress: item.ipAddress,
+      metadata: item.metadata || {},
+    }));
 
     return createResponse(200, {
-      activities: paginatedActivities,
+      activities: formattedActivities,
       pagination: {
         page,
         limit,
@@ -1231,12 +1103,12 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
     console.error('========== handleGetActivityLogs ERROR ==========');
     console.error('Error:', error);
     console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
     return createResponse(500, { 
       error: 'Failed to get activity logs', 
       details: error instanceof Error ? error.message : String(error)
     });
   }
-  */
 }
 
 /**

@@ -52,6 +52,11 @@ export async function logActivity(
     const now = Math.floor(Date.now() / 1000);
     const activityId = `act_${randomBytes(16).toString('hex')}`;
 
+    // Filter out null and undefined values from metadata
+    const filteredMetadata = Object.fromEntries(
+      Object.entries(metadata).filter(([_, value]) => value !== null && value !== undefined)
+    );
+
     const activity: ActivityLog = {
       activityId,
       userId,
@@ -60,7 +65,7 @@ export async function logActivity(
       timestamp: now,
       ...(deviceId && { deviceId }),
       ...(ipAddress && { ipAddress }),
-      ...(Object.keys(metadata).length > 0 && { metadata }),
+      ...(Object.keys(filteredMetadata).length > 0 && { metadata: filteredMetadata }),
     };
 
     await docClient.send(new PutCommand({
