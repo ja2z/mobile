@@ -523,7 +523,33 @@ async function handleVerifyMagicLink(body: any, event: any) {
 
   // Lazy provision user profile - only create when they actually authenticate
   // This is the first time we're certain the user has successfully authenticated
-  const user = await getOrCreateUserProfile(tokenData.email, tokenData.metadata?.sourceFlow || 'email');
+  // SECURITY: This will now block registration if user is not actively whitelisted
+  let user;
+  try {
+    user = await getOrCreateUserProfile(tokenData.email, tokenData.metadata?.sourceFlow || 'email');
+  } catch (error) {
+    // Handle whitelist validation errors - block registration
+    if (error instanceof Error && (
+      error.message.includes('not approved') || 
+      error.message.includes('not on the whitelist') ||
+      error.message.includes('expired') ||
+      error.message.includes('Unable to verify email approval')
+    )) {
+      const ipAddress = getIpAddress(event);
+      await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+        reason: 'Registration blocked - not whitelisted',
+        sourceFlow: tokenData.metadata?.sourceFlow || 'unknown',
+        errorMessage: error.message
+      }, deviceId, ipAddress);
+      
+      return createResponse(403, { 
+        error: 'Registration not allowed',
+        message: error.message || 'This email is not approved for access. Please contact your administrator.'
+      });
+    }
+    // Re-throw other errors (shouldn't happen, but be safe)
+    throw error;
+  }
 
   // Check if user is deactivated
   const isDeactivated = await checkUserDeactivated(user.userId);
@@ -874,6 +900,7 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   }
 
   // User doesn't exist - lazy provisioning: create new user profile
+  // SECURITY: For non-Sigma emails, registration is ONLY allowed if actively whitelisted
   // Check whitelist for role and expiration
   let userRole = 'basic';
   let expirationDate: number | undefined = undefined;
@@ -886,34 +913,48 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
         Key: { email: emailLower }
       }));
 
-      if (whitelistResult.Item) {
-        // Check if whitelist entry has expired
-        if (whitelistResult.Item.expirationDate) {
-          const now = Math.floor(Date.now() / 1000);
-          if (now >= whitelistResult.Item.expirationDate) {
-            throw new Error('Whitelist entry has expired');
-          }
-          // Set user expiration to whitelist expiration
-          expirationDate = whitelistResult.Item.expirationDate;
-        }
-        
-        // Use role from whitelist if specified
-        if (whitelistResult.Item.role) {
-          userRole = validateRole(whitelistResult.Item.role) || 'basic';
-        }
-        
-        // Mark user as registered in whitelist (only set if not already set to preserve first registration time)
-        const now = Math.floor(Date.now() / 1000);
-        await docClient.send(new UpdateCommand({
-          TableName: APPROVED_EMAILS_TABLE,
-          Key: { email: emailLower },
-          UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
-          ExpressionAttributeValues: { ':now': now }
-        }));
+      // SECURITY FIX: Block registration if not actively whitelisted
+      if (!whitelistResult.Item) {
+        console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} is not whitelisted`);
+        throw new Error('Email not approved for registration. This email is not on the whitelist.');
       }
+
+      // Check if whitelist entry has expired
+      if (whitelistResult.Item.expirationDate) {
+        const now = Math.floor(Date.now() / 1000);
+        if (now >= whitelistResult.Item.expirationDate) {
+          console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} whitelist entry has expired`);
+          throw new Error('Whitelist entry has expired. This email is no longer approved for access.');
+        }
+        // Set user expiration to whitelist expiration
+        expirationDate = whitelistResult.Item.expirationDate;
+      }
+      
+      // Use role from whitelist if specified
+      if (whitelistResult.Item.role) {
+        userRole = validateRole(whitelistResult.Item.role) || 'basic';
+      }
+      
+      // Mark user as registered in whitelist (only set if not already set to preserve first registration time)
+      const now = Math.floor(Date.now() / 1000);
+      await docClient.send(new UpdateCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower },
+        UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
+        ExpressionAttributeValues: { ':now': now }
+      }));
     } catch (error) {
-      console.error('Error checking whitelist:', error);
-      // Continue with default role if whitelist check fails
+      // Re-throw whitelist validation errors to block registration
+      if (error instanceof Error && (
+        error.message.includes('not approved') || 
+        error.message.includes('expired')
+      )) {
+        console.error(`[getOrCreateUserProfile] Whitelist validation failed: ${error.message}`);
+        throw error;
+      }
+      // For other errors (e.g., DynamoDB errors), log and re-throw to be safe
+      console.error('[getOrCreateUserProfile] Error checking whitelist:', error);
+      throw new Error('Unable to verify email approval. Registration blocked for security.');
     }
   }
 
