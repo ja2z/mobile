@@ -171,13 +171,15 @@ export function ActivityLogView() {
     <View style={styles.container}>
       {/* Filters */}
       <View style={styles.filterContainer}>
-        <TextInput
-          style={styles.filterInput}
-          placeholder="Filter by email..."
-          value={emailFilter}
-          onChangeText={setEmailFilter}
-          placeholderTextColor={colors.textSecondary}
-        />
+        <View style={styles.filterInputWrapper}>
+          <TextInput
+            style={styles.filterInput}
+            placeholder="Filter by email..."
+            value={emailFilter}
+            onChangeText={setEmailFilter}
+            placeholderTextColor={colors.textSecondary}
+          />
+        </View>
         <ActivityTypeFilter
           selectedType={selectedActivityType}
           onSelectionChange={setSelectedActivityType}
@@ -249,20 +251,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   filterContainer: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
     padding: spacing.md,
     backgroundColor: colors.background,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: spacing.sm,
   },
+  filterInputWrapper: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
   filterInput: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     backgroundColor: colors.surface,
-    padding: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 40,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   loadingContainer: {
     flex: 1,

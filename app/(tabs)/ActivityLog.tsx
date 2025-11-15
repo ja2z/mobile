@@ -21,6 +21,7 @@ import { ActivityTypeFilter, type ActivityType } from '../../components/Activity
 
 type ActivityLogNavigationProp = StackNavigationProp<RootStackParamList>;
 
+
 /**
  * Activity Log Screen Component
  * Displays paginated activity logs with email filtering
@@ -171,7 +172,7 @@ export default function ActivityLog() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
         {/* Filters */}
-        <View style={styles.filterContainer}>
+        <View style={styles.filters}>
           <TextInput
             style={styles.filterInput}
             placeholder="Filter by email..."
@@ -253,7 +254,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  filterContainer: {
+  filters: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
     padding: spacing.md,
     backgroundColor: colors.background,
     borderBottomWidth: 1,
@@ -261,9 +265,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   filterInput: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     ...typography.body,
     backgroundColor: colors.surface,
-    padding: spacing.md,
+    padding: spacing.sm,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
