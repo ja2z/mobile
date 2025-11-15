@@ -75,6 +75,21 @@ export default function Login() {
     }
   };
 
+  // Clear error when user starts typing to prevent jumpy input behavior
+  const handleUsernameChange = (text: string) => {
+    if (error) {
+      setError(null);
+    }
+    setUsername(text);
+  };
+
+  const handleDomainChange = (text: string) => {
+    if (error) {
+      setError(null);
+    }
+    setDomain(text);
+  };
+
   const handleSkip = () => {
     // Bypass authentication for development
     navigation.replace('Home');
@@ -146,7 +161,7 @@ export default function Login() {
                     placeholder="username"
                     placeholderTextColor={colors.textSecondary}
                     value={username}
-                    onChangeText={setUsername}
+                    onChangeText={handleUsernameChange}
                     onFocus={() => setUsernameFocused(true)}
                     onBlur={() => setUsernameFocused(false)}
                     keyboardType="default"
@@ -167,7 +182,7 @@ export default function Login() {
                     placeholder="domain.com"
                     placeholderTextColor={colors.textSecondary}
                     value={domain}
-                    onChangeText={setDomain}
+                    onChangeText={handleDomainChange}
                     onFocus={() => setDomainFocused(true)}
                     onBlur={() => setDomainFocused(false)}
                     keyboardType="default"
