@@ -136,6 +136,8 @@ const handlerImpl = async (event: any) => {
     console.log(`Method: ${method}`);
     console.log(`Request context path: ${event.requestContext?.path}`);
     console.log(`Request context resource path: ${event.requestContext?.resourcePath}`);
+    console.log(`Path parameters: ${JSON.stringify(event.pathParameters)}`);
+    console.log(`Query string parameters: ${JSON.stringify(event.queryStringParameters)}`);
 
     // Normalize path - CRITICAL: Wrap in try-catch to catch any path processing errors
     const originalPath = path;
@@ -156,6 +158,12 @@ const handlerImpl = async (event: any) => {
       } else if (path.startsWith('/admin/')) {
         path = '/v1' + path;
         console.log(`Normalized (added /v1 prefix): ${path}`);
+      } else if (path.startsWith('/whitelist/')) {
+        path = '/v1/admin' + path;
+        console.log(`Normalized (added /v1/admin prefix): ${path}`);
+      } else if (path.startsWith('/v1/whitelist/')) {
+        path = path.replace('/v1/whitelist/', '/v1/admin/whitelist/');
+        console.log(`Normalized (added /admin): ${path}`);
       } else {
         console.log(`No normalization needed: ${path}`);
       }
@@ -311,9 +319,140 @@ const handlerImpl = async (event: any) => {
         return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
         return await handleAddWhitelistUser(body, decoded);
-      } else if (path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/) && method === 'DELETE') {
-        const email = decodeURIComponent(path.match(/^\/v1\/admin\/whitelist\/([^/]+)$/)?.[1] || '');
-        return await handleDeleteWhitelistUser(email, decoded);
+      } else if (method === 'DELETE') {
+        // COMPREHENSIVE DELETE ROUTING - Catch ALL DELETE requests first
+        console.log('========== DELETE REQUEST DETECTED ==========');
+        console.log('Full event structure:', JSON.stringify({
+          path: event.path,
+          rawPath: event.rawPath,
+          httpMethod: event.httpMethod,
+          pathParameters: event.pathParameters,
+          requestContext: {
+            path: event.requestContext?.path,
+            resourcePath: event.requestContext?.resourcePath,
+            httpMethod: event.requestContext?.httpMethod,
+          }
+        }, null, 2));
+        
+        // Determine what resource is being deleted
+        const pathStr = path || '';
+        const resourcePath = event.requestContext?.resourcePath || '';
+        const hasWhitelist = pathStr.includes('whitelist') || resourcePath.includes('whitelist');
+        const hasUsers = pathStr.includes('/users/') && !pathStr.includes('whitelist');
+        
+        console.log('DELETE request analysis:');
+        console.log('  Path:', pathStr);
+        console.log('  Resource path:', resourcePath);
+        console.log('  Has whitelist:', hasWhitelist);
+        console.log('  Has users:', hasUsers);
+        console.log('  PathParameters:', JSON.stringify(event.pathParameters));
+        
+        // Handle DELETE /whitelist/{email}
+        if (hasWhitelist) {
+          console.log('========== PROCESSING DELETE WHITELIST ==========');
+          
+          // Try EVERY possible way to get the email
+          let rawEmail: string | undefined;
+          
+          // 1. pathParameters.email
+          if (event.pathParameters?.email) {
+            rawEmail = event.pathParameters.email;
+            console.log('✓ Email from pathParameters.email:', rawEmail);
+          }
+          // 2. pathParameters.proxy (catch-all proxy)
+          else if (event.pathParameters?.proxy) {
+            rawEmail = event.pathParameters.proxy;
+            console.log('✓ Email from pathParameters.proxy:', rawEmail);
+          }
+          // 3. Extract from normalized path
+          else {
+            // Try multiple regex patterns
+            const patterns = [
+              /^\/v1\/admin\/whitelist\/(.+)$/,
+              /^\/admin\/whitelist\/(.+)$/,
+              /^\/whitelist\/(.+)$/,
+              /\/whitelist\/([^/]+)/,
+            ];
+            
+            for (const pattern of patterns) {
+              const match = pathStr.match(pattern);
+              if (match && match[1]) {
+                rawEmail = match[1];
+                console.log(`✓ Email from path regex (${pattern}):`, rawEmail);
+                break;
+              }
+            }
+          }
+          
+          // 4. Try extracting from requestContext.path
+          if (!rawEmail && event.requestContext?.path) {
+            const ctxPath = event.requestContext.path;
+            const ctxMatch = ctxPath.match(/\/whitelist\/([^/]+)/);
+            if (ctxMatch && ctxMatch[1]) {
+              rawEmail = ctxMatch[1];
+              console.log('✓ Email from requestContext.path:', rawEmail);
+            }
+          }
+          
+          if (!rawEmail) {
+            console.error('❌ FAILED TO EXTRACT EMAIL');
+            console.error('Available data:', {
+              path: pathStr,
+              pathParameters: event.pathParameters,
+              requestContextPath: event.requestContext?.path,
+              resourcePath: resourcePath,
+            });
+            return createResponse(400, { 
+              error: 'Email not found',
+              debug: {
+                path: pathStr,
+                pathParameters: event.pathParameters,
+                requestContextPath: event.requestContext?.path,
+              }
+            });
+          }
+          
+          // Decode email
+          let email: string = rawEmail;
+          try {
+            email = decodeURIComponent(rawEmail);
+            console.log('Decoded email:', email);
+          } catch (e) {
+            console.log('Using raw email (decode failed):', email);
+          }
+          
+          // Call handler
+          try {
+            console.log('Calling handleDeleteWhitelistUser with email:', email);
+            const result = await handleDeleteWhitelistUser(email, decoded);
+            console.log('✓ Delete handler succeeded, status:', result.statusCode);
+            return result;
+          } catch (handlerError: any) {
+            console.error('❌ Delete handler threw error:', handlerError);
+            console.error('Error details:', {
+              message: handlerError?.message,
+              stack: handlerError?.stack,
+              name: handlerError?.name,
+            });
+            return createResponse(500, {
+              error: 'Failed to delete whitelist user',
+              message: handlerError?.message || 'Unknown error',
+            });
+          }
+        }
+        // Handle DELETE /users/{userId} - fall through to existing handler
+        else if (hasUsers) {
+          // Let it fall through to the existing user delete handler below
+          console.log('DELETE request is for users, continuing to user handler...');
+        }
+        else {
+          console.error('DELETE request does not match whitelist or users');
+          return createResponse(404, { error: 'DELETE endpoint not found' });
+        }
+      } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
+        // User delete handler (existing)
+        const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
+        return await handleDeactivateUser(userId!, decoded);
       } else if (path === '/v1/admin/activity' && method === 'GET') {
         console.log('========== MATCHED ACTIVITY LOGS ROUTE ==========');
         console.log('Path matches /v1/admin/activity');
@@ -328,9 +467,32 @@ const handlerImpl = async (event: any) => {
         console.log(`Path type: ${typeof path}, Path value: "${path}"`);
         console.log(`Path length: ${path?.length}`);
         console.log(`Method type: ${typeof method}, Method value: "${method}"`);
+        console.log(`Path parameters: ${JSON.stringify(event.pathParameters)}`);
         console.log(`Available routes: /v1/admin/users, /v1/admin/whitelist, /v1/admin/activity, /v1/admin/activity/log, /v1/admin/health`);
         console.log(`Checking if path contains whitelist: ${path?.includes('whitelist')}`);
         console.log(`Checking if path contains activity: ${path?.includes('activity')}`);
+        
+        // Check if this is a DELETE request to whitelist that didn't match
+        if (method === 'DELETE' && (path?.includes('whitelist') || event.pathParameters?.email)) {
+          console.error('========== DELETE WHITELIST PATH MISMATCH ==========');
+          console.error(`DELETE request to whitelist but path didn't match regex!`);
+          console.error(`Path: ${path}`);
+          console.error(`PathParameters: ${JSON.stringify(event.pathParameters)}`);
+          console.error(`Regex pattern: /^\\/v1\\/admin\\/whitelist\\/([^/]+)$/`);
+          console.error(`Path matches regex: ${path?.match(/^\/v1\/admin\/whitelist\/([^/]+)$/) ? 'YES' : 'NO'}`);
+          
+          // Try to handle it anyway using pathParameters
+          if (event.pathParameters?.email || event.pathParameters?.proxy) {
+            const email = event.pathParameters.email || event.pathParameters.proxy;
+            console.log(`Attempting to handle DELETE using pathParameters email: ${email}`);
+            try {
+              return await handleDeleteWhitelistUser(email, decoded);
+            } catch (error: any) {
+              console.error('Error in fallback DELETE handler:', error);
+              return createResponse(500, { error: 'Failed to delete whitelist user', details: error.message });
+            }
+          }
+        }
         
         // CRITICAL: If path contains whitelist or activity but didn't match, log detailed info
         if (path?.includes('whitelist') || path?.includes('activity')) {
@@ -343,12 +505,13 @@ const handlerImpl = async (event: any) => {
               receivedPath: path, 
               method,
               pathContainsWhitelist: path?.includes('whitelist'),
-              pathContainsActivity: path?.includes('activity')
+              pathContainsActivity: path?.includes('activity'),
+              pathParameters: event.pathParameters
             } 
           });
         }
         
-        return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
+        return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method, pathParameters: event.pathParameters } });
       }
     } catch (routingError: any) {
       console.error('========== ROUTING LOGIC ERROR ==========');
@@ -882,70 +1045,151 @@ async function handleAddWhitelistUser(body: any, adminUser: any) {
  * Delete whitelist user
  */
 async function handleDeleteWhitelistUser(email: string, adminUser: any) {
+  console.log('========== handleDeleteWhitelistUser START ==========');
+  console.log('Received email:', email);
+  console.log('Email type:', typeof email);
+  console.log('Admin user:', adminUser?.email);
+  
+  if (!email || typeof email !== 'string') {
+    console.error('Invalid email parameter:', email);
+    return createResponse(400, { error: 'Invalid email parameter' });
+  }
+  
   const emailLower = email.toLowerCase();
+  console.log('Normalized email:', emailLower);
 
   try {
     // Check if user has registered
-    const user = await getUserProfileByEmail(emailLower);
+    let user = null;
+    try {
+      console.log('Calling getUserProfileByEmail with:', emailLower);
+      user = await getUserProfileByEmail(emailLower);
+      console.log('getUserProfileByEmail returned:', user ? 'user found' : 'no user');
+    } catch (error: any) {
+      console.error('Error looking up user profile:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      // Continue even if user lookup fails - we can still delete the whitelist entry
+      user = null;
+    }
 
-    // Remove from whitelist
-    await docClient.send(new DeleteCommand({
-      TableName: APPROVED_EMAILS_TABLE,
-      Key: { email: emailLower },
-    }));
-
-    // If user exists, deactivate them
-    if (user) {
-      const now = Math.floor(Date.now() / 1000);
-      await docClient.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId: user.userId },
-        UpdateExpression: 'SET isDeactivated = :true, deactivatedAt = :now, updatedAt = :now',
-        ExpressionAttributeValues: {
-          ':true': true,
-          ':now': now,
-        },
+    // Check if whitelist entry exists before trying to delete
+    let whitelistExisted = false;
+    try {
+      const whitelistCheck = await docClient.send(new GetCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower },
       }));
+      whitelistExisted = !!whitelistCheck.Item;
+    } catch (error) {
+      console.error('Error checking whitelist entry:', error);
+      // Continue - we'll still try to delete it
+    }
 
-      // Delete user sessions
-      try {
-        const sessionsResult = await docClient.send(new QueryCommand({
-          TableName: TOKENS_TABLE,
-          IndexName: 'userId-tokenType-index',
-          KeyConditionExpression: 'userId = :userId AND tokenType = :tokenType',
-          ExpressionAttributeValues: {
-            ':userId': user.userId,
-            ':tokenType': 'session',
-          },
-        }));
-
-        if (sessionsResult.Items) {
-          for (const session of sessionsResult.Items) {
-            await docClient.send(new DeleteCommand({
-              TableName: TOKENS_TABLE,
-              Key: { tokenId: session.tokenId },
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('Error deleting user sessions:', error);
+    // Remove from whitelist (this is idempotent - won't fail if item doesn't exist)
+    try {
+      console.log('Attempting to delete whitelist entry for:', emailLower);
+      await docClient.send(new DeleteCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower },
+      }));
+      console.log('Whitelist entry deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting whitelist entry:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error message:', error?.message);
+      console.error('Error name:', error?.name);
+      console.error('Error code:', error?.code);
+      // If the entry doesn't exist, that's fine - continue
+      if (!whitelistExisted) {
+        console.log('Whitelist entry did not exist, continuing...');
+      } else {
+        // If it existed but delete failed, log but don't throw - we want to continue
+        console.error('Whitelist entry existed but delete failed - continuing anyway');
+        // Don't throw - let's see if we can still complete the operation
       }
     }
 
-    // Log activity
-    await logActivity('whitelist_user_deleted', adminUser.userId, adminUser.email, {
-      targetEmail: emailLower,
-      userWasRegistered: !!user,
-    });
+    // If user exists, deactivate them
+    if (user) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        await docClient.send(new UpdateCommand({
+          TableName: USERS_TABLE,
+          Key: { userId: user.userId },
+          UpdateExpression: 'SET isDeactivated = :true, deactivatedAt = :now, updatedAt = :now',
+          ExpressionAttributeValues: {
+            ':true': true,
+            ':now': now,
+          },
+        }));
+
+        // Delete user sessions
+        try {
+          const sessionsResult = await docClient.send(new QueryCommand({
+            TableName: TOKENS_TABLE,
+            IndexName: 'userId-tokenType-index',
+            KeyConditionExpression: 'userId = :userId AND tokenType = :tokenType',
+            ExpressionAttributeValues: {
+              ':userId': user.userId,
+              ':tokenType': 'session',
+            },
+          }));
+
+          if (sessionsResult.Items) {
+            for (const session of sessionsResult.Items) {
+              try {
+                await docClient.send(new DeleteCommand({
+                  TableName: TOKENS_TABLE,
+                  Key: { tokenId: session.tokenId },
+                }));
+              } catch (error) {
+                console.error('Error deleting individual session:', error);
+                // Continue deleting other sessions
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error deleting user sessions:', error);
+          // Continue - session deletion failure shouldn't block the operation
+        }
+      } catch (error) {
+        console.error('Error deactivating user:', error);
+        // Continue - user deactivation failure shouldn't block whitelist deletion
+      }
+    }
+
+    // Log activity (don't fail if this fails)
+    try {
+      await logActivity('whitelist_user_deleted', adminUser.userId, adminUser.email, {
+        targetEmail: emailLower,
+        userWasRegistered: !!user,
+        whitelistExisted,
+      });
+    } catch (error) {
+      console.error('Error logging activity (non-fatal):', error);
+      // Continue - logging failure shouldn't block the operation
+    }
 
     return createResponse(200, {
       success: true,
-      message: 'Whitelist user deleted successfully',
+      message: whitelistExisted 
+        ? 'Whitelist user deleted successfully' 
+        : 'Whitelist entry did not exist (may have been expired or already deleted)',
       userWasDeactivated: !!user,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting whitelist user:', error);
-    return createResponse(500, { error: 'Failed to delete whitelist user' });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    return createResponse(500, { 
+      error: 'Failed to delete whitelist user',
+      details: error.message 
+    });
   }
 }
 

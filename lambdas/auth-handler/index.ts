@@ -760,10 +760,10 @@ async function isEmailApproved(email: string): Promise<boolean> {
     }
 
     // Check if approval has expiration date
-    if (result.Item.expiresAt) {
+    if (result.Item.expirationDate) {
       const now = Math.floor(Date.now() / 1000);
-      const isNotExpired = now < result.Item.expiresAt;
-      console.log('[isEmailApproved] Email has expiration date:', result.Item.expiresAt, 'now:', now, 'isNotExpired:', isNotExpired);
+      const isNotExpired = now < result.Item.expirationDate;
+      console.log('[isEmailApproved] Email has expiration date:', result.Item.expirationDate, 'now:', now, 'isNotExpired:', isNotExpired);
       return isNotExpired;
     }
 
@@ -814,6 +814,58 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
       }));
     }
     
+    // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
+    // Check whitelist if not a Sigma email
+    if (!emailLower.endsWith('@sigmacomputing.com')) {
+      try {
+        const whitelistResult = await docClient.send(new GetCommand({
+          TableName: APPROVED_EMAILS_TABLE,
+          Key: { email: emailLower }
+        }));
+
+        if (whitelistResult.Item && whitelistResult.Item.expirationDate) {
+          const whitelistExpiration = whitelistResult.Item.expirationDate;
+          const now = Math.floor(Date.now() / 1000);
+          
+          // Check if whitelist entry has expired
+          if (now >= whitelistExpiration) {
+            throw new Error('Whitelist entry has expired');
+          }
+          
+          // Update user expiration date if:
+          // 1. User doesn't have an expiration date, OR
+          // 2. Whitelist expiration is different from user expiration
+          if (!user.expirationDate || user.expirationDate !== whitelistExpiration) {
+            await docClient.send(new UpdateCommand({
+              TableName: USERS_TABLE,
+              Key: { userId: user.userId },
+              UpdateExpression: 'SET expirationDate = :expirationDate, updatedAt = :now',
+              ExpressionAttributeValues: {
+                ':expirationDate': whitelistExpiration,
+                ':now': now
+              }
+            }));
+            console.log(`Synced expiration date for existing user ${user.userId} from whitelist: ${whitelistExpiration}`);
+          }
+        } else if (whitelistResult.Item && !whitelistResult.Item.expirationDate && user.expirationDate) {
+          // If whitelist has no expiration but user has one, remove user expiration
+          const now = Math.floor(Date.now() / 1000);
+          await docClient.send(new UpdateCommand({
+            TableName: USERS_TABLE,
+            Key: { userId: user.userId },
+            UpdateExpression: 'SET updatedAt = :now REMOVE expirationDate',
+            ExpressionAttributeValues: {
+              ':now': now
+            }
+          }));
+          console.log(`Removed expiration date for existing user ${user.userId} (whitelist has no expiration)`);
+        }
+      } catch (error) {
+        console.error('Error syncing expiration date from whitelist:', error);
+        // Continue even if sync fails - don't block login
+      }
+    }
+    
     return {
       userId: user.userId,
       email: user.email,
@@ -836,13 +888,13 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
 
       if (whitelistResult.Item) {
         // Check if whitelist entry has expired
-        if (whitelistResult.Item.expiresAt) {
+        if (whitelistResult.Item.expirationDate) {
           const now = Math.floor(Date.now() / 1000);
-          if (now >= whitelistResult.Item.expiresAt) {
+          if (now >= whitelistResult.Item.expirationDate) {
             throw new Error('Whitelist entry has expired');
           }
           // Set user expiration to whitelist expiration
-          expirationDate = whitelistResult.Item.expiresAt;
+          expirationDate = whitelistResult.Item.expirationDate;
         }
         
         // Use role from whitelist if specified
