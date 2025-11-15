@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  RefreshControl,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -18,18 +20,36 @@ import type { RootStackParamList } from '../app/_layout';
 
 type WhitelistListNavigationProp = StackNavigationProp<RootStackParamList>;
 
+type SortField = 'role' | 'approvedAt' | 'expirationDate' | 'registeredAt';
+type SortDirection = 'asc' | 'desc';
+
 /**
  * Whitelist List Component
  * Displays list of whitelisted users
  */
-export function WhitelistList() {
+interface WhitelistListProps {
+  refreshTrigger?: number;
+}
+
+export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
   const navigation = useNavigation<WhitelistListNavigationProp>();
   const [whitelistUsers, setWhitelistUsers] = useState<WhitelistUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortModalVisible, setSortModalVisible] = useState(false);
 
   useEffect(() => {
     loadWhitelist();
   }, []);
+
+  // Refresh when refreshTrigger changes (for tab-based navigation)
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadWhitelist();
+    }
+  }, [refreshTrigger]);
 
   // Refresh when screen comes into focus (e.g., returning from AddWhitelistUser)
   useFocusEffect(
@@ -38,13 +58,33 @@ export function WhitelistList() {
     }, [])
   );
 
-  const loadWhitelist = async () => {
+  const loadWhitelist = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      console.log('[WhitelistList] Loading whitelist users...');
       const response = await AdminService.listWhitelistUsers();
-      setWhitelistUsers(response.whitelistUsers);
+      console.log('[WhitelistList] Response received:', {
+        hasResponse: !!response,
+        responseKeys: response ? Object.keys(response) : [],
+        whitelistUsers: response?.whitelistUsers,
+        whitelistUsersLength: response?.whitelistUsers?.length,
+        fullResponse: JSON.stringify(response, null, 2)
+      });
+      
+      const users = response?.whitelistUsers || [];
+      console.log('[WhitelistList] Setting whitelist users:', users.length);
+      setWhitelistUsers(users);
     } catch (error: any) {
-      console.error('Error loading whitelist:', error);
+      console.error('[WhitelistList] Error loading whitelist:', {
+        error: error,
+        message: error?.message,
+        stack: error?.stack,
+        isExpirationError: error?.isExpirationError
+      });
       if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
@@ -63,11 +103,19 @@ export function WhitelistList() {
           ]
         );
       } else {
-        Alert.alert('Error', 'Failed to load whitelist. Please try again.');
+        Alert.alert(
+          'Error', 
+          `Failed to load whitelist: ${error?.message || 'Unknown error'}. Check console for details.`
+        );
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    loadWhitelist(true);
   };
 
   const handleDelete = (email: string) => {
@@ -171,13 +219,90 @@ export function WhitelistList() {
     });
   };
 
+  // Sort the whitelist users based on selected field and direction
+  const sortedWhitelistUsers = useMemo(() => {
+    if (!sortField) return whitelistUsers;
+
+    const sorted = [...whitelistUsers].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'role':
+          aValue = a.role || '';
+          bValue = b.role || '';
+          break;
+        case 'approvedAt':
+          aValue = a.approvedAt ?? 0;
+          bValue = b.approvedAt ?? 0;
+          break;
+        case 'expirationDate':
+          aValue = a.expirationDate ?? 0;
+          bValue = b.expirationDate ?? 0;
+          break;
+        case 'registeredAt':
+          // For registered users, use registeredAt timestamp; for unregistered, use 0
+          aValue = a.hasRegistered ? (a.registeredAt ?? 0) : 0;
+          bValue = b.hasRegistered ? (b.registeredAt ?? 0) : 0;
+          // Put unregistered users at the end
+          if (!a.hasRegistered && b.hasRegistered) return 1;
+          if (a.hasRegistered && !b.hasRegistered) return -1;
+          break;
+      }
+
+      if (sortField === 'role') {
+        // String comparison for role
+        const comparison = aValue.localeCompare(bValue);
+        return sortDirection === 'asc' ? comparison : -comparison;
+      } else {
+        // Numeric comparison for dates
+        const comparison = aValue - bValue;
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+    });
+
+    return sorted;
+  }, [whitelistUsers, sortField, sortDirection]);
+
+  const handleSortSelect = (field: SortField) => {
+    // If clicking the same field, toggle direction; otherwise set new field with asc
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setSortModalVisible(false);
+  };
+
+  const getSortFieldLabel = (field: SortField): string => {
+    switch (field) {
+      case 'role':
+        return 'Role';
+      case 'approvedAt':
+        return 'Whitelisted';
+      case 'expirationDate':
+        return 'Expires';
+      case 'registeredAt':
+        return 'Registered';
+    }
+  };
+
   const renderWhitelistItem = ({ item }: { item: WhitelistUser }) => (
     <View style={styles.whitelistItem}>
       <View style={styles.whitelistInfo}>
         <Text style={styles.whitelistEmail}>{item.email}</Text>
         <View style={styles.whitelistMeta}>
           <Text style={styles.whitelistMetaText}>
-            Role: {item.role} | Expires: {formatDate(item.expirationDate)}
+            Role: {item.role}
+          </Text>
+          {item.approvedAt && (
+            <Text style={styles.whitelistMetaText}>
+              Whitelisted: {formatDate(item.approvedAt)}
+            </Text>
+          )}
+          <Text style={styles.whitelistMetaText}>
+            Expires: {formatDate(item.expirationDate)}
           </Text>
           {item.hasRegistered ? (
             <Text style={styles.registeredText}>
@@ -211,16 +336,48 @@ export function WhitelistList() {
 
   return (
     <View style={styles.container}>
-      {/* Add Button */}
+      {/* Header with Add Button and Sort Button */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddWhitelistUser' as never)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add Whitelist User</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => navigation.navigate('AddWhitelistUser' as never)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Add Whitelist User</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={() => setSortModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name={sortField ? "filter" : "filter-outline"} 
+              size={20} 
+              color={sortField ? colors.primary : colors.textSecondary} 
+            />
+            <Text style={[styles.sortButtonText, sortField && styles.sortButtonTextActive]}>
+              Sort
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {sortField && (
+          <View style={styles.sortIndicator}>
+            <Text style={styles.sortIndicatorText}>
+              Sorted by: {getSortFieldLabel(sortField)} ({sortDirection === 'asc' ? 'Asc' : 'Desc'})
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setSortField(null);
+                setSortDirection('asc');
+              }}
+              style={styles.clearSortButton}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Whitelist List */}
@@ -230,10 +387,18 @@ export function WhitelistList() {
         </View>
       ) : (
         <FlatList
-          data={whitelistUsers}
+          data={sortedWhitelistUsers}
           renderItem={renderWhitelistItem}
           keyExtractor={(item) => item.email}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No whitelist users found</Text>
@@ -241,6 +406,61 @@ export function WhitelistList() {
           }
         />
       )}
+
+      {/* Sort Modal */}
+      <Modal
+        visible={sortModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setSortModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSortModalVisible(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Sort By</Text>
+              <TouchableOpacity
+                onPress={() => setSortModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.sortOptions}>
+              {(['role', 'approvedAt', 'expirationDate', 'registeredAt'] as SortField[]).map((field) => (
+                <TouchableOpacity
+                  key={field}
+                  style={[
+                    styles.sortOption,
+                    sortField === field && styles.sortOptionActive,
+                  ]}
+                  onPress={() => handleSortSelect(field)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.sortOptionText,
+                      sortField === field && styles.sortOptionTextActive,
+                    ]}
+                  >
+                    {getSortFieldLabel(field)}
+                  </Text>
+                  {sortField === field && (
+                    <Ionicons
+                      name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'}
+                      size={20}
+                      color={colors.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -256,7 +476,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   addButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -270,6 +495,42 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 80,
+  },
+  sortButtonText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  sortButtonTextActive: {
+    color: colors.primary,
+  },
+  sortIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sortIndicatorText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  clearSortButton: {
+    padding: spacing.xs,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -277,6 +538,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: spacing.md,
+    flexGrow: 1,
   },
   whitelistItem: {
     flexDirection: 'row',
@@ -328,6 +590,58 @@ const styles = StyleSheet.create({
   emptyText: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+    paddingBottom: spacing.xl,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    ...typography.h3,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalCloseButton: {
+    padding: spacing.xs,
+  },
+  sortOptions: {
+    padding: spacing.md,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  sortOptionActive: {
+    backgroundColor: colors.primary + '15',
+  },
+  sortOptionText: {
+    ...typography.body,
+    color: colors.textPrimary,
+  },
+  sortOptionTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 
