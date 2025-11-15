@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Login from './(tabs)/Login';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
@@ -13,7 +15,7 @@ import ActivityLog from './(tabs)/ActivityLog';
 import EditUser from './(tabs)/EditUser';
 import AddWhitelistUser from './(tabs)/AddWhitelistUser';
 import { Alert } from 'react-native';
-import { colors } from '../constants/Theme';
+import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 
@@ -40,6 +42,7 @@ const Stack = createStackNavigator<RootStackParamList>();
 export default function RootLayout() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isVerifyingMagicLink, setIsVerifyingMagicLink] = useState(false);
   const navigationRef = useRef<any>(null);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ export default function RootLayout() {
 
       if (token) {
         console.log('🔐 Verifying magic link token...');
+        setIsVerifyingMagicLink(true);
         try {
           const app = parsed.queryParams?.app as string | undefined;
           const session = await AuthService.verifyMagicLink(token);
@@ -147,11 +151,15 @@ export default function RootLayout() {
                   });
                 }
                 console.log(`✅ Navigated to ${targetScreen}`);
+                // Hide loading indicator after navigation completes
+                setIsVerifyingMagicLink(false);
               } catch (error) {
                 console.warn('Navigation error (will retry):', error);
                 if (retryCount < maxRetries) {
                   retryCount++;
                   setTimeout(navigateToScreen, 200);
+                } else {
+                  setIsVerifyingMagicLink(false);
                 }
               }
             } else {
@@ -161,6 +169,7 @@ export default function RootLayout() {
                 setTimeout(navigateToScreen, 200);
               } else {
                 console.warn('⚠️ Navigation ref not ready after max retries');
+                setIsVerifyingMagicLink(false);
               }
             }
           };
@@ -169,6 +178,7 @@ export default function RootLayout() {
           setTimeout(navigateToScreen, 300);
         } catch (error: any) {
           console.error('❌ Deep link auth error:', error);
+          setIsVerifyingMagicLink(false);
           const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
           
           // Handle expiration errors
@@ -220,9 +230,24 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Show nothing while checking auth status
-  if (isCheckingAuth || initialRoute === null) {
-    return null;
+  // Show loading screen while checking auth status or verifying magic link
+  if (isCheckingAuth || initialRoute === null || isVerifyingMagicLink) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <StatusBar style="auto" />
+        <View style={styles.loadingContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>
+            {isVerifyingMagicLink ? 'Logging in...' : 'Loading...'}
+          </Text>
+          {isVerifyingMagicLink && (
+            <Text style={styles.loadingSubtext}>
+              Setting up your account
+            </Text>
+          )}
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -316,3 +341,28 @@ export default function RootLayout() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    marginTop: spacing.lg,
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+});
