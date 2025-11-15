@@ -83,7 +83,24 @@ export class AuthService {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || data.error || 'Failed to verify magic link');
+      const errorMessage = data.message || data.error || 'Failed to verify magic link';
+      const error = new Error(errorMessage) as any;
+      
+      // Add error type based on API response
+      if (data.error === 'Token expired' || data.error === 'Invalid or expired token') {
+        error.isTokenExpired = true;
+        error.errorType = data.error === 'Token expired' ? 'expired' : 'invalid';
+      } else if (data.error === 'Token already used') {
+        error.isTokenExpired = true;
+        error.errorType = 'used';
+      }
+      
+      // Extract email from error response if available
+      if (data.email) {
+        error.email = data.email;
+      }
+      
+      throw error;
     }
 
     // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email, role } }

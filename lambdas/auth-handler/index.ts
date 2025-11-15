@@ -492,7 +492,10 @@ async function handleVerifyMagicLink(body: any, event: any) {
       sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
     }, deviceId, ipAddress);
     
-    return createResponse(400, { error: 'Token already used' });
+    return createResponse(400, { 
+      error: 'Token already used',
+      email: tokenData.email // Include email in error response
+    });
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -503,7 +506,10 @@ async function handleVerifyMagicLink(body: any, event: any) {
       sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
     }, deviceId, ipAddress);
     
-    return createResponse(400, { error: 'Token expired' });
+    return createResponse(400, { 
+      error: 'Token expired',
+      email: tokenData.email // Include email in error response
+    });
   }
 
   // Mark token as used
@@ -844,12 +850,12 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
           userRole = validateRole(whitelistResult.Item.role) || 'basic';
         }
         
-        // Mark user as registered in whitelist
+        // Mark user as registered in whitelist (only set if not already set to preserve first registration time)
         const now = Math.floor(Date.now() / 1000);
         await docClient.send(new UpdateCommand({
           TableName: APPROVED_EMAILS_TABLE,
           Key: { email: emailLower },
-          UpdateExpression: 'SET registeredAt = :now',
+          UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
           ExpressionAttributeValues: { ':now': now }
         }));
       }

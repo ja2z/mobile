@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Login from './(tabs)/Login';
+import ExpiredLink from './(tabs)/ExpiredLink';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
@@ -22,6 +23,7 @@ import { ActivityService } from '../services/ActivityService';
 // Define the navigation stack parameter list
 export type RootStackParamList = {
   Login: undefined;
+  ExpiredLink: { email?: string; errorType?: 'expired' | 'invalid' | 'used' };
   Home: undefined;
   Dashboard: undefined;
   AINewsletter: undefined;
@@ -43,6 +45,7 @@ export default function RootLayout() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isVerifyingMagicLink, setIsVerifyingMagicLink] = useState(false);
+  const [expiredLinkParams, setExpiredLinkParams] = useState<{ email?: string; errorType?: 'expired' | 'invalid' | 'used' } | null>(null);
   const navigationRef = useRef<any>(null);
 
   useEffect(() => {
@@ -177,12 +180,39 @@ export default function RootLayout() {
           // Start navigation attempt after a brief delay to ensure navigation is initialized
           setTimeout(navigateToScreen, 300);
         } catch (error: any) {
-          console.error('❌ Deep link auth error:', error);
-          setIsVerifyingMagicLink(false);
+          // Only log as error if it's not a token expiration (which is expected)
+          if (!error.isTokenExpired) {
+            console.error('❌ Deep link auth error:', error);
+          } else {
+            console.log('🔗 Token expired/invalid (expected):', error.message);
+          }
           const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
           
-          // Handle expiration errors
-          if (error.isExpirationError) {
+          // Handle token expiration/invalid errors - navigate to ExpiredLink screen
+          if (error.isTokenExpired) {
+            // Don't log as error to avoid error toast - this is expected behavior
+            console.log('🔗 Token expired/invalid, navigating to ExpiredLink screen');
+            setIsCheckingAuth(false);
+            
+            // Store params for ExpiredLink screen - this will be used as initialParams
+            const paramsToStore = {
+              errorType: error.errorType || 'invalid',
+              email: error.email,
+            };
+            setExpiredLinkParams(paramsToStore);
+            
+            console.log('📧 Email from error:', error.email, 'Error type:', error.errorType);
+            
+            // Set initialRoute to ExpiredLink so NavigationContainer can render
+            // The expiredLinkParams state will be used as initialParams
+            setInitialRoute('ExpiredLink');
+            
+            // Hide loading screen so NavigationContainer can render
+            // The component will receive params via initialParams
+            setIsVerifyingMagicLink(false);
+          } 
+          // Handle account expiration errors
+          else if (error.isExpirationError) {
             Alert.alert(
               'Account Expired',
               errorMessage,
@@ -199,13 +229,63 @@ export default function RootLayout() {
               ]
             );
           } else {
-            // For other errors, just log
-            console.error('Error details:', errorMessage);
-            // Still set initial route to Login on error
-            if (isCheckingAuth) {
-              setInitialRoute('Login');
-              setIsCheckingAuth(false);
-            }
+            // For other errors, navigate to ExpiredLink with generic error
+            // Don't log as error to avoid error toast - log as warning instead
+            console.warn('⚠️ Deep link error (non-token):', errorMessage);
+            setIsCheckingAuth(false);
+            // Keep isVerifyingMagicLink true to show loading screen until navigation completes
+            
+            // Store params for ExpiredLink screen
+            setExpiredLinkParams({
+              errorType: 'invalid',
+              email: error.email,
+            });
+            
+            // Navigate to ExpiredLink screen
+            // Use reset() to navigate - this ensures clean navigation stack with params
+            let retryCount = 0;
+            const maxRetries = 10;
+            
+            const navigateToExpiredLink = () => {
+              if (navigationRef.current) {
+                try {
+                  navigationRef.current.reset({
+                    index: 0,
+                    routes: [{ 
+                      name: 'ExpiredLink',
+                      params: {
+                        errorType: 'invalid',
+                        email: error.email,
+                      }
+                    }],
+                  });
+                  console.log('✅ Navigated to ExpiredLink screen with email:', error.email);
+                  // Hide loading screen after successful navigation
+                  setIsVerifyingMagicLink(false);
+                } catch (navError) {
+                  console.warn('Navigation error (will retry):', navError);
+                  if (retryCount < maxRetries) {
+                    retryCount++;
+                    setTimeout(navigateToExpiredLink, 200);
+                  } else {
+                    // Fallback: navigation failed, hide loading screen and set initial route
+                    setInitialRoute('ExpiredLink');
+                    setIsVerifyingMagicLink(false);
+                  }
+                }
+              } else {
+                if (retryCount < maxRetries) {
+                  retryCount++;
+                  setTimeout(navigateToExpiredLink, 200);
+                } else {
+                  // Fallback: navigation ref never became available, set initial route
+                  setInitialRoute('ExpiredLink');
+                  setIsVerifyingMagicLink(false);
+                }
+              }
+            };
+            
+            setTimeout(navigateToExpiredLink, 300);
           }
         }
       } else {
@@ -271,6 +351,15 @@ export default function RootLayout() {
           options={{
             title: 'Login',
             headerShown: false, // Full-screen branded login experience
+          }}
+        />
+        <Stack.Screen 
+          name="ExpiredLink" 
+          component={ExpiredLink}
+          initialParams={expiredLinkParams || undefined}
+          options={{
+            title: 'Link Expired',
+            headerShown: false, // Full-screen branded experience
           }}
         />
         <Stack.Screen 
