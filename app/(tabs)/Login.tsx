@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -36,6 +36,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const usernameInputRef = useRef<TextInput>(null);
+  const domainInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const isValidEmail = (email: string) => {
     return email.includes('@') && email.length > 3 && email.split('@').length === 2;
@@ -67,7 +70,12 @@ export default function Login() {
       setSuccess(true);
       // Don't navigate yet - user needs to check their email and click the magic link
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
+      let errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
+      // Shorten email approval error message
+      if (errorMessage.toLowerCase().includes('not approved') || 
+          errorMessage.toLowerCase().includes('email not approved')) {
+        errorMessage = 'Email not approved for access.';
+      }
       setError(errorMessage);
       console.error('Magic link request error:', err);
     } finally {
@@ -75,19 +83,25 @@ export default function Login() {
     }
   };
 
-  // Clear error when user starts typing to prevent jumpy input behavior
+  // Clear error when user starts typing, but debounce to prevent jitter
   const handleUsernameChange = (text: string) => {
-    if (error) {
-      setError(null);
-    }
     setUsername(text);
+    // Clear error on next tick to avoid layout recalculations during typing
+    if (error) {
+      requestAnimationFrame(() => {
+        setError(null);
+      });
+    }
   };
 
   const handleDomainChange = (text: string) => {
-    if (error) {
-      setError(null);
-    }
     setDomain(text);
+    // Clear error on next tick to avoid layout recalculations during typing
+    if (error) {
+      requestAnimationFrame(() => {
+        setError(null);
+      });
+    }
   };
 
   const handleSkip = () => {
@@ -108,10 +122,14 @@ export default function Login() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="none"
+          scrollEnabled={true}
+          bounces={false}
         >
           <View style={styles.content}>
           {/* Header Section with Branding */}
@@ -129,34 +147,20 @@ export default function Login() {
 
           {/* Login Form */}
           <View style={styles.formContainer}>
-            {/* Error Message */}
-            {error && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={20} color={colors.error} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            {/* Success Message */}
-            {success && (
-              <View style={styles.successContainer}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text style={styles.successText}>
-                  Magic link sent! Check your email and tap the link to sign in.
-                </Text>
-              </View>
-            )}
-
             {/* Email Input */}
-            <View style={styles.inputContainer}>
+            <View style={styles.inputContainer} collapsable={false}>
               <Text style={styles.inputLabel}>Email Address</Text>
-              <View style={[
-                styles.inputRow,
-                isFocused && styles.inputRowFocused
-              ]}>
+              <View 
+                style={[
+                  styles.inputRow,
+                  isFocused && styles.inputRowFocused
+                ]}
+                collapsable={false}
+              >
                 {/* Username Input (30%) */}
-                <View style={styles.usernameWrapper}>
+                <View style={styles.usernameWrapper} pointerEvents="box-none" collapsable={false}>
                   <TextInput
+                    ref={usernameInputRef}
                     style={styles.usernameInput}
                     placeholder="username"
                     placeholderTextColor={colors.textSecondary}
@@ -169,6 +173,9 @@ export default function Login() {
                     autoCorrect={false}
                     autoComplete="off"
                     textAlignVertical="center"
+                    editable={!loading}
+                    selectTextOnFocus={false}
+                    importantForAccessibility="yes"
                   />
                 </View>
                 
@@ -176,8 +183,9 @@ export default function Login() {
                 <Text style={styles.atSymbol}>@</Text>
                 
                 {/* Domain Input (remaining) */}
-                <View style={styles.domainWrapper}>
+                <View style={styles.domainWrapper} pointerEvents="box-none" collapsable={false}>
                   <TextInput
+                    ref={domainInputRef}
                     style={styles.domainInput}
                     placeholder="domain.com"
                     placeholderTextColor={colors.textSecondary}
@@ -190,10 +198,30 @@ export default function Login() {
                     autoCorrect={false}
                     autoComplete="off"
                     textAlignVertical="center"
+                    editable={!loading}
+                    selectTextOnFocus={false}
+                    importantForAccessibility="yes"
                   />
                 </View>
               </View>
             </View>
+
+            {/* Error/Success Messages - Positioned absolutely to not affect layout */}
+            {error && (
+              <View style={styles.errorContainerAbsolute} pointerEvents="none">
+                <Ionicons name="alert-circle" size={20} color={colors.error} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {success && (
+              <View style={styles.successContainerAbsolute} pointerEvents="none">
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <Text style={styles.successText}>
+                  Magic link sent! Check your email and tap the link to sign in.
+                </Text>
+              </View>
+            )}
 
             {/* Subtitle moved below email input */}
             <Text style={styles.subtitle}>
@@ -304,6 +332,7 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginTop: spacing.md,
+    position: 'relative',
   },
   inputContainer: {
     marginBottom: spacing.lg,
@@ -331,6 +360,7 @@ const styles = StyleSheet.create({
   usernameWrapper: {
     width: '30%',
     backgroundColor: 'transparent',
+    justifyContent: 'center',
   },
   usernameInput: {
     fontSize: typography.body.fontSize,
@@ -343,6 +373,7 @@ const styles = StyleSheet.create({
     height: 56,
     includeFontPadding: false,
     textAlignVertical: 'center',
+    flex: 1,
   },
   atSymbol: {
     ...typography.body,
@@ -359,6 +390,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     minWidth: 0,
+    justifyContent: 'center',
   },
   domainInput: {
     fontSize: typography.body.fontSize,
@@ -371,6 +403,7 @@ const styles = StyleSheet.create({
     height: 56,
     includeFontPadding: false,
     textAlignVertical: 'center',
+    flex: 1,
   },
   submitButton: {
     flexDirection: 'row',
@@ -419,13 +452,17 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
     fontWeight: '500',
   },
-  errorContainer: {
+  errorContainerAbsolute: {
+    position: 'absolute',
+    top: -70,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF2F2',
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    zIndex: 10,
   },
   errorText: {
     ...typography.bodySmall,
@@ -433,13 +470,17 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     flex: 1,
   },
-  successContainer: {
+  successContainerAbsolute: {
+    position: 'absolute',
+    top: -70,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    zIndex: 10,
   },
   successText: {
     ...typography.bodySmall,
