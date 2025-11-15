@@ -16,6 +16,7 @@ import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import { Alert } from 'react-native';
+import { ActivityTypeFilter, type ActivityType } from './ActivityTypeFilter';
 
 type ActivityLogViewNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -32,10 +33,16 @@ export function ActivityLogView() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
+  const [selectedActivityTypes, setSelectedActivityTypes] = useState<ActivityType[]>([]);
+
+  // Reset to page 1 when filters change (but not when page changes)
+  useEffect(() => {
+    setPage(1);
+  }, [emailFilter, selectedActivityTypes]);
 
   useEffect(() => {
     loadActivities();
-  }, [page, emailFilter]);
+  }, [page, emailFilter, selectedActivityTypes]);
 
   const loadActivities = async (isRefresh = false) => {
     try {
@@ -48,6 +55,7 @@ export function ActivityLogView() {
         page,
         limit: 50,
         emailFilter: emailFilter || undefined,
+        eventTypeFilter: selectedActivityTypes.length > 0 ? selectedActivityTypes : undefined,
       });
       setActivities(response.activities);
       setTotalPages(response.pagination.totalPages);
@@ -132,7 +140,7 @@ export function ActivityLogView() {
 
   return (
     <View style={styles.container}>
-      {/* Filter */}
+      {/* Filters */}
       <View style={styles.filterContainer}>
         <TextInput
           style={styles.filterInput}
@@ -140,6 +148,10 @@ export function ActivityLogView() {
           value={emailFilter}
           onChangeText={setEmailFilter}
           placeholderTextColor={colors.textSecondary}
+        />
+        <ActivityTypeFilter
+          selectedTypes={selectedActivityTypes}
+          onSelectionChange={setSelectedActivityTypes}
         />
       </View>
 
@@ -212,6 +224,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
   },
   filterInput: {
     ...typography.body,

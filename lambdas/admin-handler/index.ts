@@ -191,7 +191,19 @@ const handlerImpl = async (event: any) => {
     }
 
     // Parse query parameters for GET requests
+    // Handle both single and multi-value query parameters
     const queryParams = event.queryStringParameters || {};
+    const multiValueQueryParams = event.multiValueQueryStringParameters || {};
+    
+    // Merge multi-value params into queryParams (for parameters that can have multiple values)
+    // API Gateway provides both queryStringParameters (single value) and multiValueQueryStringParameters (array)
+    // Prefer multiValueQueryStringParameters if it exists, otherwise use single value
+    if (multiValueQueryParams.eventTypeFilter && multiValueQueryParams.eventTypeFilter.length > 0) {
+      queryParams.eventTypeFilter = multiValueQueryParams.eventTypeFilter;
+    } else if (queryParams.eventTypeFilter && !Array.isArray(queryParams.eventTypeFilter)) {
+      // If single value exists but not in multiValue, ensure it's handled as array later
+      queryParams.eventTypeFilter = [queryParams.eventTypeFilter];
+    }
 
     // CRITICAL: Health check endpoint that bypasses auth - helps verify Lambda is being invoked
     // This should be checked BEFORE auth to help diagnose zero-logs issues
@@ -1034,9 +1046,20 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
   const page = parseInt(params.page || '1', 10);
   const limit = parseInt(params.limit || '50', 10);
   const emailFilter = params.emailFilter || '';
+  
+  // Parse eventTypeFilter - can be a single value or array
+  let eventTypeFilter: string[] = [];
+  if (params.eventTypeFilter) {
+    if (Array.isArray(params.eventTypeFilter)) {
+      eventTypeFilter = params.eventTypeFilter;
+    } else {
+      eventTypeFilter = [params.eventTypeFilter];
+    }
+  }
+  
   const offset = (page - 1) * limit;
   
-  console.log('Pagination params:', { page, limit, emailFilter, offset });
+  console.log('Pagination params:', { page, limit, emailFilter, eventTypeFilter, offset });
   
   try {
     console.log('Attempting to scan ACTIVITY_TABLE...');
@@ -1057,6 +1080,15 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
         a.email?.toLowerCase().includes(filterLower)
       );
       console.log('After email filter, activities count:', activities.length);
+    }
+
+    // Filter by event type if provided
+    if (eventTypeFilter.length > 0) {
+      activities = activities.filter((a: any) => 
+        eventTypeFilter.includes(a.eventType)
+      );
+      console.log('After eventType filter, activities count:', activities.length);
+      console.log('Filtered by event types:', eventTypeFilter);
     }
 
     // Sort by timestamp (most recent first)

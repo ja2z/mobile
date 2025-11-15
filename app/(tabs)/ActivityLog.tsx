@@ -17,6 +17,7 @@ import { AuthService } from '../../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import { Alert } from 'react-native';
+import { ActivityTypeFilter, type ActivityType } from '../../components/ActivityTypeFilter';
 
 type ActivityLogNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -32,10 +33,16 @@ export default function ActivityLog() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
+  const [selectedActivityTypes, setSelectedActivityTypes] = useState<ActivityType[]>([]);
+
+  // Reset to page 1 when filters change (but not when page changes)
+  useEffect(() => {
+    setPage(1);
+  }, [emailFilter, selectedActivityTypes]);
 
   useEffect(() => {
     loadActivities();
-  }, [page, emailFilter]);
+  }, [page, emailFilter, selectedActivityTypes]);
 
   const loadActivities = async (isRefresh = false) => {
     try {
@@ -48,6 +55,7 @@ export default function ActivityLog() {
         page,
         limit: 50,
         emailFilter: emailFilter || undefined,
+        eventTypeFilter: selectedActivityTypes.length > 0 ? selectedActivityTypes : undefined,
       });
       setActivities(response.activities);
       setTotalPages(response.pagination.totalPages);
@@ -133,7 +141,7 @@ export default function ActivityLog() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
-        {/* Filter */}
+        {/* Filters */}
         <View style={styles.filterContainer}>
           <TextInput
             style={styles.filterInput}
@@ -141,6 +149,10 @@ export default function ActivityLog() {
             value={emailFilter}
             onChangeText={setEmailFilter}
             placeholderTextColor={colors.textSecondary}
+          />
+          <ActivityTypeFilter
+            selectedTypes={selectedActivityTypes}
+            onSelectionChange={setSelectedActivityTypes}
           />
         </View>
 
@@ -217,6 +229,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
   },
   filterInput: {
     ...typography.body,

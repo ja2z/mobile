@@ -56,6 +56,7 @@ export interface ListActivityLogsParams {
   page?: number;
   limit?: number;
   emailFilter?: string;
+  eventTypeFilter?: string | string[];
 }
 
 export interface ListActivityLogsResponse {
@@ -288,6 +289,12 @@ export class AdminService {
     if (params.page) queryParams.append('page', params.page.toString());
     if (params.limit) queryParams.append('limit', params.limit.toString());
     if (params.emailFilter) queryParams.append('emailFilter', params.emailFilter);
+    if (params.eventTypeFilter) {
+      const eventTypes = Array.isArray(params.eventTypeFilter) 
+        ? params.eventTypeFilter 
+        : [params.eventTypeFilter];
+      eventTypes.forEach(type => queryParams.append('eventTypeFilter', type));
+    }
 
     const queryString = queryParams.toString();
     return this.apiCall<ListActivityLogsResponse>(`/activity${queryString ? `?${queryString}` : ''}`);
