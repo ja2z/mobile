@@ -33,16 +33,16 @@ export default function ActivityLog() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
-  const [selectedActivityTypes, setSelectedActivityTypes] = useState<ActivityType[]>([]);
+  const [selectedActivityType, setSelectedActivityType] = useState<ActivityType | null>(null);
 
   // Reset to page 1 when filters change (but not when page changes)
   useEffect(() => {
     setPage(1);
-  }, [emailFilter, selectedActivityTypes]);
+  }, [emailFilter, selectedActivityType]);
 
   useEffect(() => {
     loadActivities();
-  }, [page, emailFilter, selectedActivityTypes]);
+  }, [page, emailFilter, selectedActivityType]);
 
   const loadActivities = async (isRefresh = false) => {
     try {
@@ -55,7 +55,7 @@ export default function ActivityLog() {
         page,
         limit: 50,
         emailFilter: emailFilter || undefined,
-        eventTypeFilter: selectedActivityTypes.length > 0 ? selectedActivityTypes : undefined,
+        eventTypeFilter: selectedActivityType || undefined,
       });
       setActivities(response.activities);
       setTotalPages(response.pagination.totalPages);
@@ -151,8 +151,8 @@ export default function ActivityLog() {
             placeholderTextColor={colors.textSecondary}
           />
           <ActivityTypeFilter
-            selectedTypes={selectedActivityTypes}
-            onSelectionChange={setSelectedActivityTypes}
+            selectedType={selectedActivityType}
+            onSelectionChange={setSelectedActivityType}
           />
         </View>
 
