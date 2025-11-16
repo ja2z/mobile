@@ -122,7 +122,7 @@ export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfo
             <View style={styles.noteSection}>
               <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
               <Text style={styles.noteText}>
-                The JWT in your embed URL will be regenerated with your credentials when you view the applet.
+                Your embed URL will be regenerated using your secret key when you view the applet.
               </Text>
             </View>
             </ScrollView>
