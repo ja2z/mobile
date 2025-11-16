@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...typography.body,
     backgroundColor: colors.surface,
-    padding: spacing.sm,
+    padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -413,11 +413,13 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   toggleButton: {
-    padding: spacing.sm,
+    padding: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   toggleButtonActive: {
     backgroundColor: colors.primaryLight,
