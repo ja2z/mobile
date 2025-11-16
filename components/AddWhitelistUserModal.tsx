@@ -135,16 +135,18 @@ export function AddWhitelistUserModal({ visible, onClose, onUserAdded }: AddWhit
 
           <View style={styles.content}>
             <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="user@example.com"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              placeholderTextColor={colors.textSecondary}
-            />
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="user@example.com"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
 
             <Text style={styles.label}>Role</Text>
             <View style={styles.roleContainer}>
@@ -276,15 +278,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     marginTop: spacing.md,
   },
-  input: {
-    ...typography.body,
+  inputWrapper: {
+    minHeight: 48,
+    justifyContent: 'center',
     backgroundColor: colors.surface,
-    padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    color: colors.textPrimary,
     marginBottom: spacing.md,
+  },
+  input: {
+    ...typography.body,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    paddingTop: 0,
+    paddingBottom: 0,
+    color: colors.textPrimary,
+    minHeight: 48,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   roleContainer: {
     flexDirection: 'row',

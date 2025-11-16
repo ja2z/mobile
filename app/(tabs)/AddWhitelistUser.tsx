@@ -127,16 +127,18 @@ export default function AddWhitelistUser() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="user@example.com"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          placeholderTextColor={colors.textSecondary}
-        />
+        <View style={styles.inputWrapper}>
+          <TextInput
+            style={styles.input}
+            placeholder="user@example.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            placeholderTextColor={colors.textSecondary}
+          />
+        </View>
 
         <Text style={styles.label}>Role</Text>
         <View style={styles.roleContainer}>
@@ -297,20 +299,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  input: {
-    fontSize: typography.body.fontSize,
-    fontWeight: typography.body.fontWeight,
+  inputWrapper: {
+    minHeight: 48,
+    justifyContent: 'center',
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    color: colors.textPrimary,
     marginBottom: spacing.md,
+  },
+  input: {
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    paddingTop: 0,
+    paddingBottom: 0,
+    color: colors.textPrimary,
     minHeight: 48,
-    includeFontPadding: false,
     textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   roleContainer: {
     flexDirection: 'row',
