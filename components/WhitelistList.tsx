@@ -161,30 +161,39 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
     );
   };
 
-  const handleEditUser = async (email: string) => {
-    // Find the user by email and navigate to edit
+  const handleViewUser = async (email: string) => {
+    // Navigate to Users tab with email filter
+    // Check if user is deactivated to enable showDeactivated toggle
     try {
-      // Get all users and find by email
-      const usersResponse = await AdminService.listUsers({
-        page: 1,
-        limit: 1000, // Get all users to find by email
-        emailFilter: email,
-      });
+      let showDeactivated = false;
       
-      const user = usersResponse.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (user) {
-        // Navigate to edit user - we'll need to pass user to edit modal
-        // For now, show a message directing to Users tab
-        Alert.alert(
-          'Edit User',
-          `User ${email} is registered. Please go to the Users tab to edit this user.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert('Info', 'User not found. They may not have registered yet.');
+      // Check if user is deactivated by fetching user data
+      try {
+        const usersResponse = await AdminService.listUsers({
+          page: 1,
+          limit: 1000,
+          emailFilter: email,
+          showDeactivated: true, // Check deactivated users too
+        });
+        
+        const user = usersResponse.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (user && user.isDeactivated) {
+          showDeactivated = true;
+        }
+      } catch (error) {
+        // If we can't check, default to showing deactivated just in case
+        console.warn('Could not check if user is deactivated, defaulting to showDeactivated=true:', error);
+        showDeactivated = true;
       }
+      
+      // Navigate to Admin screen with Users tab active and email filter set
+      navigation.navigate('Admin' as never, {
+        initialTab: 'users',
+        emailFilter: email,
+        showDeactivated,
+      } as never);
     } catch (error: any) {
-      console.error('Error finding user:', error);
+      console.error('Error navigating to user:', error);
       if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
@@ -203,7 +212,12 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
           ]
         );
       } else {
-        Alert.alert('Error', 'Failed to find user. Please try again.');
+        // Still navigate even if check fails
+        navigation.navigate('Admin' as never, {
+          initialTab: 'users',
+          emailFilter: email,
+          showDeactivated: true, // Default to true to be safe
+        } as never);
       }
     }
   };
@@ -314,46 +328,64 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
       <View style={styles.whitelistItem}>
         <Text style={styles.whitelistEmail}>{item.email}</Text>
         <View style={styles.whitelistBottomRow}>
-          <View style={styles.whitelistInfo}>
-            <View style={styles.whitelistMeta}>
-              <Text style={styles.whitelistMetaText}>
-                Role: {item.role}
-              </Text>
-              {item.approvedAt && (
+          {item.hasRegistered ? (
+            <TouchableOpacity
+              style={styles.whitelistInfo}
+              onPress={() => handleViewUser(item.email)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.whitelistMeta}>
                 <Text style={styles.whitelistMetaText}>
-                  Whitelisted: {formatDateTime(item.approvedAt)}
+                  Role: {item.role}
                 </Text>
-              )}
-              <Text style={[
-                styles.whitelistMetaText,
-                expired && styles.expiredText
-              ]}>
-                Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
-              </Text>
-              {expired && (
-                <Text style={[styles.whitelistMetaText, styles.expiredText]}>
-                  Expired
+                {item.approvedAt && (
+                  <Text style={styles.whitelistMetaText}>
+                    Whitelisted: {formatDateTime(item.approvedAt)}
+                  </Text>
+                )}
+                <Text style={[
+                  styles.whitelistMetaText,
+                  expired && styles.expiredText
+                ]}>
+                  Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
                 </Text>
-              )}
-              {item.hasRegistered ? (
+                {expired && (
+                  <Text style={[styles.whitelistMetaText, styles.expiredText]}>
+                    Expired
+                  </Text>
+                )}
                 <Text style={styles.registeredText}>
                   Registered: {item.registeredAt ? formatDateTime(item.registeredAt) : 'Yes'}
                 </Text>
-              ) : (
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.whitelistInfo}>
+              <View style={styles.whitelistMeta}>
+                <Text style={styles.whitelistMetaText}>
+                  Role: {item.role}
+                </Text>
+                {item.approvedAt && (
+                  <Text style={styles.whitelistMetaText}>
+                    Whitelisted: {formatDateTime(item.approvedAt)}
+                  </Text>
+                )}
+                <Text style={[
+                  styles.whitelistMetaText,
+                  expired && styles.expiredText
+                ]}>
+                  Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
+                </Text>
+                {expired && (
+                  <Text style={[styles.whitelistMetaText, styles.expiredText]}>
+                    Expired
+                  </Text>
+                )}
                 <Text style={styles.notRegisteredText}>Not registered yet</Text>
-              )}
+              </View>
             </View>
-          </View>
+          )}
           <View style={styles.whitelistActions}>
-            {item.hasRegistered && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleEditUser(item.email)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="create-outline" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => handleDelete(item.email)}

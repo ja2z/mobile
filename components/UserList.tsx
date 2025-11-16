@@ -20,20 +20,35 @@ import type { RootStackParamList } from '../app/_layout';
 
 type UserListNavigationProp = StackNavigationProp<RootStackParamList>;
 
+interface UserListProps {
+  initialEmailFilter?: string;
+  initialShowDeactivated?: boolean;
+}
+
 /**
  * User List Component
  * Displays list of users with pagination, filtering, and sorting
  */
-export function UserList() {
+export function UserList({ initialEmailFilter, initialShowDeactivated }: UserListProps = {}) {
   const navigation = useNavigation<UserListNavigationProp>();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [emailFilter, setEmailFilter] = useState('');
+  const [emailFilter, setEmailFilter] = useState(initialEmailFilter || '');
   const [sortBy, setSortBy] = useState<'email' | 'createdAt' | 'lastActiveAt'>('createdAt');
-  const [showDeactivated, setShowDeactivated] = useState(false);
+  const [showDeactivated, setShowDeactivated] = useState(initialShowDeactivated || false);
+
+  // Update filters when initial props change (e.g., navigating from whitelist)
+  useEffect(() => {
+    if (initialEmailFilter !== undefined) {
+      setEmailFilter(initialEmailFilter);
+    }
+    if (initialShowDeactivated !== undefined) {
+      setShowDeactivated(initialShowDeactivated);
+    }
+  }, [initialEmailFilter, initialShowDeactivated]);
 
   useEffect(() => {
     loadUsers();

@@ -1,22 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { UserList } from '../../components/UserList';
 import { WhitelistList } from '../../components/WhitelistList';
 import { ActivityLogView } from '../../components/ActivityLogView';
+import type { RootStackParamList } from '../_layout';
 
 type TabType = 'users' | 'whitelist' | 'activityLog';
+type AdminRouteProp = RouteProp<RootStackParamList, 'Admin'>;
 
 /**
  * Admin Screen Component
  * Main admin interface with tabs for Users, Whitelist, and Activity Log
  */
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<TabType>('users');
+  const route = useRoute<AdminRouteProp>();
+  const routeParams = route.params;
+  const [activeTab, setActiveTab] = useState<TabType>(routeParams?.initialTab || 'users');
   const [whitelistRefreshTrigger, setWhitelistRefreshTrigger] = useState(0);
+  const [userListInitialEmailFilter, setUserListInitialEmailFilter] = useState<string | undefined>(routeParams?.emailFilter);
+  const [userListInitialShowDeactivated, setUserListInitialShowDeactivated] = useState<boolean | undefined>(routeParams?.showDeactivated);
+
+  // Update active tab when route params change
+  useEffect(() => {
+    if (routeParams?.initialTab) {
+      setActiveTab(routeParams.initialTab);
+    }
+    if (routeParams?.emailFilter !== undefined) {
+      setUserListInitialEmailFilter(routeParams.emailFilter);
+    }
+    if (routeParams?.showDeactivated !== undefined) {
+      setUserListInitialShowDeactivated(routeParams.showDeactivated);
+    }
+  }, [routeParams]);
 
   // Refresh whitelist when returning to this screen (e.g., from AddWhitelistUser)
   useFocusEffect(
@@ -84,7 +103,12 @@ export default function Admin() {
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
-          {activeTab === 'users' && <UserList />}
+          {activeTab === 'users' && (
+            <UserList 
+              initialEmailFilter={userListInitialEmailFilter}
+              initialShowDeactivated={userListInitialShowDeactivated}
+            />
+          )}
           {activeTab === 'whitelist' && <WhitelistList refreshTrigger={whitelistRefreshTrigger} />}
           {activeTab === 'activityLog' && <ActivityLogView />}
         </View>

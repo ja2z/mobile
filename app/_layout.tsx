@@ -32,7 +32,7 @@ export type RootStackParamList = {
   Dashboard: { appletId?: string; appletName?: string };
   AINewsletter: { appletId?: string; appletName?: string };
   ConversationalAI: { appletId?: string; appletName?: string };
-  Admin: undefined;
+  Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
   AddWhitelistUser: undefined;
