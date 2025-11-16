@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -6,7 +6,9 @@ import type { StackNavigationProp, RouteProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { MyBuysService } from '../../services/MyBuysService';
 import { AuthService } from '../../services/AuthService';
-import { DashboardView } from '../../components/DashboardView';
+import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
+import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
+import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { colors, spacing, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 
@@ -22,11 +24,15 @@ export default function ViewMyBuysApplet() {
   const route = useRoute<ViewMyBuysAppletScreenRouteProp>();
   const { appletId } = route.params;
 
+  const dashboardRef = useRef<DashboardViewRef>(null);
   const [appletName, setAppletName] = useState<string>('');
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [embedJwt, setEmbedJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Use custom hook for embed URL info modal and header button
+  const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
 
   useEffect(() => {
     navigation.setOptions({
@@ -177,6 +183,7 @@ export default function ViewMyBuysApplet() {
         {/* DashboardView takes up all available space below the orange header */}
         {embedUrl ? (
           <DashboardView
+            ref={dashboardRef}
             initialUrl={embedUrl}
             initialJwt={embedJwt || undefined}
             appletId={appletId}
@@ -188,6 +195,12 @@ export default function ViewMyBuysApplet() {
           </View>
         )}
       </View>
+      <EmbedUrlInfoModal
+        visible={infoModalVisible}
+        onClose={() => setInfoModalVisible(false)}
+        embedUrl={getEmbedUrl()}
+        jwt={getJWT()}
+      />
     </SafeAreaView>
   );
 }
