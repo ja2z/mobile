@@ -312,54 +312,56 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
     
     return (
       <View style={styles.whitelistItem}>
-        <View style={styles.whitelistInfo}>
-          <Text style={styles.whitelistEmail}>{item.email}</Text>
-          <View style={styles.whitelistMeta}>
-            <Text style={styles.whitelistMetaText}>
-              Role: {item.role}
-            </Text>
-            {item.approvedAt && (
+        <Text style={styles.whitelistEmail}>{item.email}</Text>
+        <View style={styles.whitelistBottomRow}>
+          <View style={styles.whitelistInfo}>
+            <View style={styles.whitelistMeta}>
               <Text style={styles.whitelistMetaText}>
-                Whitelisted: {formatDateTime(item.approvedAt)}
+                Role: {item.role}
               </Text>
-            )}
-            <Text style={[
-              styles.whitelistMetaText,
-              expired && styles.expiredText
-            ]}>
-              Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
-            </Text>
-            {expired && (
-              <Text style={[styles.whitelistMetaText, styles.expiredText]}>
-                Expired
+              {item.approvedAt && (
+                <Text style={styles.whitelistMetaText}>
+                  Whitelisted: {formatDateTime(item.approvedAt)}
+                </Text>
+              )}
+              <Text style={[
+                styles.whitelistMetaText,
+                expired && styles.expiredText
+              ]}>
+                Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
               </Text>
-            )}
-            {item.hasRegistered ? (
-              <Text style={styles.registeredText}>
-                Registered: {item.registeredAt ? formatDateTime(item.registeredAt) : 'Yes'}
-              </Text>
-            ) : (
-              <Text style={styles.notRegisteredText}>Not registered yet</Text>
-            )}
+              {expired && (
+                <Text style={[styles.whitelistMetaText, styles.expiredText]}>
+                  Expired
+                </Text>
+              )}
+              {item.hasRegistered ? (
+                <Text style={styles.registeredText}>
+                  Registered: {item.registeredAt ? formatDateTime(item.registeredAt) : 'Yes'}
+                </Text>
+              ) : (
+                <Text style={styles.notRegisteredText}>Not registered yet</Text>
+              )}
+            </View>
           </View>
-        </View>
-        <View style={styles.whitelistActions}>
-          {item.hasRegistered && (
+          <View style={styles.whitelistActions}>
+            {item.hasRegistered && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleEditUser(item.email)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="create-outline" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => handleEditUser(item.email)}
+              onPress={() => handleDelete(item.email)}
               activeOpacity={0.7}
             >
-              <Ionicons name="create-outline" size={20} color={colors.primary} />
+              <Ionicons name="trash-outline" size={20} color={colors.error} />
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleDelete(item.email)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="trash-outline" size={20} color={colors.error} />
-          </TouchableOpacity>
+          </View>
         </View>
     </View>
     );
@@ -572,7 +574,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   whitelistItem: {
-    flexDirection: 'row',
     backgroundColor: colors.background,
     padding: spacing.md,
     marginBottom: spacing.sm,
@@ -580,14 +581,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  whitelistInfo: {
-    flex: 1,
-  },
   whitelistEmail: {
     ...typography.body,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
+    flexShrink: 1,
+  },
+  whitelistBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  whitelistInfo: {
+    flex: 1,
   },
   whitelistMeta: {
     gap: 2,
