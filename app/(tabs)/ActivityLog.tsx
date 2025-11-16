@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { colors, spacing, borderRadius, typography } from '../../constants/Theme
 import type { RootStackParamList } from '../_layout';
 import { Alert } from 'react-native';
 import { ActivityTypeFilter, type ActivityType } from '../../components/ActivityTypeFilter';
+import { useDebounce } from '../../hooks/useDebounce';
 
 type ActivityLogNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -35,17 +36,16 @@ export default function ActivityLog() {
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
   const [selectedActivityType, setSelectedActivityType] = useState<ActivityType | null>(null);
+  
+  // Debounce email filter to avoid API calls on every keystroke
+  const debouncedEmailFilter = useDebounce(emailFilter, 500);
 
   // Reset to page 1 when filters change (but not when page changes)
   useEffect(() => {
     setPage(1);
-  }, [emailFilter, selectedActivityType]);
+  }, [debouncedEmailFilter, selectedActivityType]);
 
-  useEffect(() => {
-    loadActivities();
-  }, [page, emailFilter, selectedActivityType]);
-
-  const loadActivities = async (isRefresh = false) => {
+  const loadActivities = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
@@ -55,7 +55,7 @@ export default function ActivityLog() {
       const response = await AdminService.getActivityLogs({
         page,
         limit: 50,
-        emailFilter: emailFilter || undefined,
+        emailFilter: debouncedEmailFilter || undefined,
         eventTypeFilter: selectedActivityType || undefined,
       });
       setActivities(response.activities);
@@ -84,7 +84,11 @@ export default function ActivityLog() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [page, debouncedEmailFilter, selectedActivityType, navigation]);
+
+  useEffect(() => {
+    loadActivities();
+  }, [loadActivities]);
 
   const onRefresh = () => {
     loadActivities(true);
