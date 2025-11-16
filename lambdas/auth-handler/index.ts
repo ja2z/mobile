@@ -582,7 +582,7 @@ async function handleVerifyMagicLink(body: any, event: any) {
   }
 
   // Generate session JWT
-  const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
+  const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
   const sessionToken = await generateSessionJWT({
     userId: user.userId,
     email: user.email,
@@ -704,7 +704,7 @@ async function handleRefreshToken(body: any, event: any) {
     const role = validateRole(userProfile?.role || decoded.role) || 'basic';
 
     // Generate new session JWT
-    const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
+    const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
     const newToken = await generateSessionJWT({
       userId: decoded.userId,
       email: decoded.email,
