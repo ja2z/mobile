@@ -341,5 +341,69 @@ export class MyBuysService {
       throw originalError;
     }
   }
+
+  /**
+   * Extract secret name from embed URL (e.g., "papercrane" from sigmacomputing.com/papercrane/workbook/...)
+   */
+  static extractSecretNameFromUrl(url: string): string | null {
+    try {
+      const match = url.match(/app\.sigmacomputing\.com\/([^\/]+)\//);
+      if (match && match[1]) {
+        return match[1];
+      }
+      return null;
+    } catch (error) {
+      console.error('Error extracting secret name from URL:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get secret by name for auto-population
+   */
+  static async getSecretByName(secretName: string): Promise<{ clientId: string; secretKey: string } | null> {
+    try {
+      const session = await AuthService.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please sign in.');
+      }
+
+      const response = await fetch(`${MY_BUYS_BASE_URL}/secrets/${encodeURIComponent(secretName)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.jwt}`,
+        },
+      });
+
+      // Handle 404 (secret not found) before AuthService.handleApiResponse, which throws on non-ok responses
+      if (response.status === 404) {
+        // Secret not found is not an error - just return null
+        return null;
+      }
+
+      await AuthService.handleApiResponse(response);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || `API returned status ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success || !result.secret) {
+        return null;
+      }
+
+      return {
+        clientId: result.secret.clientId,
+        secretKey: result.secret.secretKey,
+      };
+    } catch (error) {
+      const originalError = error instanceof Error ? error : new Error(String(error));
+      console.error('Failed to get secret by name:', originalError);
+      // Return null on error so the user can still manually enter credentials
+      return null;
+    }
+  }
 }
 

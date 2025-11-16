@@ -22,6 +22,7 @@ const secretsManager = new SecretsManagerClient({ region: AWS_REGION });
 
 // Environment variables
 const MY_BUYS_TABLE = process.env.MY_BUYS_TABLE || 'mobile-my-buys-applets';
+const MY_BUYS_SECRETS_TABLE = process.env.MY_BUYS_SECRETS_TABLE || 'mobile-my-buys-secrets';
 const KMS_KEY_ALIAS = process.env.KMS_KEY_ALIAS || 'alias/mobile-my-buys-secrets';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
@@ -185,6 +186,23 @@ async function decryptSecret(encryptedSecret: string): Promise<string> {
 }
 
 /**
+ * Parse embed URL and extract secret name (e.g., "papercrane" from sigmacomputing.com/papercrane/workbook/...)
+ */
+function extractSecretNameFromUrl(url: string): string | null {
+    try {
+        // Extract the name from URL pattern: https://app.sigmacomputing.com/{name}/workbook/...
+        const match = url.match(/app\.sigmacomputing\.com\/([^\/]+)\//);
+        if (match && match[1]) {
+            return match[1];
+        }
+        return null;
+    } catch (error: any) {
+        console.error('Error extracting secret name from URL:', error);
+        return null;
+    }
+}
+
+/**
  * Parse embed URL and extract JWT
  */
 function parseEmbedUrl(url: string): { baseUrl: string, jwt: string, params: Record<string, string> } {
@@ -281,6 +299,81 @@ function regenerateJWT(originalJWT: string, clientId: string, secret: string): s
     
     // Return complete JWT
     return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+/**
+ * Get secret from secrets table by name and userId (row-level security)
+ */
+async function getSecretByName(userId: string, secretName: string): Promise<{ clientId: string, secret: string } | null> {
+    try {
+        const result = await docClient.send(new GetCommand({
+            TableName: MY_BUYS_SECRETS_TABLE,
+            Key: { userId, secretName }
+        }));
+        
+        if (!result.Item) {
+            return null;
+        }
+        
+        // Decrypt the secret
+        const decryptedSecret = await decryptSecret(result.Item.encryptedSecret);
+        
+        return {
+            clientId: result.Item.clientId,
+            secret: decryptedSecret
+        };
+    } catch (error: any) {
+        console.error('Error getting secret by name:', error);
+        throw new Error(`Failed to get secret: ${error.message}`);
+    }
+}
+
+/**
+ * Create or update secret in secrets table (row-level security per user)
+ */
+async function saveSecret(userId: string, secretName: string, clientId: string, secret: string): Promise<void> {
+    try {
+        // Encrypt the secret
+        const encryptedSecret = await encryptSecret(secret);
+        
+        const now = Math.floor(Date.now() / 1000);
+        
+        // Check if secret already exists for this user
+        const existing = await docClient.send(new GetCommand({
+            TableName: MY_BUYS_SECRETS_TABLE,
+            Key: { userId, secretName }
+        }));
+        
+        if (existing.Item) {
+            // Update existing secret
+            await docClient.send(new UpdateCommand({
+                TableName: MY_BUYS_SECRETS_TABLE,
+                Key: { userId, secretName },
+                UpdateExpression: 'SET clientId = :clientId, encryptedSecret = :encryptedSecret, updatedAt = :updatedAt',
+                ExpressionAttributeValues: {
+                    ':clientId': clientId,
+                    ':encryptedSecret': encryptedSecret,
+                    ':updatedAt': now
+                }
+            }));
+        } else {
+            // Create new secret
+            await docClient.send(new PutCommand({
+                TableName: MY_BUYS_SECRETS_TABLE,
+                Item: {
+                    userId,
+                    secretName,
+                    clientId,
+                    encryptedSecret,
+                    createdAt: now,
+                    updatedAt: now
+                }
+            }));
+        }
+    } catch (error: any) {
+        console.error('Error saving secret:', error);
+        throw new Error(`Failed to save secret: ${error.message}`);
+    }
 }
 
 /**
@@ -470,10 +563,20 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         });
     }
     
-    // Encrypt secret
-    const encryptedSecret = await encryptSecret(embedSecretKey);
+    // Extract secret name from URL and save/update secret in secrets table
+    const secretName = extractSecretNameFromUrl(embedUrl);
+    if (!secretName) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid embed URL',
+            message: 'Could not extract secret name from embed URL'
+        });
+    }
     
-    // Create applet
+    // Save secret to secrets table (will create or update) - row-level security per user
+    await saveSecret(userId, secretName, embedClientId, embedSecretKey);
+    
+    // Create applet (store reference to secret name instead of encrypted secret)
     const appletId = generateUUID();
     const now = Math.floor(Date.now() / 1000);
     
@@ -482,8 +585,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         appletId,
         name,
         embedUrl,
-        embedClientId,
-        encryptedSecret,
+        secretName, // Store reference to secret instead of encryptedSecret and embedClientId
         createdAt: now,
         updatedAt: now
     };
@@ -510,7 +612,6 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
             appletId,
             name,
             embedUrl,
-            embedClientId,
             createdAt: now,
             updatedAt: now
         }
@@ -535,7 +636,7 @@ async function handleListApplets(userId: string): Promise<any> {
         appletId: item.appletId,
         name: item.name,
         embedUrl: item.embedUrl,
-        embedClientId: item.embedClientId,
+        secretName: item.secretName, // Include secretName for reference
         createdAt: item.createdAt,
         updatedAt: item.updatedAt
     }));
@@ -615,24 +716,33 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         });
     }
     
-    // Encrypt secret
-    const encryptedSecret = await encryptSecret(embedSecretKey);
+    // Extract secret name from URL and save/update secret in secrets table
+    const secretName = extractSecretNameFromUrl(embedUrl);
+    if (!secretName) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid embed URL',
+            message: 'Could not extract secret name from embed URL'
+        });
+    }
     
-    // Update applet
+    // Save secret to secrets table (will create or update) - row-level security per user
+    await saveSecret(userId, secretName, embedClientId, embedSecretKey);
+    
+    // Update applet (store reference to secret name instead of encrypted secret)
     const now = Math.floor(Date.now() / 1000);
     
     await docClient.send(new UpdateCommand({
         TableName: MY_BUYS_TABLE,
         Key: { userId, appletId },
-        UpdateExpression: 'SET #name = :name, embedUrl = :embedUrl, embedClientId = :embedClientId, encryptedSecret = :encryptedSecret, updatedAt = :updatedAt',
+        UpdateExpression: 'SET #name = :name, embedUrl = :embedUrl, secretName = :secretName, updatedAt = :updatedAt',
         ExpressionAttributeNames: {
             '#name': 'name'
         },
         ExpressionAttributeValues: {
             ':name': name,
             ':embedUrl': embedUrl,
-            ':embedClientId': embedClientId,
-            ':encryptedSecret': encryptedSecret,
+            ':secretName': secretName,
             ':updatedAt': now
         }
     }));
@@ -654,7 +764,6 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             appletId,
             name,
             embedUrl,
-            embedClientId,
             createdAt: existing.Item.createdAt,
             updatedAt: now
         }
@@ -721,17 +830,6 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
         });
     }
     
-    const body = JSON.parse(event.body || '{}');
-    const { embedSecretKey } = body;
-    
-    if (!embedSecretKey) {
-        return createResponse(400, {
-            success: false,
-            error: 'Missing embedSecretKey',
-            message: 'Embed secret key is required for testing'
-        });
-    }
-    
     // Get applet
     const applet = await docClient.send(new GetCommand({
         TableName: MY_BUYS_TABLE,
@@ -742,6 +840,24 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
         return createResponse(404, {
             success: false,
             error: 'Applet not found'
+        });
+    }
+    
+    // Get secret from secrets table (row-level security - only this user's secrets)
+    if (!applet.Item.secretName) {
+        return createResponse(400, {
+            success: false,
+            error: 'Applet missing secret reference',
+            message: 'Applet does not have a secret reference. Please update the applet.'
+        });
+    }
+    
+    const secretData = await getSecretByName(userId, applet.Item.secretName);
+    if (!secretData) {
+        return createResponse(404, {
+            success: false,
+            error: 'Secret not found',
+            message: `Secret "${applet.Item.secretName}" not found in secrets table`
         });
     }
     
@@ -760,7 +876,7 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
     // Regenerate JWT
     let regeneratedJWT;
     try {
-        regeneratedJWT = regenerateJWT(parsedUrl.jwt, applet.Item.embedClientId, embedSecretKey);
+        regeneratedJWT = regenerateJWT(parsedUrl.jwt, secretData.clientId, secretData.secret);
     } catch (error: any) {
         return createResponse(400, {
             success: false,
@@ -877,8 +993,23 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
         });
     }
     
-    // Decrypt secret
-    const embedSecretKey = await decryptSecret(applet.Item.encryptedSecret);
+    // Get secret from secrets table (row-level security - only this user's secrets)
+    if (!applet.Item.secretName) {
+        return createResponse(400, {
+            success: false,
+            error: 'Applet missing secret reference',
+            message: 'Applet does not have a secret reference. Please update the applet.'
+        });
+    }
+    
+    const secretData = await getSecretByName(userId, applet.Item.secretName);
+    if (!secretData) {
+        return createResponse(404, {
+            success: false,
+            error: 'Secret not found',
+            message: `Secret "${applet.Item.secretName}" not found in secrets table`
+        });
+    }
     
     // Parse embed URL
     let parsedUrl;
@@ -895,7 +1026,7 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
     // Regenerate JWT
     let regeneratedJWT;
     try {
-        regeneratedJWT = regenerateJWT(parsedUrl.jwt, applet.Item.embedClientId, embedSecretKey);
+        regeneratedJWT = regenerateJWT(parsedUrl.jwt, secretData.clientId, secretData.secret);
     } catch (error: any) {
         return createResponse(400, {
             success: false,
@@ -923,6 +1054,52 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
         url: regeneratedUrl,
         jwt: regeneratedJWT,
         expiresAt: Math.floor(Date.now() / 1000) + 3600
+    });
+}
+
+/**
+ * Handle GET /v1/my-buys/secrets/{secretName} - Get secret by name (for auto-population)
+ * Row-level security: users can only access their own secrets
+ */
+async function handleGetSecretByName(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+    // Try to get secretName from pathParameters first
+    let secretName = event.pathParameters?.secretName;
+    
+    // If not in pathParameters, extract from path
+    if (!secretName) {
+        const path = event.path || event.rawPath || event.requestContext?.path || '';
+        // Extract secretName from path like /my-buys/secrets/{secretName} or /v1/my-buys/secrets/{secretName}
+        const match = path.match(/\/secrets\/([^\/\?]+)/);
+        if (match && match[1]) {
+            secretName = decodeURIComponent(match[1]);
+        }
+    }
+    
+    if (!secretName) {
+        return createResponse(400, {
+            success: false,
+            error: 'Missing secretName',
+            message: 'Secret name is required'
+        });
+    }
+    
+    // Get secret from secrets table (row-level security - only this user's secrets)
+    const secretData = await getSecretByName(userId, secretName);
+    if (!secretData) {
+        return createResponse(404, {
+            success: false,
+            error: 'Secret not found',
+            message: `Secret "${secretName}" not found`
+        });
+    }
+    
+    return createResponse(200, {
+        success: true,
+        secret: {
+            secretName,
+            clientId: secretData.clientId,
+            secretKey: secretData.secret // Return secret for auto-population
+        }
     });
 }
 
@@ -1011,6 +1188,9 @@ export const handler = async (event: any) => {
             return await handleListApplets(userId);
         } else if (path === '/my-buys/applets/test' && method === 'POST') {
             return await handleTestConfiguration(event, userId, email, deviceId);
+        } else if (path.includes('/secrets/') && method === 'GET') {
+            // Path like /my-buys/secrets/{secretName}
+            return await handleGetSecretByName(event, userId, email, deviceId);
         } else if (path.includes('/applets/') && path.includes('/test') && method === 'POST') {
             // Path like /my-buys/applets/{appletId}/test
             return await handleTestApplet(event, userId, email, deviceId);

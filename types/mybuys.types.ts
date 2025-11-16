@@ -6,7 +6,7 @@ export interface Applet {
   appletId: string;
   name: string;
   embedUrl: string;
-  embedClientId: string;
+  secretName?: string; // Reference to secret in secrets table
   createdAt: number;
   updatedAt: number;
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Platform,
   TouchableOpacity,
   Modal,
+  Animated,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -60,8 +61,43 @@ interface ActivityTypeFilterProps {
 export function ActivityTypeFilter({ selectedType, onSelectionChange }: ActivityTypeFilterProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [tempSelection, setTempSelection] = useState<ActivityType | null>(selectedType);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const selectedLabel = PICKER_OPTIONS.find(opt => opt.value === selectedType)?.label || 'All Types';
+
+  useEffect(() => {
+    if (showPicker) {
+      // Animate in: fade overlay and slide up content
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Animate out: fade overlay and slide down content
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showPicker]);
 
   const handleConfirm = () => {
     onSelectionChange(tempSelection);
@@ -71,6 +107,10 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
   const handleCancel = () => {
     setTempSelection(selectedType);
     setShowPicker(false);
+  };
+
+  const handleOverlayPress = () => {
+    handleCancel();
   };
 
   if (Platform.OS === 'ios') {
@@ -91,11 +131,39 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
         <Modal
           visible={showPicker}
           transparent={true}
-          animationType="slide"
+          animationType="none"
           onRequestClose={handleCancel}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+          <Animated.View 
+            style={[
+              styles.modalOverlay,
+              {
+                opacity: fadeAnim,
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.overlayTouchable}
+              activeOpacity={1}
+              onPress={handleOverlayPress}
+            >
+              <View style={styles.overlaySpacer} />
+            </TouchableOpacity>
+            <Animated.View
+              style={[
+                styles.modalContent,
+                {
+                  transform: [
+                    {
+                      translateY: slideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [400, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
               <View style={styles.modalHeader}>
                 <TouchableOpacity onPress={handleCancel} style={styles.modalButton}>
                   <Text style={styles.modalButtonText}>Cancel</Text>
@@ -121,8 +189,8 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
                   ))}
                 </Picker>
               </View>
-            </View>
-          </View>
+            </Animated.View>
+          </Animated.View>
         </Modal>
       </View>
     );
@@ -198,11 +266,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  overlayTouchable: {
+    flex: 1,
+  },
+  overlaySpacer: {
+    flex: 1,
+  },
   modalContent: {
     backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
     paddingBottom: Platform.OS === 'ios' ? 34 : spacing.md, // Safe area for iOS
+    maxHeight: '70%',
   },
   modalHeader: {
     flexDirection: 'row',

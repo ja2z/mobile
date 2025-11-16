@@ -66,6 +66,47 @@ export default function AddMyBuysApplet() {
   }, [navigation]);
 
   /**
+   * Handle embed URL change and auto-populate client ID/secret if found
+   */
+  useEffect(() => {
+    const autoPopulateCredentials = async () => {
+      if (!embedUrl.trim()) {
+        return;
+      }
+
+      // Extract secret name from URL
+      const secretName = MyBuysService.extractSecretNameFromUrl(embedUrl);
+      if (!secretName) {
+        return;
+      }
+
+      // Try to get secret from API
+      try {
+        const secretData = await MyBuysService.getSecretByName(secretName);
+        if (secretData) {
+          // Auto-populate fields if they're empty
+          if (!embedClientId.trim()) {
+            setEmbedClientId(secretData.clientId);
+          }
+          if (!embedSecretKey.trim()) {
+            setEmbedSecretKey(secretData.secretKey);
+          }
+        }
+      } catch (error) {
+        // Silently fail - user can still manually enter credentials
+        console.log('Could not auto-populate credentials:', error);
+      }
+    };
+
+    // Debounce the auto-population to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      autoPopulateCredentials();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [embedUrl]);
+
+  /**
    * Check if all required fields are filled
    */
   const isFormValid = name.trim() && embedUrl.trim() && embedClientId.trim() && embedSecretKey.trim();

@@ -324,6 +324,71 @@ aws_cmd apigateway put-integration \
 echo "✓ POST /my-buys/applets/{appletId}/regenerate-url configured"
 echo ""
 
+# Check if /my-buys/secrets resource exists
+SECRETS_ID=$(aws_cmd apigateway get-resources \
+    --rest-api-id $API_ID \
+    --region $REGION \
+    --query 'items[?path==`/my-buys/secrets`].id' \
+    --output text)
+
+if [ -z "$SECRETS_ID" ] || [ "$SECRETS_ID" == "None" ]; then
+    echo "Creating /my-buys/secrets resource..."
+    SECRETS_ID=$(aws_cmd apigateway create-resource \
+        --rest-api-id $API_ID \
+        --parent-id $MY_BUYS_ID \
+        --path-part secrets \
+        --region $REGION \
+        --query 'id' \
+        --output text)
+    echo "✓ Created /my-buys/secrets resource: $SECRETS_ID"
+else
+    echo "✓ /my-buys/secrets resource already exists: $SECRETS_ID"
+fi
+echo ""
+
+# Check if /my-buys/secrets/{secretName} resource exists
+SECRET_NAME_ID=$(aws_cmd apigateway get-resources \
+    --rest-api-id $API_ID \
+    --region $REGION \
+    --query 'items[?path==`/my-buys/secrets/{secretName}`].id' \
+    --output text)
+
+if [ -z "$SECRET_NAME_ID" ] || [ "$SECRET_NAME_ID" == "None" ]; then
+    echo "Creating /my-buys/secrets/{secretName} resource..."
+    SECRET_NAME_ID=$(aws_cmd apigateway create-resource \
+        --rest-api-id $API_ID \
+        --parent-id $SECRETS_ID \
+        --path-part '{secretName}' \
+        --region $REGION \
+        --query 'id' \
+        --output text)
+    echo "✓ Created /my-buys/secrets/{secretName} resource: $SECRET_NAME_ID"
+else
+    echo "✓ /my-buys/secrets/{secretName} resource already exists: $SECRET_NAME_ID"
+fi
+echo ""
+
+# Create GET /my-buys/secrets/{secretName}
+echo "Setting up GET /my-buys/secrets/{secretName}..."
+aws_cmd apigateway put-method \
+    --rest-api-id $API_ID \
+    --resource-id $SECRET_NAME_ID \
+    --http-method GET \
+    --authorization-type NONE \
+    --region $REGION > /dev/null 2>&1
+
+aws_cmd apigateway put-integration \
+    --rest-api-id $API_ID \
+    --resource-id $SECRET_NAME_ID \
+    --http-method GET \
+    --type AWS_PROXY \
+    --integration-http-method POST \
+    --uri "arn:aws:apigateway:${REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
+    --region $REGION > /dev/null 2>&1
+
+echo "✓ GET /my-buys/secrets/{secretName} configured"
+echo ""
+
 # Add Lambda permission for API Gateway to invoke
 echo "Adding Lambda permission for API Gateway..."
 aws_cmd lambda add-permission \
@@ -368,6 +433,7 @@ echo "  DELETE /v1/my-buys/applets/{appletId}"
 echo "  POST   /v1/my-buys/applets/test"
 echo "  POST   /v1/my-buys/applets/{appletId}/test"
 echo "  POST   /v1/my-buys/applets/{appletId}/regenerate-url"
+echo "  GET    /v1/my-buys/secrets/{secretName}"
 echo ""
 echo "Next steps:"
 echo "1. Ensure Lambda function '$LAMBDA_FUNCTION_NAME' exists and is deployed"

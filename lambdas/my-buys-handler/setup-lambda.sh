@@ -93,6 +93,7 @@ else
                 "Resource": [
                     "arn:aws:dynamodb:'"$REGION"':*:table/mobile-my-buys-applets",
                     "arn:aws:dynamodb:'"$REGION"':*:table/mobile-my-buys-applets/index/*",
+                    "arn:aws:dynamodb:'"$REGION"':*:table/mobile-my-buys-secrets",
                     "arn:aws:dynamodb:'"$REGION"':*:table/mobile-user-activity",
                     "arn:aws:dynamodb:'"$REGION"':*:table/mobile-user-activity/index/*",
                     "arn:aws:dynamodb:'"$REGION"':*:table/mobile-users",
