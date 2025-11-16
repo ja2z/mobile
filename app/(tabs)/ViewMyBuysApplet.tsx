@@ -30,7 +30,7 @@ export default function ViewMyBuysApplet() {
 
   useEffect(() => {
     navigation.setOptions({
-      title: appletName || 'View Applet', // Show applet name in header, fallback to 'View Applet'
+      title: appletName || '', // Show applet name in header, empty string if not loaded yet
       headerLeft: () => (
         <TouchableOpacity
           onPress={() => navigation.goBack()}

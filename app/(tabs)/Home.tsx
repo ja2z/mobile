@@ -69,6 +69,16 @@ export default function Home() {
 
   const appTiles: AppTile[] = [
     { 
+      id: '9', 
+      title: 'My Buys', 
+      subtitle: 'Custom Embeds', 
+      description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
+      color: colors.tileColors.orange1,
+      iconName: 'layers-outline',
+      isActive: true,
+      onPress: handleNavigateToMyBuys,
+    },
+    { 
       id: '1', 
       title: 'Data Dashboard', 
       subtitle: 'Analytics', 
@@ -142,16 +152,6 @@ export default function Home() {
       color: colors.tileColors.orange4,
       iconName: 'settings-outline',
       isActive: false,
-    },
-    { 
-      id: '9', 
-      title: 'My Buys', 
-      subtitle: 'Custom Embeds', 
-      description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
-      color: colors.tileColors.orange1,
-      iconName: 'layers-outline',
-      isActive: true,
-      onPress: handleNavigateToMyBuys,
     },
   ];
 

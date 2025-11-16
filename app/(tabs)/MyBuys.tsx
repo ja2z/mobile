@@ -105,6 +105,9 @@ export default function MyBuys() {
    * Render applet tile
    */
   const renderAppletTile = (applet: Applet) => {
+    // Get org name from secretName or extract from URL
+    const orgName = applet.secretName || MyBuysService.extractSecretNameFromUrl(applet.embedUrl) || 'Custom Embed';
+    
     return (
       <TouchableOpacity
         key={applet.appletId}
@@ -132,7 +135,7 @@ export default function MyBuys() {
                 {applet.name}
               </Text>
               <Text style={styles.tileSubtitle} numberOfLines={1}>
-                Custom Embed
+                {orgName}
               </Text>
             </View>
           </View>

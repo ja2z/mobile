@@ -462,7 +462,7 @@ export default function RootLayout() {
           name="ViewMyBuysApplet" 
           component={ViewMyBuysApplet}
           options={{
-            title: 'View Applet',
+            title: '', // Title will be set by component once applet name loads
             headerShown: true,
           }}
         />
