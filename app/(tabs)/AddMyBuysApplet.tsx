@@ -220,12 +220,8 @@ export default function AddMyBuysApplet() {
         embedSecretKey,
       });
 
-      Alert.alert('Success', 'Applet created successfully', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // Navigate back on success (no success message needed)
+      navigation.goBack();
     } catch (error: any) {
       console.error('Error creating applet:', error);
       if (error.isExpirationError) {

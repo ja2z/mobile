@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { MyBuysService } from '../../services/MyBuysService';
@@ -67,6 +68,12 @@ export default function MyBuys() {
    * Handle applet long press - navigate to edit screen
    */
   const handleAppletLongPress = useCallback((applet: Applet) => {
+    // Provide haptic feedback to confirm long press
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      // Haptics not available on this device, silently continue
+    }
     navigation.navigate('EditMyBuysApplet' as never, { appletId: applet.appletId } as never);
   }, [navigation]);
 

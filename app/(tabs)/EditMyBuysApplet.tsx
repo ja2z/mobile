@@ -278,12 +278,8 @@ export default function EditMyBuysApplet() {
         embedSecretKey,
       });
 
-      Alert.alert('Success', 'Applet updated successfully', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // Navigate back on success (no success message needed)
+      navigation.goBack();
     } catch (error: any) {
       console.error('Error updating applet:', error);
       if (error.isExpirationError) {
