@@ -11,40 +11,39 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
+import { AdminService } from '../services/AdminService';
 
-export type ActivityType = 
-  | 'login'
-  | 'app_launch'
-  | 'applet_launch'
-  | 'failed_login'
-  | 'token_refresh'
-  | 'user_updated'
-  | 'user_deactivated'
-  | 'whitelist_user_added'
-  | 'whitelist_user_deleted';
+// ActivityType is now a string (any eventType from DynamoDB)
+export type ActivityType = string;
 
-export interface ActivityTypeOption {
-  value: ActivityType;
-  label: string;
+/**
+ * Convert eventType string to display label
+ * Formats snake_case to Title Case, with special handling for common types
+ */
+function getActivityTypeLabel(eventType: string): string {
+  // Special cases for better readability
+  const specialCases: Record<string, string> = {
+    login: 'Login',
+    app_launch: 'App Launch',
+    applet_launch: 'Applet Launch',
+    failed_login: 'Failed Login',
+    token_refresh: 'Token Refresh',
+    user_updated: 'User Updated',
+    user_deactivated: 'User Deactivated',
+    whitelist_user_added: 'Whitelist Added',
+    whitelist_user_deleted: 'Whitelist Deleted',
+  };
+
+  if (specialCases[eventType]) {
+    return specialCases[eventType];
+  }
+
+  // Default: Convert snake_case to Title Case
+  return eventType
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
-
-const ALL_ACTIVITY_TYPES: ActivityTypeOption[] = [
-  { value: 'login', label: 'Login' },
-  { value: 'app_launch', label: 'App Launch' },
-  { value: 'applet_launch', label: 'Applet Launch' },
-  { value: 'failed_login', label: 'Failed Login' },
-  { value: 'token_refresh', label: 'Token Refresh' },
-  { value: 'user_updated', label: 'User Updated' },
-  { value: 'user_deactivated', label: 'User Deactivated' },
-  { value: 'whitelist_user_added', label: 'Whitelist Added' },
-  { value: 'whitelist_user_deleted', label: 'Whitelist Deleted' },
-];
-
-// Add "All Types" option at the beginning
-const PICKER_OPTIONS: Array<{ value: ActivityType | null; label: string }> = [
-  { value: null, label: 'All Types' },
-  ...ALL_ACTIVITY_TYPES.map(t => ({ value: t.value, label: t.label })),
-];
 
 
 interface ActivityTypeFilterProps {
@@ -57,14 +56,46 @@ interface ActivityTypeFilterProps {
  * Single-select filter for activity types using iOS-style picker
  * On iOS, shows a button that opens a modal with a native picker wheel
  * On Android, shows a dropdown picker
+ * 
+ * Fetches unique activity types from DynamoDB dynamically
  */
 export function ActivityTypeFilter({ selectedType, onSelectionChange }: ActivityTypeFilterProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [tempSelection, setTempSelection] = useState<ActivityType | null>(selectedType);
+  const [activityTypes, setActivityTypes] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const selectedLabel = PICKER_OPTIONS.find(opt => opt.value === selectedType)?.label || 'All Types';
+  // Fetch activity types from API on mount
+  useEffect(() => {
+    async function fetchActivityTypes() {
+      try {
+        setLoading(true);
+        const response = await AdminService.getActivityTypes();
+        setActivityTypes(response.activityTypes || []);
+      } catch (error) {
+        console.error('Error fetching activity types:', error);
+        // On error, use empty array (filter will show "All Types" only)
+        setActivityTypes([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchActivityTypes();
+  }, []);
+
+  // Build picker options dynamically
+  const pickerOptions = [
+    { value: null, label: 'All Types' },
+    ...activityTypes.map(type => ({
+      value: type,
+      label: getActivityTypeLabel(type),
+    })),
+  ];
+
+  const selectedLabel = pickerOptions.find(opt => opt.value === selectedType)?.label || 'All Types';
 
   useEffect(() => {
     if (showPicker) {
@@ -174,20 +205,26 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
                 </TouchableOpacity>
               </View>
               <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={tempSelection || null}
-                  onValueChange={(value) => setTempSelection(value)}
-                  style={styles.picker}
-                  itemStyle={styles.pickerItem}
-                >
-                  {PICKER_OPTIONS.map((option) => (
-                    <Picker.Item
-                      key={option.value || 'all'}
-                      label={option.label}
-                      value={option.value}
-                    />
-                  ))}
-                </Picker>
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>Loading types...</Text>
+                  </View>
+                ) : (
+                  <Picker
+                    selectedValue={tempSelection || null}
+                    onValueChange={(value) => setTempSelection(value)}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {pickerOptions.map((option) => (
+                      <Picker.Item
+                        key={option.value || 'all'}
+                        label={option.label}
+                        value={option.value}
+                      />
+                    ))}
+                  </Picker>
+                )}
               </View>
             </Animated.View>
           </Animated.View>
@@ -199,6 +236,11 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
   // Android: Use dropdown picker directly
   return (
     <View style={styles.pickerContainer}>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading types...</Text>
+        </View>
+      ) : (
         <Picker
           selectedValue={selectedType || null}
           onValueChange={(value) => onSelectionChange(value)}
@@ -207,7 +249,7 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
           dropdownIconColor={colors.textPrimary}
           mode="dropdown"
         >
-          {PICKER_OPTIONS.map((option) => (
+          {pickerOptions.map((option) => (
             <Picker.Item
               key={option.value || 'all'}
               label={option.label}
@@ -216,6 +258,7 @@ export function ActivityTypeFilter({ selectedType, onSelectionChange }: Activity
             />
           ))}
         </Picker>
+      )}
     </View>
   );
 }
@@ -307,6 +350,16 @@ const styles = StyleSheet.create({
   },
   pickerWrapper: {
     maxHeight: 300,
+  },
+  loadingContainer: {
+    padding: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 100,
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
 });
 

@@ -296,6 +296,13 @@ export class AdminService {
   }
 
   /**
+   * Get unique activity types from DynamoDB
+   */
+  static async getActivityTypes(): Promise<{ activityTypes: string[] }> {
+    return this.apiCall<{ activityTypes: string[] }>('/activity/types');
+  }
+
+  /**
    * Health check endpoint - tests if Lambda is being invoked
    */
   static async healthCheck(): Promise<{ status: string; message: string; timestamp: number }> {

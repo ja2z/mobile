@@ -453,6 +453,11 @@ const handlerImpl = async (event: any) => {
         // User delete handler (existing)
         const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
         return await handleDeactivateUser(userId!, decoded);
+      } else if ((path === '/v1/admin/activity/types' || path === '/admin/activity/types') && method === 'GET') {
+        console.log('========== MATCHED ACTIVITY TYPES ROUTE ==========');
+        console.log('Path matches /v1/admin/activity/types or /admin/activity/types');
+        console.log('Method matches GET');
+        return await handleGetActivityTypes(decoded);
       } else if (path === '/v1/admin/activity' && method === 'GET') {
         console.log('========== MATCHED ACTIVITY LOGS ROUTE ==========');
         console.log('Path matches /v1/admin/activity');
@@ -1363,6 +1368,87 @@ async function handleGetActivityLogs(params: any, adminUser: any) {
     console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
     return createResponse(500, { 
       error: 'Failed to get activity logs', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+/**
+ * Get unique activity types from DynamoDB
+ * Scans the activity table and returns all unique eventType values
+ */
+async function handleGetActivityTypes(adminUser: any) {
+  try {
+    console.log('========== handleGetActivityTypes FUNCTION ENTERED ==========');
+    console.log('Admin user:', { userId: adminUser.userId, email: adminUser.email });
+    
+    if (!ACTIVITY_TABLE) {
+      console.error('ACTIVITY_TABLE is not set');
+      return createResponse(500, { error: 'Table name not configured' });
+    }
+    
+    if (!docClient) {
+      console.error('docClient is null/undefined');
+      return createResponse(500, { error: 'DynamoDB client not initialized' });
+    }
+    
+    console.log('Scanning ACTIVITY_TABLE for unique event types...');
+    
+    // Scan the table to get unique event types
+    // Use pagination to handle large tables efficiently
+    // Only fetch eventType to reduce data transfer
+    const eventTypes = new Set<string>();
+    let lastEvaluatedKey: any = undefined;
+    let scanCount = 0;
+    const maxScans = 10; // Limit to 10 pages to prevent excessive scanning
+    
+    do {
+      const scanCommand = new ScanCommand({
+        TableName: ACTIVITY_TABLE,
+        ProjectionExpression: 'eventType', // Only fetch eventType to reduce data transfer
+        ExclusiveStartKey: lastEvaluatedKey,
+        Limit: 1000, // Process in batches of 1000
+      });
+      
+      const scanResult = await docClient.send(scanCommand);
+      const items = scanResult.Items || [];
+      scanCount++;
+      
+      console.log(`Scan page ${scanCount}: ${items.length} items`);
+      
+      // Extract unique event types from this page
+      for (const item of items) {
+        if (item.eventType && typeof item.eventType === 'string') {
+          eventTypes.add(item.eventType);
+        }
+      }
+      
+      lastEvaluatedKey = scanResult.LastEvaluatedKey;
+      
+      // Safety limit: stop after maxScans pages to prevent timeout
+      // Most activity types should be found in the first few pages
+      if (scanCount >= maxScans) {
+        console.log(`Reached max scan limit (${maxScans} pages). Found ${eventTypes.size} unique types so far.`);
+        break;
+      }
+    } while (lastEvaluatedKey);
+    
+    // Convert to sorted array for consistent ordering
+    const uniqueTypes = Array.from(eventTypes).sort();
+    
+    console.log(`Scan complete after ${scanCount} pages. Unique activity types found: ${uniqueTypes.length}`);
+    console.log('Types:', uniqueTypes);
+    
+    return createResponse(200, {
+      activityTypes: uniqueTypes,
+    });
+  } catch (error) {
+    console.error('========== handleGetActivityTypes ERROR ==========');
+    console.error('Error:', error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    return createResponse(500, { 
+      error: 'Failed to get activity types', 
       details: error instanceof Error ? error.message : String(error)
     });
   }
