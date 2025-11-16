@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { AdminService, type User } from '../services/AdminService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
+import { useDebounce } from '../hooks/useDebounce';
 
 type UserListNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -39,6 +40,9 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
   const [emailFilter, setEmailFilter] = useState(initialEmailFilter || '');
   const [sortBy, setSortBy] = useState<'email' | 'createdAt' | 'lastActiveAt'>('createdAt');
   const [showDeactivated, setShowDeactivated] = useState(initialShowDeactivated || false);
+  
+  // Debounce email filter to avoid API calls on every keystroke
+  const debouncedEmailFilter = useDebounce(emailFilter, 500);
 
   // Update filters when initial props change (e.g., navigating from whitelist)
   useEffect(() => {
@@ -50,18 +54,12 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
     }
   }, [initialEmailFilter, initialShowDeactivated]);
 
+  // Reset to page 1 when filters change (but not when page changes)
   useEffect(() => {
-    loadUsers();
-  }, [page, emailFilter, sortBy, showDeactivated]);
+    setPage(1);
+  }, [debouncedEmailFilter, sortBy, showDeactivated]);
 
-  // Refresh when screen comes into focus (e.g., returning from EditUser)
-  useFocusEffect(
-    React.useCallback(() => {
-      loadUsers();
-    }, [page, emailFilter, sortBy, showDeactivated])
-  );
-
-  const loadUsers = async (isRefresh = false) => {
+  const loadUsers = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
@@ -71,7 +69,7 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
       const response = await AdminService.listUsers({
         page,
         limit: 20,
-        emailFilter: emailFilter || undefined,
+        emailFilter: debouncedEmailFilter || undefined,
         sortBy,
         showDeactivated,
       });
@@ -103,7 +101,18 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [page, debouncedEmailFilter, sortBy, showDeactivated, navigation]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  // Refresh when screen comes into focus (e.g., returning from EditUser)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUsers();
+    }, [loadUsers])
+  );
 
   const onRefresh = () => {
     loadUsers(true);
