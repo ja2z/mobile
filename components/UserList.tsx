@@ -18,6 +18,7 @@ import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import { useDebounce } from '../hooks/useDebounce';
+import { SortButton, type SortDirection, type SortOption } from './SortButton';
 
 type UserListNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -38,7 +39,8 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [emailFilter, setEmailFilter] = useState(initialEmailFilter || '');
-  const [sortBy, setSortBy] = useState<'email' | 'createdAt' | 'lastActiveAt'>('createdAt');
+  const [sortBy, setSortBy] = useState<'email' | 'createdAt' | 'lastActiveAt' | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showDeactivated, setShowDeactivated] = useState(initialShowDeactivated || false);
   
   // Debounce email filter to avoid API calls on every keystroke
@@ -57,7 +59,22 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
   // Reset to page 1 when filters change (but not when page changes)
   useEffect(() => {
     setPage(1);
-  }, [debouncedEmailFilter, sortBy, showDeactivated]);
+  }, [debouncedEmailFilter, sortBy, sortDirection, showDeactivated]);
+
+  const handleSortSelect = (field: 'email' | 'createdAt' | 'lastActiveAt') => {
+    // If clicking the same field, toggle direction; otherwise set new field with asc
+    if (sortBy === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleClearSort = () => {
+    setSortBy(null);
+    setSortDirection('asc');
+  };
 
   const loadUsers = useCallback(async (isRefresh = false) => {
     try {
@@ -70,7 +87,8 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
         page,
         limit: 20,
         emailFilter: debouncedEmailFilter || undefined,
-        sortBy,
+        sortBy: sortBy || 'createdAt', // Default to createdAt if no sort selected
+        sortDirection: sortBy ? sortDirection : undefined, // Only pass direction if sort is selected
         showDeactivated,
       });
       setUsers(response.users);
@@ -101,7 +119,7 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, debouncedEmailFilter, sortBy, showDeactivated, navigation]);
+  }, [page, debouncedEmailFilter, sortBy, sortDirection, showDeactivated, navigation]);
 
   useEffect(() => {
     loadUsers();
@@ -233,39 +251,66 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
     </View>
   );
 
+  const getSortFieldLabel = (field: 'email' | 'createdAt' | 'lastActiveAt'): string => {
+    switch (field) {
+      case 'email':
+        return 'Email';
+      case 'createdAt':
+        return 'Created';
+      case 'lastActiveAt':
+        return 'Last Active';
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Filters */}
       <View style={styles.filters}>
-        <TextInput
-          style={styles.filterInput}
-          placeholder="Filter by email..."
-          value={emailFilter}
-          onChangeText={setEmailFilter}
-          placeholderTextColor={colors.textSecondary}
-        />
-        <TouchableOpacity
-          style={styles.sortButton}
-          onPress={() => {
-            const options: ('email' | 'createdAt' | 'lastActiveAt')[] = ['email', 'createdAt', 'lastActiveAt'];
-            const currentIndex = options.indexOf(sortBy);
-            const nextIndex = (currentIndex + 1) % options.length;
-            setSortBy(options[nextIndex]);
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.sortButtonText}>Sort: {sortBy}</Text>
-          <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleButton, showDeactivated && styles.toggleButtonActive]}
-          onPress={() => setShowDeactivated(!showDeactivated)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.toggleButtonText, showDeactivated && styles.toggleButtonTextActive]}>
-            Show Deactivated
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.filtersRow}>
+          <TextInput
+            style={styles.filterInput}
+            placeholder="Filter by email..."
+            value={emailFilter}
+            onChangeText={setEmailFilter}
+            placeholderTextColor={colors.textSecondary}
+          />
+          <View style={styles.sortButtonContainer}>
+            <SortButton
+              options={[
+                { value: 'email', label: 'Email' },
+                { value: 'createdAt', label: 'Created' },
+                { value: 'lastActiveAt', label: 'Last Active' },
+              ]}
+              currentSortField={sortBy}
+              sortDirection={sortDirection}
+              onSortSelect={handleSortSelect}
+              onClearSort={handleClearSort}
+              getSortFieldLabel={getSortFieldLabel}
+            />
+          </View>
+          <TouchableOpacity
+            style={[styles.toggleButton, showDeactivated && styles.toggleButtonActive]}
+            onPress={() => setShowDeactivated(!showDeactivated)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.toggleButtonText, showDeactivated && styles.toggleButtonTextActive]}>
+              Show Deactivated
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {sortBy && (
+          <View style={styles.sortIndicator}>
+            <Text style={styles.sortIndicatorText}>
+              Sorted by: {getSortFieldLabel(sortBy)} ({sortDirection === 'asc' ? 'Asc' : 'Desc'})
+            </Text>
+            <TouchableOpacity
+              onPress={handleClearSort}
+              style={styles.clearSortButton}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* User List */}
@@ -329,11 +374,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   filters: {
-    flexDirection: 'row',
     padding: spacing.md,
     backgroundColor: colors.background,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  filtersRow: {
+    flexDirection: 'row',
     gap: spacing.sm,
   },
   filterInput: {
@@ -346,19 +393,24 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     color: colors.textPrimary,
   },
-  sortButton: {
+  sortButtonContainer: {
+    // Container for SortButton component
+  },
+  sortIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.xs,
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  sortButtonText: {
-    ...typography.body,
-    color: colors.textPrimary,
+  sortIndicatorText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  clearSortButton: {
+    padding: spacing.xs,
   },
   toggleButton: {
     padding: spacing.sm,

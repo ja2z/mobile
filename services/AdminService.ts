@@ -39,6 +39,7 @@ export interface ListUsersParams {
   limit?: number;
   emailFilter?: string;
   sortBy?: 'email' | 'createdAt' | 'lastActiveAt';
+  sortDirection?: 'asc' | 'desc';
   showDeactivated?: boolean;
 }
 
@@ -202,6 +203,7 @@ export class AdminService {
     if (params.limit) queryParams.append('limit', params.limit.toString());
     if (params.emailFilter) queryParams.append('emailFilter', params.emailFilter);
     if (params.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params.sortDirection) queryParams.append('sortDirection', params.sortDirection);
     if (params.showDeactivated !== undefined) {
       queryParams.append('showDeactivated', params.showDeactivated.toString());
     }

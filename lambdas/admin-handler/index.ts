@@ -622,6 +622,7 @@ async function handleListUsers(params: any, adminUser: any) {
   const limit = parseInt(params.limit || '20', 10);
   const emailFilter = params.emailFilter || '';
   const sortBy = params.sortBy || 'createdAt';
+  const sortDirection = params.sortDirection || 'desc'; // Default to desc for dates
   const showDeactivated = params.showDeactivated === 'true' || params.showDeactivated === true;
 
   const offset = (page - 1) * limit;
@@ -651,22 +652,29 @@ async function handleListUsers(params: any, adminUser: any) {
     // Sort users
     users.sort((a: any, b: any) => {
       let aVal: any, bVal: any;
+      let comparison: number;
       
       switch (sortBy) {
         case 'email':
           aVal = a.email || '';
           bVal = b.email || '';
-          return aVal.localeCompare(bVal);
+          comparison = aVal.localeCompare(bVal);
+          break;
         case 'lastActiveAt':
           aVal = a.lastActiveAt || 0;
           bVal = b.lastActiveAt || 0;
-          return bVal - aVal; // Most recent first
+          comparison = aVal - bVal;
+          break;
         case 'createdAt':
         default:
           aVal = a.createdAt || 0;
           bVal = b.createdAt || 0;
-          return bVal - aVal; // Most recent first
+          comparison = aVal - bVal;
+          break;
       }
+      
+      // Apply sort direction
+      return sortDirection === 'asc' ? comparison : -comparison;
     });
 
     // Paginate

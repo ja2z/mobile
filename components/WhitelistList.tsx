@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
-  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -17,11 +16,11 @@ import { AdminService, type WhitelistUser } from '../services/AdminService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
+import { SortButton, type SortDirection } from './SortButton';
 
 type WhitelistListNavigationProp = StackNavigationProp<RootStackParamList>;
 
 type SortField = 'role' | 'approvedAt' | 'expirationDate' | 'registeredAt';
-type SortDirection = 'asc' | 'desc';
 
 /**
  * Whitelist List Component
@@ -38,7 +37,6 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
   const [refreshing, setRefreshing] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [sortModalVisible, setSortModalVisible] = useState(false);
 
   useEffect(() => {
     loadWhitelist();
@@ -305,7 +303,11 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
       setSortField(field);
       setSortDirection('asc');
     }
-    setSortModalVisible(false);
+  };
+
+  const handleClearSort = () => {
+    setSortField(null);
+    setSortDirection('asc');
   };
 
   const getSortFieldLabel = (field: SortField): string => {
@@ -412,20 +414,19 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
             <Ionicons name="add" size={20} color="#FFFFFF" />
             <Text style={styles.addButtonText}>Add Whitelist User</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.sortButton}
-            onPress={() => setSortModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons 
-              name={sortField ? "filter" : "filter-outline"} 
-              size={20} 
-              color={sortField ? colors.primary : colors.textSecondary} 
-            />
-            <Text style={[styles.sortButtonText, sortField && styles.sortButtonTextActive]}>
-              Sort
-            </Text>
-          </TouchableOpacity>
+          <SortButton
+            options={[
+              { value: 'role', label: 'Role' },
+              { value: 'approvedAt', label: 'Whitelisted' },
+              { value: 'expirationDate', label: 'Expires' },
+              { value: 'registeredAt', label: 'Registered' },
+            ]}
+            currentSortField={sortField}
+            sortDirection={sortDirection}
+            onSortSelect={handleSortSelect}
+            onClearSort={handleClearSort}
+            getSortFieldLabel={getSortFieldLabel}
+          />
         </View>
         {sortField && (
           <View style={styles.sortIndicator}>
@@ -433,10 +434,7 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
               Sorted by: {getSortFieldLabel(sortField)} ({sortDirection === 'asc' ? 'Asc' : 'Desc'})
             </Text>
             <TouchableOpacity
-              onPress={() => {
-                setSortField(null);
-                setSortDirection('asc');
-              }}
+              onPress={handleClearSort}
               style={styles.clearSortButton}
             >
               <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
@@ -472,60 +470,6 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
         />
       )}
 
-      {/* Sort Modal */}
-      <Modal
-        visible={sortModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setSortModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setSortModalVisible(false)}
-        >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sort By</Text>
-              <TouchableOpacity
-                onPress={() => setSortModalVisible(false)}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.sortOptions}>
-              {(['role', 'approvedAt', 'expirationDate', 'registeredAt'] as SortField[]).map((field) => (
-                <TouchableOpacity
-                  key={field}
-                  style={[
-                    styles.sortOption,
-                    sortField === field && styles.sortOptionActive,
-                  ]}
-                  onPress={() => handleSortSelect(field)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.sortOptionText,
-                      sortField === field && styles.sortOptionTextActive,
-                    ]}
-                  >
-                    {getSortFieldLabel(field)}
-                  </Text>
-                  {sortField === field && (
-                    <Ionicons
-                      name={sortDirection === 'asc' ? 'arrow-up' : 'arrow-down'}
-                      size={20}
-                      color={colors.primary}
-                    />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -559,26 +503,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: '#FFFFFF',
     fontWeight: '600',
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    gap: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 80,
-  },
-  sortButtonText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  sortButtonTextActive: {
-    color: colors.primary,
   },
   sortIndicator: {
     flexDirection: 'row',
@@ -663,58 +587,6 @@ const styles = StyleSheet.create({
   emptyText: {
     ...typography.body,
     color: colors.textSecondary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.lg,
-    borderTopRightRadius: borderRadius.lg,
-    paddingBottom: spacing.xl,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  modalTitle: {
-    ...typography.h3,
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  modalCloseButton: {
-    padding: spacing.xs,
-  },
-  sortOptions: {
-    padding: spacing.md,
-  },
-  sortOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.surface,
-  },
-  sortOptionActive: {
-    backgroundColor: colors.primary + '15',
-  },
-  sortOptionText: {
-    ...typography.body,
-    color: colors.textPrimary,
-  },
-  sortOptionTextActive: {
-    color: colors.primary,
-    fontWeight: '600',
   },
 });
 
