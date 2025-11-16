@@ -154,8 +154,8 @@ export default function ActivityLog() {
   const renderActivityItem = ({ item }: { item: ActivityLogType }) => (
     <View style={styles.activityItem}>
       <View style={styles.activityHeader}>
-        <Text style={styles.activityEventType}>{getEventTypeLabel(item.eventType)}</Text>
         <Text style={styles.activityTimestamp}>{formatDateTime(item.timestamp)}</Text>
+        <Text style={styles.activityEventType}>{getEventTypeLabel(item.eventType)}</Text>
       </View>
       <Text style={styles.activityEmail}>{item.email}</Text>
       {item.metadata && Object.keys(item.metadata).length > 0 && (
@@ -297,9 +297,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     marginBottom: spacing.xs,
   },
   activityEventType: {
@@ -310,6 +308,7 @@ const styles = StyleSheet.create({
   activityTimestamp: {
     ...typography.caption,
     color: colors.textSecondary,
+    marginBottom: spacing.xs / 2,
   },
   activityEmail: {
     ...typography.body,
