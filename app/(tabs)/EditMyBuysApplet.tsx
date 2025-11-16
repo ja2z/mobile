@@ -322,12 +322,8 @@ export default function EditMyBuysApplet() {
           onPress: async () => {
             try {
               await MyBuysService.deleteApplet(appletId);
-              Alert.alert('Success', 'Applet deleted successfully', [
-                {
-                  text: 'OK',
-                  onPress: () => navigation.goBack(),
-                },
-              ]);
+              // Navigate back on success (no success message needed)
+              navigation.goBack();
             } catch (error: any) {
               console.error('Error deleting applet:', error);
               if (error.isExpirationError) {
