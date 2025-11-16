@@ -421,11 +421,11 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     }
     
     // Validate name length
-    if (name.length > 50) {
+    if (name.length > 35) {
         return createResponse(400, {
             success: false,
             error: 'Name too long',
-            message: 'Name must be 50 characters or less'
+            message: 'Name must be 35 characters or less'
         });
     }
     
@@ -584,11 +584,11 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     }
     
     // Validate name length
-    if (name.length > 50) {
+    if (name.length > 35) {
         return createResponse(400, {
             success: false,
             error: 'Name too long',
-            message: 'Name must be 50 characters or less'
+            message: 'Name must be 35 characters or less'
         });
     }
     

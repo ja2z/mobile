@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,6 +51,12 @@ export default function EditMyBuysApplet() {
   const [embedUrlModalVisible, setEmbedUrlModalVisible] = useState(false);
   const [clientIdModalVisible, setClientIdModalVisible] = useState(false);
   const [secretKeyModalVisible, setSecretKeyModalVisible] = useState(false);
+
+  // Refs for field navigation
+  const embedUrlInputRef = useRef<TextInput>(null);
+  const embedClientIdInputRef = useRef<TextInput>(null);
+  const embedSecretKeyInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -300,6 +308,19 @@ export default function EditMyBuysApplet() {
     );
   };
 
+  /**
+   * Scroll to input field when it receives focus
+   * For the last field (secret key), scroll to end to ensure it's visible above keyboard
+   */
+  const scrollToInput = (isLastField: boolean = false) => {
+    setTimeout(() => {
+      if (isLastField && scrollViewRef.current) {
+        // For the last field, scroll to end to ensure it's visible above keyboard
+        scrollViewRef.current.scrollToEnd({ animated: true });
+      }
+    }, 300); // Delay to allow keyboard to appear first
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -313,26 +334,35 @@ export default function EditMyBuysApplet() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Name Field */}
         <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Name</Text>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Name</Text>
+            <Text style={styles.charCount}>{name.length}/35</Text>
+          </View>
           <TextInput
             style={styles.input}
             placeholder="e.g. Demand Planning"
             placeholderTextColor={colors.textSecondary}
             value={name}
             onChangeText={setName}
-            maxLength={50}
+            maxLength={35}
             autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => embedUrlInputRef.current?.focus()}
           />
-          {name.length > 0 && (
-            <Text style={styles.charCount}>{name.length}/50</Text>
-          )}
         </View>
 
         {/* Embed URL Field */}
@@ -348,15 +378,18 @@ export default function EditMyBuysApplet() {
             </TouchableOpacity>
           </View>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            ref={embedUrlInputRef}
+            style={[styles.input, styles.urlInput]}
             placeholder="https://app.sigmacomputing.com/..."
             placeholderTextColor={colors.textSecondary}
             value={embedUrl}
             onChangeText={setEmbedUrl}
-            multiline
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
+            returnKeyType="next"
+            onSubmitEditing={() => embedClientIdInputRef.current?.focus()}
+            blurOnSubmit={true}
           />
         </View>
 
@@ -373,6 +406,7 @@ export default function EditMyBuysApplet() {
             </TouchableOpacity>
           </View>
           <TextInput
+            ref={embedClientIdInputRef}
             style={styles.input}
             placeholder="Enter your embed client ID"
             placeholderTextColor={colors.textSecondary}
@@ -380,6 +414,11 @@ export default function EditMyBuysApplet() {
             onChangeText={setEmbedClientId}
             autoCapitalize="none"
             autoCorrect={false}
+            returnKeyType="next"
+            onSubmitEditing={() => {
+              embedSecretKeyInputRef.current?.focus();
+              scrollToInput(true);
+            }}
           />
         </View>
 
@@ -397,6 +436,7 @@ export default function EditMyBuysApplet() {
           </View>
           <View style={styles.secretInputContainer}>
             <TextInput
+              ref={embedSecretKeyInputRef}
               style={[styles.input, styles.secretInput]}
               placeholder="Enter your embed secret key"
               placeholderTextColor={colors.textSecondary}
@@ -405,6 +445,9 @@ export default function EditMyBuysApplet() {
               secureTextEntry={!showSecretKey}
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onFocus={() => scrollToInput(true)}
             />
             <TouchableOpacity
               onPress={() => setShowSecretKey(!showSecretKey)}
@@ -479,6 +522,7 @@ export default function EditMyBuysApplet() {
           <Text style={styles.deleteButtonText}>Delete</Text>
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Info Modals */}
       <MyBuysEmbedUrlInfoModal
@@ -512,11 +556,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.md,
   },
+  keyboardAvoid: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: spacing.lg,
+    paddingBottom: spacing.xxxl, // Extra padding at bottom to ensure last field is scrollable above keyboard
   },
   fieldContainer: {
     marginBottom: spacing.lg,
@@ -536,17 +584,22 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   input: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 50,
     color: colors.textPrimary,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
+  urlInput: {
+    height: 50,
   },
   secretInputContainer: {
     flexDirection: 'row',
@@ -562,8 +615,7 @@ const styles = StyleSheet.create({
   charCount: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
-    textAlign: 'right',
+    marginLeft: 'auto',
   },
   testResultContainer: {
     flexDirection: 'row',

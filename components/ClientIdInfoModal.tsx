@@ -57,11 +57,12 @@ export function ClientIdInfoModal({ visible, onClose }: ClientIdInfoModalProps) 
           </View>
 
           {/* Content */}
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-          >
+          <View style={styles.contentWrapper}>
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={true}
+            >
             <Text style={styles.descriptionText}>
               The Embed Client ID is a unique identifier for your embed credentials.
               It's used to sign JWTs for your custom embeds.
@@ -84,10 +85,11 @@ export function ClientIdInfoModal({ visible, onClose }: ClientIdInfoModalProps) 
             <View style={styles.noteSection}>
               <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
               <Text style={styles.noteText}>
-                The Client ID is typically a long hexadecimal string that identifies your embed credentials in Sigma.
+                The Client ID is a long hexadecimal string that identifies your embed credentials in Sigma.
               </Text>
             </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -114,9 +116,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     width: '100%',
     maxWidth: 500,
+    height: SCREEN_HEIGHT * 0.7,
     maxHeight: SCREEN_HEIGHT * 0.8,
     ...shadows.medium,
     overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  contentWrapper: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -167,13 +174,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.info,
     marginTop: spacing.sm,
   },
   linkText: {
     ...typography.body,
+    fontWeight: '600',
     color: colors.info,
     marginLeft: spacing.sm,
-    textDecorationLine: 'underline',
+    flex: 1,
   },
   noteSection: {
     flexDirection: 'row',

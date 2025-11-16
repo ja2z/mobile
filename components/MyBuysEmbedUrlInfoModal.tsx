@@ -82,11 +82,12 @@ export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfo
           </View>
 
           {/* Content */}
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-          >
+          <View style={styles.contentWrapper}>
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={true}
+            >
             <Text style={styles.descriptionText}>
               An embed URL is a fully working Sigma workbook embed URL that you want to use as a template.
               This URL should include a JWT (JSON Web Token) for authentication.
@@ -102,7 +103,10 @@ export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfo
             </View>
 
             <View style={styles.helpSection}>
-              <Text style={styles.sectionTitle}>Need help getting an embed URL?</Text>
+              <Text style={styles.sectionTitle}>How to get an embed URL:</Text>
+              <Text style={styles.helpDescription}>
+                Generate an embed URL using the Sigma embed sandbox. Copy the embed URL from the sandbox and paste it here.
+              </Text>
               <TouchableOpacity
                 style={styles.linkButton}
                 onPress={handleOpenSandbox}
@@ -110,7 +114,7 @@ export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfo
               >
                 <Ionicons name="open-outline" size={20} color={colors.info} />
                 <Text style={styles.linkText}>
-                  Test an embed URL in the embed sandbox
+                  Open Embed Sandbox Documentation
                 </Text>
               </TouchableOpacity>
             </View>
@@ -121,7 +125,8 @@ export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfo
                 The JWT in your embed URL will be regenerated with your credentials when you view the applet.
               </Text>
             </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -148,9 +153,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     width: '100%',
     maxWidth: 500,
+    height: SCREEN_HEIGHT * 0.7,
     maxHeight: SCREEN_HEIGHT * 0.8,
     ...shadows.medium,
     overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  contentWrapper: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -211,19 +221,28 @@ const styles = StyleSheet.create({
   helpSection: {
     marginBottom: spacing.lg,
   },
+  helpDescription: {
+    ...typography.body,
+    color: colors.textPrimary,
+    lineHeight: 24,
+    marginBottom: spacing.md,
+  },
   linkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.info,
     marginTop: spacing.sm,
   },
   linkText: {
     ...typography.body,
+    fontWeight: '600',
     color: colors.info,
     marginLeft: spacing.sm,
-    textDecorationLine: 'underline',
+    flex: 1,
   },
   noteSection: {
     flexDirection: 'row',

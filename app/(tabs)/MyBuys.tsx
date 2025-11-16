@@ -78,6 +78,30 @@ export default function MyBuys() {
   }, [navigation]);
 
   /**
+   * Handle home button press
+   */
+  const handleHomePress = useCallback(() => {
+    navigation.navigate('Home' as never);
+  }, [navigation]);
+
+  /**
+   * Set up navigation header with back button
+   */
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={handleHomePress}
+          style={styles.headerButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, handleHomePress]);
+
+  /**
    * Render applet tile
    */
   const renderAppletTile = (applet: Applet) => {
@@ -146,20 +170,9 @@ export default function MyBuys() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <StatusBar barStyle="light-content" />
       
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTopBorder} />
-        <View style={styles.headerContent}>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>My Buys</Text>
-            <Text style={styles.headerSubtitle}>Custom workbook embeds</Text>
-          </View>
-        </View>
-      </View>
-
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -209,30 +222,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
-  header: {
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTopBorder: {
-    height: 4,
-    backgroundColor: colors.primary,
-  },
-  headerContent: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: {
-    ...typography.h2,
-    color: colors.textPrimary,
-  },
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+  headerButton: {
+    padding: spacing.sm,
+    marginLeft: spacing.sm,
   },
   loadingContainer: {
     flex: 1,

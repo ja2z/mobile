@@ -57,11 +57,12 @@ export function SecretKeyInfoModal({ visible, onClose }: SecretKeyInfoModalProps
           </View>
 
           {/* Content */}
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-          >
+          <View style={styles.contentWrapper}>
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={true}
+            >
             <Text style={styles.descriptionText}>
               The Embed Secret Key is used to sign JWTs for your custom embeds.
               Keep this key secure and never share it publicly.
@@ -94,7 +95,8 @@ export function SecretKeyInfoModal({ visible, onClose }: SecretKeyInfoModalProps
                 The secret key is used to regenerate JWTs with your credentials when viewing applets.
               </Text>
             </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -121,9 +123,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     width: '100%',
     maxWidth: 500,
+    height: SCREEN_HEIGHT * 0.7,
     maxHeight: SCREEN_HEIGHT * 0.8,
     ...shadows.medium,
     overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  contentWrapper: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -174,13 +181,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.info,
     marginTop: spacing.sm,
   },
   linkText: {
     ...typography.body,
+    fontWeight: '600',
     color: colors.info,
     marginLeft: spacing.sm,
-    textDecorationLine: 'underline',
+    flex: 1,
   },
   warningSection: {
     flexDirection: 'row',

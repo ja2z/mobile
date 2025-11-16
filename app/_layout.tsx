@@ -439,7 +439,7 @@ export default function RootLayout() {
           component={MyBuys}
           options={{
             title: 'My Buys',
-            headerShown: false,
+            headerShown: true,
           }}
         />
         <Stack.Screen 
