@@ -10,6 +10,8 @@ interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
   appletId?: string; // Optional applet ID for activity logging
   appletName?: string; // Optional applet name for activity logging
+  initialUrl?: string; // Optional: if provided, use this URL directly instead of fetching
+  initialJwt?: string; // Optional: JWT token if using initialUrl
 }
 
 export interface DashboardViewRef {
@@ -79,7 +81,7 @@ const SkeletonPlaceholder: React.FC = () => {
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName }, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -298,9 +300,20 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
 
   /**
    * Fetch URL on component mount and cleanup on unmount
+   * Or use initialUrl if provided
    */
   useEffect(() => {
-    fetchUrl();
+    if (initialUrl) {
+      // Use provided URL directly
+      console.log('📱 Using initialUrl:', initialUrl);
+      setUrl(initialUrl);
+      setJwt(initialJwt || null);
+      setFetchingUrl(false);
+      setLoading(true); // Will be set to false when workbook:loaded is received
+    } else {
+      // Fetch URL from API
+      fetchUrl();
+    }
     
     return () => {
       // Cleanup: clear the refresh timeout when component unmounts
@@ -308,7 +321,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         clearTimeout(refreshTimeoutRef.current);
       }
     };
-  }, []);
+  }, [initialUrl, initialJwt]);
 
   /**
    * Log state changes for debugging

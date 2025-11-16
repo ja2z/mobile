@@ -300,34 +300,81 @@ export class MyBuysService {
   }
 
   /**
+   * Fetch with timeout wrapper
+   */
+  private static async fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 30000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeoutMs}ms. The server may be slow or unavailable.`);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get regenerated embed URL for viewing an applet
    */
   static async getRegeneratedUrl(appletId: string): Promise<RegeneratedUrlResponse> {
+    const startTime = Date.now();
+    console.log('[MyBuysService] Starting getRegeneratedUrl for appletId:', appletId);
+    
     try {
+      console.log('[MyBuysService] Step 1: Getting session...');
       const session = await AuthService.getSession();
       if (!session) {
         throw new Error('Not authenticated. Please sign in.');
       }
+      console.log('[MyBuysService] Step 1 complete: Session obtained');
 
-      const response = await fetch(`${MY_BUYS_BASE_URL}/applets/${appletId}/regenerate-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.jwt}`,
+      const url = `${MY_BUYS_BASE_URL}/applets/${appletId}/regenerate-url`;
+      console.log('[MyBuysService] Step 2: Making fetch request to:', url);
+      
+      const fetchStartTime = Date.now();
+      const response = await this.fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.jwt}`,
+          },
         },
-      });
+        30000 // 30 second timeout
+      );
+      const fetchDuration = Date.now() - fetchStartTime;
+      console.log('[MyBuysService] Step 2 complete: Fetch completed in', fetchDuration, 'ms, status:', response.status);
 
+      console.log('[MyBuysService] Step 3: Handling API response...');
       await AuthService.handleApiResponse(response);
+      console.log('[MyBuysService] Step 3 complete: API response handled');
 
       if (!response.ok) {
+        console.log('[MyBuysService] Response not OK, parsing error...');
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || errorData.error || `API returned status ${response.status}`);
       }
 
+      console.log('[MyBuysService] Step 4: Parsing response JSON...');
       const result = await response.json();
+      console.log('[MyBuysService] Step 4 complete: JSON parsed, success:', result.success, 'hasUrl:', !!result.url);
+      
       if (!result.success || !result.url) {
         throw new Error('Invalid response from API');
       }
+
+      const totalDuration = Date.now() - startTime;
+      console.log('[MyBuysService] getRegeneratedUrl completed successfully in', totalDuration, 'ms');
 
       return {
         success: result.success,
@@ -336,8 +383,14 @@ export class MyBuysService {
         expiresAt: result.expiresAt || 0,
       };
     } catch (error) {
+      const totalDuration = Date.now() - startTime;
       const originalError = error instanceof Error ? error : new Error(String(error));
-      console.error('Failed to get regenerated URL:', originalError);
+      console.error('[MyBuysService] Failed to get regenerated URL after', totalDuration, 'ms:', {
+        message: originalError.message,
+        name: originalError.name,
+        stack: originalError.stack,
+        appletId,
+      });
       throw originalError;
     }
   }
