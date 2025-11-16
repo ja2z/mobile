@@ -1,0 +1,23 @@
+{
+  "name": "lambda-my-buys-handler",
+  "version": "1.0.0",
+  "description": "Lambda function to handle My Buys applet CRUD operations",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "./build-lambda.sh",
+    "deploy": "npm run package && aws lambda update-function-code --function-name my-buys-handler --zip-file fileb://my-buys-handler.zip"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.921.0",
+    "@aws-sdk/client-kms": "^3.921.0",
+    "@aws-sdk/client-secrets-manager": "^3.921.0",
+    "@aws-sdk/lib-dynamodb": "^3.921.0",
+    "@types/aws-lambda": "^8.10.157"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.2",
+    "typescript": "^5.9.3"
+  }
+}
+

@@ -63,6 +63,10 @@ export default function Home() {
     } as never);
   };
 
+  const handleNavigateToMyBuys = () => {
+    navigation.navigate('MyBuys' as never);
+  };
+
   const appTiles: AppTile[] = [
     { 
       id: '1', 
@@ -138,6 +142,16 @@ export default function Home() {
       color: colors.tileColors.orange4,
       iconName: 'settings-outline',
       isActive: false,
+    },
+    { 
+      id: '9', 
+      title: 'My Buys', 
+      subtitle: 'Custom Embeds', 
+      description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
+      color: colors.tileColors.orange1,
+      iconName: 'layers-outline',
+      isActive: true,
+      onPress: handleNavigateToMyBuys,
     },
   ];
 

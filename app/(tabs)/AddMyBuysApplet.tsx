@@ -1,0 +1,499 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import { MyBuysService } from '../../services/MyBuysService';
+import { AuthService } from '../../services/AuthService';
+import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
+import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
+import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
+import { SecretKeyInfoModal } from '../../components/SecretKeyInfoModal';
+import type { RootStackParamList } from '../_layout';
+
+type AddMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AddMyBuysApplet'>;
+
+/**
+ * Add My Buys Applet Screen Component
+ * Allows creating a new custom applet
+ */
+export default function AddMyBuysApplet() {
+  const navigation = useNavigation<AddMyBuysAppletScreenNavigationProp>();
+  const [name, setName] = useState('');
+  const [embedUrl, setEmbedUrl] = useState('');
+  const [embedClientId, setEmbedClientId] = useState('');
+  const [embedSecretKey, setEmbedSecretKey] = useState('');
+  const [showSecretKey, setShowSecretKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  
+  // Modal visibility states
+  const [embedUrlModalVisible, setEmbedUrlModalVisible] = useState(false);
+  const [clientIdModalVisible, setClientIdModalVisible] = useState(false);
+  const [secretKeyModalVisible, setSecretKeyModalVisible] = useState(false);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+
+  /**
+   * Check if all required fields are filled
+   */
+  const isFormValid = name.trim() && embedUrl.trim() && embedClientId.trim() && embedSecretKey.trim();
+
+  /**
+   * Handle test button press
+   */
+  const handleTest = async () => {
+    if (!isFormValid) {
+      Alert.alert('Error', 'Please fill in all fields before testing');
+      return;
+    }
+
+    try {
+      setTesting(true);
+      setTestResult(null);
+
+      // Test the configuration without creating an applet
+      const result = await MyBuysService.testConfiguration({
+        embedUrl,
+        embedClientId,
+        embedSecretKey,
+      });
+
+      if (result.success) {
+        setTestResult({ success: true, message: `Test successful! (HTTP ${result.statusCode})` });
+      } else {
+        setTestResult({ success: false, message: result.message });
+      }
+    } catch (error: any) {
+      console.error('Error testing configuration:', error);
+      if (error.isExpirationError) {
+        Alert.alert(
+          'Account Expired',
+          error.message || 'Your account has expired. You can no longer use the app.',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                await AuthService.clearSession();
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              },
+            },
+          ]
+        );
+      } else {
+        setTestResult({ success: false, message: error.message || 'Test failed. Please check your configuration.' });
+      }
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  /**
+   * Handle save button press
+   */
+  const handleSave = async () => {
+    if (!isFormValid) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // If test hasn't been run or failed, warn user
+    if (!testResult || !testResult.success) {
+      Alert.alert(
+        'Test Recommended',
+        'You haven\'t tested this configuration yet. Do you want to save anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Save Anyway',
+            onPress: async () => {
+              await performSave();
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    await performSave();
+  };
+
+  /**
+   * Perform the actual save operation
+   */
+  const performSave = async () => {
+    try {
+      setSaving(true);
+
+      await MyBuysService.createApplet({
+        name,
+        embedUrl,
+        embedClientId,
+        embedSecretKey,
+      });
+
+      Alert.alert('Success', 'Applet created successfully', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
+    } catch (error: any) {
+      console.error('Error creating applet:', error);
+      if (error.isExpirationError) {
+        Alert.alert(
+          'Account Expired',
+          error.message || 'Your account has expired. You can no longer use the app.',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                await AuthService.clearSession();
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', error.message || 'Failed to create applet. Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Name Field */}
+        <View style={styles.fieldContainer}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Demand Planning"
+            placeholderTextColor={colors.textSecondary}
+            value={name}
+            onChangeText={setName}
+            maxLength={50}
+            autoCapitalize="words"
+          />
+          {name.length > 0 && (
+            <Text style={styles.charCount}>{name.length}/50</Text>
+          )}
+        </View>
+
+        {/* Embed URL Field */}
+        <View style={styles.fieldContainer}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Embed URL</Text>
+            <TouchableOpacity
+              onPress={() => setEmbedUrlModalVisible(true)}
+              style={styles.infoButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="https://app.sigmacomputing.com/..."
+            placeholderTextColor={colors.textSecondary}
+            value={embedUrl}
+            onChangeText={setEmbedUrl}
+            multiline
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+        </View>
+
+        {/* Embed Client ID Field */}
+        <View style={styles.fieldContainer}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Embed Client ID</Text>
+            <TouchableOpacity
+              onPress={() => setClientIdModalVisible(true)}
+              style={styles.infoButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your embed client ID"
+            placeholderTextColor={colors.textSecondary}
+            value={embedClientId}
+            onChangeText={setEmbedClientId}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        {/* Embed Secret Key Field */}
+        <View style={styles.fieldContainer}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Embed Secret Key</Text>
+            <TouchableOpacity
+              onPress={() => setSecretKeyModalVisible(true)}
+              style={styles.infoButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.secretInputContainer}>
+            <TextInput
+              style={[styles.input, styles.secretInput]}
+              placeholder="Enter your embed secret key"
+              placeholderTextColor={colors.textSecondary}
+              value={embedSecretKey}
+              onChangeText={setEmbedSecretKey}
+              secureTextEntry={!showSecretKey}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              onPress={() => setShowSecretKey(!showSecretKey)}
+              style={styles.eyeButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={showSecretKey ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Test Result */}
+        {testResult && (
+          <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
+            <Ionicons
+              name={testResult.success ? 'checkmark-circle' : 'close-circle'}
+              size={20}
+              color={testResult.success ? colors.success : colors.error}
+            />
+            <Text style={[styles.testResultText, testResult.success ? styles.testResultTextSuccess : styles.testResultTextError]}>
+              {testResult.message}
+            </Text>
+          </View>
+        )}
+
+        {/* Buttons */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.testButton, (!isFormValid || testing) && styles.buttonDisabled]}
+            onPress={handleTest}
+            disabled={!isFormValid || testing}
+            activeOpacity={0.7}
+          >
+            {testing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle-outline" size={20} color={colors.primary} />
+                <Text style={styles.testButtonText}>Test</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.saveButton, (!isFormValid || saving) && styles.buttonDisabled]}
+            onPress={handleSave}
+            disabled={!isFormValid || saving}
+            activeOpacity={0.7}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.saveButtonText}>Save</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Info Modals */}
+      <MyBuysEmbedUrlInfoModal
+        visible={embedUrlModalVisible}
+        onClose={() => setEmbedUrlModalVisible(false)}
+      />
+      <ClientIdInfoModal
+        visible={clientIdModalVisible}
+        onClose={() => setClientIdModalVisible(false)}
+      />
+      <SecretKeyInfoModal
+        visible={secretKeyModalVisible}
+        onClose={() => setSecretKeyModalVisible(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.surface,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+  },
+  fieldContainer: {
+    marginBottom: spacing.lg,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  label: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginRight: spacing.sm,
+  },
+  infoButton: {
+    padding: spacing.xs,
+  },
+  input: {
+    ...typography.body,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.textPrimary,
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  secretInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  secretInput: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  eyeButton: {
+    padding: spacing.sm,
+  },
+  charCount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'right',
+  },
+  testResultContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.lg,
+  },
+  testResultSuccess: {
+    backgroundColor: '#D1FAE5',
+  },
+  testResultError: {
+    backgroundColor: '#FEE2E2',
+  },
+  testResultText: {
+    ...typography.bodySmall,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  testResultTextSuccess: {
+    color: colors.success,
+  },
+  testResultTextError: {
+    color: colors.error,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  testButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    gap: spacing.sm,
+  },
+  testButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  saveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    gap: spacing.sm,
+  },
+  saveButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  headerButton: {
+    padding: spacing.sm,
+    marginLeft: spacing.sm,
+  },
+});
+

@@ -15,6 +15,10 @@ import Admin from './(tabs)/Admin';
 import ActivityLog from './(tabs)/ActivityLog';
 import EditUser from './(tabs)/EditUser';
 import AddWhitelistUser from './(tabs)/AddWhitelistUser';
+import MyBuys from './(tabs)/MyBuys';
+import AddMyBuysApplet from './(tabs)/AddMyBuysApplet';
+import EditMyBuysApplet from './(tabs)/EditMyBuysApplet';
+import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
 import { Alert } from 'react-native';
 import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
@@ -32,6 +36,10 @@ export type RootStackParamList = {
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
   AddWhitelistUser: undefined;
+  MyBuys: undefined;
+  AddMyBuysApplet: undefined;
+  EditMyBuysApplet: { appletId: string };
+  ViewMyBuysApplet: { appletId: string };
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -423,6 +431,38 @@ export default function RootLayout() {
           component={AddWhitelistUser}
           options={{
             title: 'Add Whitelist User',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="MyBuys" 
+          component={MyBuys}
+          options={{
+            title: 'My Buys',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen 
+          name="AddMyBuysApplet" 
+          component={AddMyBuysApplet}
+          options={{
+            title: 'Add Applet',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="EditMyBuysApplet" 
+          component={EditMyBuysApplet}
+          options={{
+            title: 'Edit Applet',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="ViewMyBuysApplet" 
+          component={ViewMyBuysApplet}
+          options={{
+            title: 'View Applet',
             headerShown: true,
           }}
         />
