@@ -127,11 +127,33 @@ if [ "$BUILD_TYPE" == "production" ]; then
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
     
     # Find the IPA file (most recent .ipa in project root)
-    IPA_PATH=$(find "$PROJECT_ROOT" -maxdepth 1 -name "*.ipa" -type f -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+    # Use portable find command that works on both macOS and Linux
+    # Ensure we're in the project root directory
+    cd "$PROJECT_ROOT"
     
-    if [ -z "$IPA_PATH" ]; then
-        log "ERROR: Could not find IPA file"
-        echo -e "${RED}Could not find IPA file!${NC}"
+    # Find IPA files and get the most recent one (macOS/BSD compatible)
+    # Try macOS/BSD stat first (stat -f)
+    IPA_RELATIVE=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    
+    # If stat -f doesn't work (Linux), try stat -c instead
+    if [ -z "$IPA_RELATIVE" ]; then
+        IPA_RELATIVE=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    fi
+    
+    # Convert relative path to absolute path
+    if [ -n "$IPA_RELATIVE" ]; then
+        # Remove leading ./ if present
+        IPA_RELATIVE="${IPA_RELATIVE#./}"
+        IPA_PATH="$PROJECT_ROOT/$IPA_RELATIVE"
+    else
+        IPA_PATH=""
+    fi
+    
+    if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
+        log "ERROR: Could not find IPA file in $PROJECT_ROOT"
+        echo -e "${RED}Could not find IPA file in project root: $PROJECT_ROOT${NC}"
+        echo -e "${YELLOW}Searching for IPA files...${NC}"
+        find "$PROJECT_ROOT" -name "*.ipa" -type f 2>/dev/null | head -5
         exit 1
     fi
     

@@ -1,5 +1,7 @@
 import { Config } from '../constants/Config';
 import { AuthService } from './AuthService';
+import * as SecureStore from 'expo-secure-store';
+import * as Device from 'expo-device';
 
 const ADMIN_BASE_URL = Config.API.ADMIN_BASE_URL;
 
@@ -102,16 +104,14 @@ export class ActivityService {
    */
   private static async getDeviceId(): Promise<string> {
     try {
-      const { getItemAsync, setItemAsync } = await import('expo-secure-store');
-      let deviceId = await getItemAsync('device_id');
+      let deviceId = await SecureStore.getItemAsync('device_id');
       
       if (!deviceId) {
-        const Device = await import('expo-device');
         const platform = Device.osName || 'unknown';
         const deviceName = Device.deviceName || 'unknown';
         const deviceIdBase = `${platform}_${deviceName}_${Date.now()}`;
         deviceId = deviceIdBase.replace(/\s+/g, '_').toLowerCase();
-        await setItemAsync('device_id', deviceId);
+        await SecureStore.setItemAsync('device_id', deviceId);
       }
       
       return deviceId;
