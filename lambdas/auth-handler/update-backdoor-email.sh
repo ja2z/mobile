@@ -1,8 +1,21 @@
 #!/bin/bash
 
 # Update the BACKDOOR_EMAIL environment variable in the Lambda function
+# Usage: ./update-backdoor-email.sh <email-address>
 
 set -e
+
+if [ -z "$1" ]; then
+    echo "❌ Error: Email address required"
+    echo ""
+    echo "Usage: $0 <email-address>"
+    echo "Example: $0 \"123@sigmacomputing.com\""
+    exit 1
+fi
+
+NEW_EMAIL="$1"
+LAMBDA_FUNCTION_NAME="mobile-auth-handler"
+REGION="us-west-2"
 
 export AWS_PROFILE=saml
 export AWS_CA_BUNDLE=""
@@ -12,10 +25,6 @@ export PYTHONHTTPSVERIFY=0
 aws_cmd() {
     aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning" >&2)
 }
-
-NEW_EMAIL="W4YpxgLLLpkqUhrCi@sigmacomputing.com"
-LAMBDA_FUNCTION_NAME="mobile-auth-handler"
-REGION="us-west-2"
 
 echo "🔍 Getting current Lambda configuration..."
 CURRENT_CONFIG=$(aws_cmd lambda get-function-configuration \
@@ -75,8 +84,12 @@ echo "✅ Lambda environment variable updated successfully!"
 echo "   BACKDOOR_EMAIL is now set to: $NEW_EMAIL"
 echo ""
 echo "⚠️  IMPORTANT: Also update the following:"
-echo "   1. EAS Secret: EXPO_PUBLIC_BACKDOOR_EMAIL"
-echo "   2. Local .env.local files for developers"
 echo ""
-echo "   Run: eas secret:update --name EXPO_PUBLIC_BACKDOOR_EMAIL --value \"$NEW_EMAIL\""
+echo "   1. EAS Environment Variable:"
+echo "      eas env:create --name EXPO_PUBLIC_BACKDOOR_EMAIL --value \"$NEW_EMAIL\" --scope project --type string --visibility plaintext"
+echo "      (or update if it already exists)"
+echo ""
+echo "   2. Local .env.local files for developers:"
+echo "      Add or update: EXPO_PUBLIC_BACKDOOR_EMAIL=$NEW_EMAIL"
+echo ""
 
