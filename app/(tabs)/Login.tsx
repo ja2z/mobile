@@ -152,11 +152,6 @@ export default function Login() {
     }
   };
 
-  const handleSkip = () => {
-    // Bypass authentication for development
-    navigation.replace('Home');
-  };
-
   const completeEmail = getCompleteEmail();
   const isFocused = usernameFocused || domainFocused;
   const canSubmit = isValidEmail(completeEmail);
@@ -304,16 +299,6 @@ export default function Login() {
 
           {/* Spacer */}
           <View style={styles.spacer} />
-
-          {/* Dev Bypass Button */}
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleSkip}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="code-outline" size={18} color={colors.textSecondary} />
-            <Text style={styles.skipButtonText}>Skip for Now (Dev Mode)</Text>
-          </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -485,20 +470,6 @@ const styles = StyleSheet.create({
   },
   spacer: {
     flex: 1,
-  },
-  skipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  skipButtonText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-    fontWeight: '500',
   },
   errorContainerAbsolute: {
     position: 'absolute',
