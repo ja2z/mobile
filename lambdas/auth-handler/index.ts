@@ -11,7 +11,7 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
 import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateRole } from '../shared/user-validation';
-import { logActivity, logActivityAndUpdateLastActive } from '../shared/activity-logger';
+import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -707,14 +707,15 @@ async function handleRefreshToken(body: any, event: any) {
     // Validate role from token or use default
     const role = validateRole(userProfile?.role || decoded.role) || 'basic';
 
-    // Generate new session JWT
+    // Generate new session JWT, preserving isBackdoor flag if present
     const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
     const newToken = await generateSessionJWT({
       userId: decoded.userId,
       email: decoded.email,
       role: role,
       deviceId: decoded.deviceId,
-      expiresAt: sessionExpiresAt
+      expiresAt: sessionExpiresAt,
+      isBackdoor: decoded.isBackdoor || false
     });
 
     // Update session in DynamoDB
@@ -743,7 +744,7 @@ async function handleRefreshToken(body: any, event: any) {
     await logActivityAndUpdateLastActive(
       'token_refresh',
       decoded.userId,
-      decoded.email,
+      getActivityLogEmail(decoded.email, decoded.isBackdoor),
       { action: 'token_refreshed' },
       decoded.deviceId,
       getIpAddress(event)
@@ -910,14 +911,15 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     });
   }
 
-  // Generate session JWT
+  // Generate session JWT with isBackdoor flag
   const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
   const sessionToken = await generateSessionJWT({
     userId: user.userId,
     email: user.email,
     role: user.role,
     deviceId,
-    expiresAt: sessionExpiresAt
+    expiresAt: sessionExpiresAt,
+    isBackdoor: true // Mark as backdoor user
   });
 
   // Store session in DynamoDB
@@ -1283,21 +1285,25 @@ async function generateSessionJWT(payload: {
   role: string;
   deviceId: string;
   expiresAt: number;
+  isBackdoor?: boolean;
 }): Promise<string> {
   const secret = await getJWTSecret();
   
-  return jwt.sign(
-    {
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role,
-      deviceId: payload.deviceId,
-      iat: Math.floor(Date.now() / 1000),
-      exp: payload.expiresAt
-    },
-    secret,
-    { algorithm: 'HS256' }
-  );
+  const jwtPayload: any = {
+    userId: payload.userId,
+    email: payload.email,
+    role: payload.role,
+    deviceId: payload.deviceId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: payload.expiresAt
+  };
+  
+  // Include isBackdoor flag if present
+  if (payload.isBackdoor) {
+    jwtPayload.isBackdoor = true;
+  }
+  
+  return jwt.sign(jwtPayload, secret, { algorithm: 'HS256' });
 }
 
 /**

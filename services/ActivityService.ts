@@ -27,12 +27,22 @@ export class ActivityService {
         return;
       }
 
+      // Decode JWT to check for isBackdoor flag
+      const decodedJWT = AuthService.decodeJWT(session.jwt);
+      
       console.log('[ActivityService] Session found:', {
         userId: session.user.userId,
         email: session.user.email,
         role: session.user.role,
         hasJWT: !!session.jwt,
-        jwtLength: session.jwt?.length
+        jwtLength: session.jwt?.length,
+        isBackdoor: decodedJWT?.isBackdoor,
+        jwtPayload: decodedJWT ? {
+          userId: decodedJWT.userId,
+          email: decodedJWT.email,
+          role: decodedJWT.role,
+          isBackdoor: decodedJWT.isBackdoor
+        } : null
       });
 
       // Get device ID

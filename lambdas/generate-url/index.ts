@@ -1,7 +1,7 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import crypto from 'crypto';
 import { validateUserExpiration, checkUserDeactivated } from '../shared/user-validation';
-import { logActivityAndUpdateLastActive } from '../shared/activity-logger';
+import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 import * as jwt from 'jsonwebtoken';
 
 // Get AWS region from environment or default to us-west-2
@@ -250,6 +250,7 @@ export const handler = async (event: any) => {
         const userId = sessionPayload.userId;
         const userEmail = sessionPayload.email;
         const deviceId = sessionPayload.deviceId;
+        const isBackdoor = sessionPayload.isBackdoor || false;
         
         if (!userEmail) {
             return {
@@ -403,10 +404,18 @@ export const handler = async (event: any) => {
                 activityMetadata.appletName = appletName;
             }
             
+            const emailForLogging = getActivityLogEmail(userEmail, isBackdoor);
+            console.log('[generate-url] Logging applet_launch activity:', {
+                userId,
+                originalEmail: userEmail,
+                isBackdoor,
+                emailForLogging
+            });
+            
             await logActivityAndUpdateLastActive(
                 'applet_launch',
                 userId,
-                userEmail,
+                emailForLogging,
                 activityMetadata,
                 deviceId,
                 ipAddress
