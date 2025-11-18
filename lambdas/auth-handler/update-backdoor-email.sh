@@ -23,10 +23,18 @@ CURRENT_CONFIG=$(aws_cmd lambda get-function-configuration \
     --region "$REGION" \
     --output json)
 
-CURRENT_ENV=$(echo "$CURRENT_CONFIG" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin)['Environment']['Variables']))")
+# Extract current environment variables, handling case where they might not exist
+CURRENT_ENV=$(echo "$CURRENT_CONFIG" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+env = data.get('Environment', {}).get('Variables', {})
+print(json.dumps(env))
+")
+
+OLD_EMAIL=$(echo "$CURRENT_ENV" | python3 -c "import sys, json; print(json.load(sys.stdin).get('BACKDOOR_EMAIL', 'NOT SET'))" 2>/dev/null || echo "NOT SET")
 
 echo "📝 Updating BACKDOOR_EMAIL environment variable..."
-echo "   Old email: $(echo "$CURRENT_ENV" | python3 -c "import sys, json; print(json.load(sys.stdin).get('BACKDOOR_EMAIL', 'NOT SET'))")"
+echo "   Old email: $OLD_EMAIL"
 echo "   New email: $NEW_EMAIL"
 
 # Update the environment variable
@@ -34,7 +42,11 @@ UPDATED_ENV=$(echo "$CURRENT_ENV" | python3 << PYTHON_SCRIPT
 import json
 import sys
 
-env_vars = json.load(sys.stdin)
+try:
+    env_vars = json.load(sys.stdin)
+except:
+    env_vars = {}
+
 env_vars['BACKDOOR_EMAIL'] = '$NEW_EMAIL'
 
 print(json.dumps(env_vars))
@@ -42,11 +54,21 @@ PYTHON_SCRIPT
 )
 
 echo "🚀 Updating Lambda function configuration..."
+# Create a temporary file for the environment JSON to avoid shell escaping issues
+TMP_ENV_FILE=$(mktemp)
+cat > "$TMP_ENV_FILE" << EOF
+{
+  "Variables": $UPDATED_ENV
+}
+EOF
+
 aws_cmd lambda update-function-configuration \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --region "$REGION" \
-    --environment "Variables=$UPDATED_ENV" \
+    --environment file://"$TMP_ENV_FILE" \
     --output json > /dev/null
+
+rm -f "$TMP_ENV_FILE"
 
 echo ""
 echo "✅ Lambda environment variable updated successfully!"
