@@ -20,6 +20,19 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 
+const BACKDOOR_USER_DISPLAY = 'backdoor user';
+
+/**
+ * Get display email for activity logging
+ * Returns "backdoor user" if isBackdoor flag is true, otherwise returns the email
+ */
+export function getActivityLogEmail(email: string, isBackdoor?: boolean): string {
+  if (isBackdoor) {
+    return BACKDOOR_USER_DISPLAY;
+  }
+  return email;
+}
+
 export interface ActivityLog {
   activityId: string;
   userId: string;
@@ -57,10 +70,16 @@ export async function logActivity(
       Object.entries(metadata).filter(([_, value]) => value !== null && value !== undefined)
     );
 
+    // Note: email should already be sanitized by calling code using getActivityLogEmail()
+    // This ensures backdoor users show as "backdoor user" instead of their email
+    const emailForStorage = email === BACKDOOR_USER_DISPLAY 
+      ? BACKDOOR_USER_DISPLAY 
+      : email.toLowerCase();
+
     const activity: ActivityLog = {
       activityId,
       userId,
-      email: email.toLowerCase(),
+      email: emailForStorage,
       eventType,
       timestamp: now,
       ...(deviceId && { deviceId }),

@@ -110,14 +110,22 @@ export default function Login() {
       setSuccess(true);
       // Don't navigate yet - user needs to check their email and click the magic link
     } catch (err) {
-      let errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
+      let errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.';
+      
       // Shorten email approval error message
       if (errorMessage.toLowerCase().includes('not approved') || 
           errorMessage.toLowerCase().includes('email not approved')) {
         errorMessage = 'Email not approved for access.';
       }
+      
       setError(errorMessage);
-      console.error('Magic link request error:', err);
+      console.error('Authentication error:', err);
+      if (err instanceof Error) {
+        console.error('Error details:', {
+          message: err.message,
+          stack: err.stack,
+        });
+      }
     } finally {
       setLoading(false);
     }

@@ -9,7 +9,7 @@ import { KMSClient, EncryptCommand, DecryptCommand } from '@aws-sdk/client-kms';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import crypto from 'crypto';
 import { validateUserExpiration, checkUserDeactivated } from '../shared/user-validation';
-import { logActivityAndUpdateLastActive } from '../shared/activity-logger';
+import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 
 // Get AWS region from environment or default to us-west-2
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2';
@@ -411,7 +411,7 @@ async function testEmbedUrl(url: string): Promise<{ success: boolean, statusCode
 /**
  * Authenticate request and extract user info
  */
-async function authenticateRequest(event: any): Promise<{ userId: string, email: string, deviceId?: string }> {
+async function authenticateRequest(event: any): Promise<{ userId: string, email: string, deviceId?: string, isBackdoor?: boolean }> {
     // Log all headers for debugging
     console.log('Request headers:', JSON.stringify(event.headers || {}, null, 2));
     console.log('Header keys:', Object.keys(event.headers || {}));
@@ -453,6 +453,7 @@ async function authenticateRequest(event: any): Promise<{ userId: string, email:
     const userId = sessionPayload.userId;
     const email = sessionPayload.email;
     const deviceId = sessionPayload.deviceId;
+    const isBackdoor = sessionPayload.isBackdoor || false;
     
     if (!userId || !email) {
         throw new Error('Invalid authentication token: missing userId or email');
@@ -470,7 +471,7 @@ async function authenticateRequest(event: any): Promise<{ userId: string, email:
         throw new Error(expirationCheck.reason || 'Account expired');
     }
     
-    return { userId, email, deviceId };
+    return { userId, email, deviceId, isBackdoor };
 }
 
 /**
@@ -500,7 +501,7 @@ function handleOptions(): any {
 /**
  * Handle POST /v1/my-buys/applets - Create applet
  */
-async function handleCreateApplet(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+async function handleCreateApplet(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const body = JSON.parse(event.body || '{}');
     const { name, embedUrl, embedClientId, embedSecretKey } = body;
     
@@ -600,7 +601,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     await logActivityAndUpdateLastActive(
         'my_buys_applet_created',
         userId,
-        email,
+        getActivityLogEmail(email, isBackdoor),
         { appletId, appletName: name },
         deviceId,
         ipAddress
@@ -650,7 +651,7 @@ async function handleListApplets(userId: string): Promise<any> {
 /**
  * Handle PUT /v1/my-buys/applets/{appletId} - Update applet
  */
-async function handleUpdateApplet(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+async function handleUpdateApplet(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const appletId = event.pathParameters?.appletId;
     if (!appletId) {
         return createResponse(400, {
@@ -752,7 +753,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     await logActivityAndUpdateLastActive(
         'my_buys_applet_updated',
         userId,
-        email,
+        getActivityLogEmail(email, isBackdoor),
         { appletId, appletName: name },
         deviceId,
         ipAddress
@@ -773,7 +774,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
 /**
  * Handle DELETE /v1/my-buys/applets/{appletId} - Delete applet
  */
-async function handleDeleteApplet(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+async function handleDeleteApplet(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const appletId = event.pathParameters?.appletId;
     if (!appletId) {
         return createResponse(400, {
@@ -806,7 +807,7 @@ async function handleDeleteApplet(event: any, userId: string, email: string, dev
     await logActivityAndUpdateLastActive(
         'my_buys_applet_deleted',
         userId,
-        email,
+        getActivityLogEmail(email, isBackdoor),
         { appletId, appletName: existing.Item.name },
         deviceId,
         ipAddress
@@ -821,7 +822,7 @@ async function handleDeleteApplet(event: any, userId: string, email: string, dev
 /**
  * Handle POST /v1/my-buys/applets/{appletId}/test - Test applet configuration
  */
-async function handleTestApplet(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+async function handleTestApplet(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const appletId = event.pathParameters?.appletId;
     if (!appletId) {
         return createResponse(400, {
@@ -896,7 +897,7 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
     await logActivityAndUpdateLastActive(
         'my_buys_applet_tested',
         userId,
-        email,
+        getActivityLogEmail(email, isBackdoor),
         { 
             appletId, 
             appletName: applet.Item.name,
@@ -971,7 +972,7 @@ async function handleTestConfiguration(event: any, userId: string, email: string
 /**
  * Handle POST /v1/my-buys/applets/{appletId}/regenerate-url - Get regenerated embed URL
  */
-async function handleRegenerateUrl(event: any, userId: string, email: string, deviceId?: string): Promise<any> {
+async function handleRegenerateUrl(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const appletId = event.pathParameters?.appletId;
     if (!appletId) {
         return createResponse(400, {
@@ -1043,7 +1044,7 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
     await logActivityAndUpdateLastActive(
         'my_buys_applet_viewed',
         userId,
-        email,
+        getActivityLogEmail(email, isBackdoor),
         { appletId, appletName: applet.Item.name },
         deviceId,
         ipAddress
@@ -1142,7 +1143,7 @@ export const handler = async (event: any) => {
             });
         }
         
-        const { userId, email, deviceId } = userInfo;
+        const { userId, email, deviceId, isBackdoor } = userInfo;
         let path = event.path || event.rawPath || event.requestContext?.path || '';
         const method = event.httpMethod || event.requestContext?.httpMethod || '';
         
@@ -1183,7 +1184,7 @@ export const handler = async (event: any) => {
         
         // Route to appropriate handler (paths are now normalized to /my-buys/applets format)
         if (path === '/my-buys/applets' && method === 'POST') {
-            return await handleCreateApplet(event, userId, email, deviceId);
+            return await handleCreateApplet(event, userId, email, deviceId, isBackdoor);
         } else if (path === '/my-buys/applets' && method === 'GET') {
             return await handleListApplets(userId);
         } else if (path === '/my-buys/applets/test' && method === 'POST') {
@@ -1193,16 +1194,16 @@ export const handler = async (event: any) => {
             return await handleGetSecretByName(event, userId, email, deviceId);
         } else if (path.includes('/applets/') && path.includes('/test') && method === 'POST') {
             // Path like /my-buys/applets/{appletId}/test
-            return await handleTestApplet(event, userId, email, deviceId);
+            return await handleTestApplet(event, userId, email, deviceId, isBackdoor);
         } else if (path.includes('/applets/') && path.includes('/regenerate-url') && method === 'POST') {
             // Path like /my-buys/applets/{appletId}/regenerate-url
-            return await handleRegenerateUrl(event, userId, email, deviceId);
+            return await handleRegenerateUrl(event, userId, email, deviceId, isBackdoor);
         } else if (path.includes('/applets/') && method === 'PUT') {
             // Path like /my-buys/applets/{appletId}
-            return await handleUpdateApplet(event, userId, email, deviceId);
+            return await handleUpdateApplet(event, userId, email, deviceId, isBackdoor);
         } else if (path.includes('/applets/') && method === 'DELETE') {
             // Path like /my-buys/applets/{appletId}
-            return await handleDeleteApplet(event, userId, email, deviceId);
+            return await handleDeleteApplet(event, userId, email, deviceId, isBackdoor);
         } else {
             return createResponse(404, {
                 success: false,

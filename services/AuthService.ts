@@ -244,7 +244,7 @@ export class AuthService {
   /**
    * Decode JWT payload (without verification - just for reading data)
    */
-  private static decodeJWT(token: string): any | null {
+  static decodeJWT(token: string): any | null {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) {

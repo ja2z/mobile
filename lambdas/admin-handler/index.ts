@@ -9,7 +9,7 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCom
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/user-validation';
-import { logActivity } from '../shared/activity-logger';
+import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
 
 // CRITICAL: Log module initialization immediately after imports
 // This helps us verify the Lambda is loading the module at all
@@ -251,6 +251,7 @@ const handlerImpl = async (event: any) => {
         userId: decoded.userId,
         email: decoded.email,
         role: decoded.role,
+        isBackdoor: decoded.isBackdoor,
         exp: decoded.exp,
         iat: decoded.iat,
         currentTime: Math.floor(Date.now() / 1000),
@@ -826,7 +827,7 @@ async function handleUpdateUser(userId: string, body: any, adminUser: any) {
     }));
 
     // Log activity
-    await logActivity('user_updated', adminUser.userId, adminUser.email, {
+    await logActivity('user_updated', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
       targetUserId: userId,
       targetEmail: user.email,
       updates,
@@ -896,7 +897,7 @@ async function handleDeactivateUser(userId: string, adminUser: any) {
     }
 
     // Log activity
-    await logActivity('user_deactivated', adminUser.userId, adminUser.email, {
+    await logActivity('user_deactivated', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
       targetUserId: userId,
       targetEmail: user.email,
     });
@@ -1038,7 +1039,7 @@ async function handleAddWhitelistUser(body: any, adminUser: any) {
     }));
 
     // Log activity
-    await logActivity('whitelist_user_added', adminUser.userId, adminUser.email, {
+    await logActivity('whitelist_user_added', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
       targetEmail: emailLower,
       role: validatedRole,
       expirationDate: whitelistItem.expirationDate,
@@ -1175,7 +1176,7 @@ async function handleDeleteWhitelistUser(email: string, adminUser: any) {
 
     // Log activity (don't fail if this fails)
     try {
-      await logActivity('whitelist_user_deleted', adminUser.userId, adminUser.email, {
+      await logActivity('whitelist_user_deleted', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
         targetEmail: emailLower,
         userWasRegistered: !!user,
         whitelistExisted,
@@ -1221,10 +1222,22 @@ async function handleLogActivity(body: any, adminUser: any, event: any) {
                      event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
                      event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim();
 
+    // Extract isBackdoor flag from JWT (may be undefined for older tokens)
+    const isBackdoor = adminUser.isBackdoor || false;
+    const emailForLogging = getActivityLogEmail(adminUser.email, isBackdoor);
+    
+    console.log('[handleLogActivity] Logging activity:', {
+      eventType,
+      userId: adminUser.userId,
+      originalEmail: adminUser.email,
+      isBackdoor,
+      emailForLogging
+    });
+
     await logActivity(
       eventType,
       adminUser.userId,
-      adminUser.email,
+      emailForLogging,
       metadata || {},
       deviceId,
       ipAddress

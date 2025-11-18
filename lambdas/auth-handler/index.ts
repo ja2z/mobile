@@ -11,7 +11,7 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
 import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateRole } from '../shared/user-validation';
-import { logActivity, logActivityAndUpdateLastActive } from '../shared/activity-logger';
+import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -26,6 +26,7 @@ const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-appro
 const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
+const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
@@ -35,6 +36,7 @@ const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
 let apiKey: string | null = null;
+let backdoorSecret: string | null = null;
 
 /**
  * Main Lambda handler - routes to appropriate function based on path
@@ -737,14 +739,15 @@ async function handleRefreshToken(body: any, event: any) {
     // Validate role from token or use default
     const role = validateRole(userProfile?.role || decoded.role) || 'basic';
 
-    // Generate new session JWT
+    // Generate new session JWT, preserving isBackdoor flag if present
     const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
     const newToken = await generateSessionJWT({
       userId: decoded.userId,
       email: decoded.email,
       role: role,
       deviceId: decoded.deviceId,
-      expiresAt: sessionExpiresAt
+      expiresAt: sessionExpiresAt,
+      isBackdoor: decoded.isBackdoor || false
     });
 
     // Update session in DynamoDB
@@ -773,7 +776,7 @@ async function handleRefreshToken(body: any, event: any) {
     await logActivityAndUpdateLastActive(
       'token_refresh',
       decoded.userId,
-      decoded.email,
+      getActivityLogEmail(decoded.email, decoded.isBackdoor),
       { action: 'token_refreshed' },
       decoded.deviceId,
       getIpAddress(event)
@@ -848,7 +851,6 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
 
   // Use first 8 chars of hash as display name
   const displayName = hash.substring(0, 8);
-
   console.log('[handleAuthenticateBackdoor] Authenticating backdoor user');
 
   const now = Math.floor(Date.now() / 1000);
@@ -861,9 +863,22 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
   } catch (error) {
     console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
+<<<<<<< HEAD
     
     const ipAddress = getIpAddress(event);
     await logActivity('failed_login', 'unknown', displayName, {
+=======
+    console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
+    console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleAuthenticateBackdoor] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handleAuthenticateBackdoor] Error name:', error.name);
+      console.error('[handleAuthenticateBackdoor] Error code:', (error as any).code);
+    }
+    
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: 'Failed to get/create user profile',
       sourceFlow: 'backdoor',
       errorMessage: error instanceof Error ? error.message : String(error)
@@ -879,7 +894,11 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
   const isDeactivated = await checkUserDeactivated(user.userId);
   if (isDeactivated) {
     const ipAddress = getIpAddress(event);
+<<<<<<< HEAD
     await logActivity('failed_login', user.userId, displayName, {
+=======
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: 'User is deactivated',
       sourceFlow: 'backdoor'
     }, deviceId, ipAddress);
@@ -894,7 +913,11 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
   const expirationCheck = await validateUserExpiration(user.userId);
   if (expirationCheck.expired) {
     const ipAddress = getIpAddress(event);
+<<<<<<< HEAD
     await logActivity('failed_login', user.userId, displayName, {
+=======
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: expirationCheck.reason || 'Account expired',
       sourceFlow: 'backdoor'
     }, deviceId, ipAddress);
@@ -905,14 +928,23 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     });
   }
 
+<<<<<<< HEAD
   // Generate session JWT
+=======
+  // Generate session JWT with isBackdoor flag
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
   const sessionToken = await generateSessionJWT({
     userId: user.userId,
     email: user.email,
     role: user.role,
     deviceId,
+<<<<<<< HEAD
     expiresAt: sessionExpiresAt
+=======
+    expiresAt: sessionExpiresAt,
+    isBackdoor: true // Mark as backdoor user
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   });
 
   // Store session in DynamoDB
@@ -937,12 +969,20 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     }
   }));
 
+<<<<<<< HEAD
   // Log successful login (use full email format: 8 char hash + @backdoor.net)
+=======
+  // Log successful login (use "backdoor user" instead of email)
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   const ipAddress = getIpAddress(event);
   await logActivityAndUpdateLastActive(
     'login',
     user.userId,
+<<<<<<< HEAD
     emailLower, // Use full email: abcdabcd@backdoor.net
+=======
+    BACKDOOR_USER_DISPLAY,
+>>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
     {
       sourceFlow: 'backdoor',
       app: null
@@ -1278,21 +1318,25 @@ async function generateSessionJWT(payload: {
   role: string;
   deviceId: string;
   expiresAt: number;
+  isBackdoor?: boolean;
 }): Promise<string> {
   const secret = await getJWTSecret();
   
-  return jwt.sign(
-    {
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role,
-      deviceId: payload.deviceId,
-      iat: Math.floor(Date.now() / 1000),
-      exp: payload.expiresAt
-    },
-    secret,
-    { algorithm: 'HS256' }
-  );
+  const jwtPayload: any = {
+    userId: payload.userId,
+    email: payload.email,
+    role: payload.role,
+    deviceId: payload.deviceId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: payload.expiresAt
+  };
+  
+  // Include isBackdoor flag if present
+  if (payload.isBackdoor) {
+    jwtPayload.isBackdoor = true;
+  }
+  
+  return jwt.sign(jwtPayload, secret, { algorithm: 'HS256' });
 }
 
 /**
@@ -1427,6 +1471,23 @@ async function getApiKey(): Promise<string> {
   // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
   apiKey = (result.SecretString || '').trim();
   return apiKey;
+}
+
+/**
+ * Get backdoor secret from Secrets Manager (cached)
+ */
+async function getBackdoorSecret(): Promise<string> {
+  if (backdoorSecret) {
+    return backdoorSecret;
+  }
+
+  const result = await secretsClient.send(new GetSecretValueCommand({
+    SecretId: BACKDOOR_SECRET_NAME
+  }));
+
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  backdoorSecret = (result.SecretString || '').trim();
+  return backdoorSecret;
 }
 
 /**
