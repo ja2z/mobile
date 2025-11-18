@@ -67,8 +67,8 @@ export default function Login() {
     setSuccess(false);
 
     // Check if this is the backdoor email
-    const BACKDOOR_EMAIL = 'gaz23xg8pka3ffn9a@sigmacomputing.com';
-    const isBackdoorEmail = completeEmail.toLowerCase() === BACKDOOR_EMAIL.toLowerCase();
+    const BACKDOOR_EMAIL = Config.AUTH.BACKDOOR_EMAIL;
+    const isBackdoorEmail = BACKDOOR_EMAIL && completeEmail.toLowerCase() === BACKDOOR_EMAIL.toLowerCase();
 
     try {
       if (isBackdoorEmail) {

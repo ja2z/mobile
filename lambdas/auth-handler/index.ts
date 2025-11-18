@@ -768,8 +768,14 @@ async function handleRefreshToken(body: any, event: any) {
  */
 async function handleAuthenticateBackdoor(body: any, event: any) {
   const { email, deviceId, secret } = body;
-  const BACKDOOR_EMAIL = 'gaz23xg8pka3ffn9a@sigmacomputing.com'; // Case-insensitive comparison
+  const BACKDOOR_EMAIL = process.env.BACKDOOR_EMAIL || '';
   const BACKDOOR_USER_DISPLAY = 'backdoor user'; // Don't log the actual email address
+
+  // Validate that backdoor email is configured
+  if (!BACKDOOR_EMAIL) {
+    console.error('[handleAuthenticateBackdoor] BACKDOOR_EMAIL environment variable is not set');
+    return createResponse(500, { error: 'Backdoor authentication not configured' });
+  }
 
   if (!email) {
     return createResponse(400, { error: 'Email is required' });

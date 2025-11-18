@@ -4,7 +4,9 @@ This document describes the backdoor authentication feature for development and 
 
 ## Overview
 
-The backdoor authentication allows a specific email address (`gAz23xG8Pka3Ffn9a@sigmacomputing.com`) to authenticate directly without requiring a magic link. This feature requires both the correct email address and a shared secret stored in AWS Secrets Manager.
+The backdoor authentication allows a specific email address to authenticate directly without requiring a magic link. This feature requires both the correct email address and a shared secret stored in AWS Secrets Manager.
+
+**Note**: The backdoor email is configured via environment variables and is not hardcoded in the source code for security.
 
 ## Security Features
 
@@ -40,8 +42,11 @@ aws secretsmanager update-secret \
 
 ### Lambda Environment Variables
 
-The Lambda function has been configured with:
-- `BACKDOOR_SECRET_NAME=mobile-app/backdoor-secret`
+The Lambda function requires the following environment variables:
+- `BACKDOOR_SECRET_NAME=mobile-app/backdoor-secret` (already configured)
+- `BACKDOOR_EMAIL=<backdoor-email-address>` (must be set - the specific email address allowed for backdoor authentication)
+
+**Important**: Set the `BACKDOOR_EMAIL` environment variable in the Lambda function configuration. This email address is not hardcoded in the source code for security reasons.
 
 ### Mobile App Configuration
 
@@ -51,30 +56,39 @@ The mobile app reads the backdoor secret from an environment variable. Configura
 
 For local testing, create a `.env.local` file in the project root:
 ```bash
+EXPO_PUBLIC_BACKDOOR_EMAIL=<backdoor-email-address>
 EXPO_PUBLIC_BACKDOOR_SECRET=GiQV4XdGKIb9BEXN18-GBlLOiYDE-De27h4ROOa1rso
 ```
 
-**Important**: Restart the Expo dev server after creating/updating `.env.local`.
+**Important**: 
+- Replace `<backdoor-email-address>` with the actual backdoor email address
+- Restart the Expo dev server after creating/updating `.env.local`
 
 #### EAS Builds (TestFlight / Production)
 
-The secret is configured using **EAS Secrets** (already set up):
+The backdoor email and secret are configured using **EAS Secrets**:
 
-- **Secret Name**: `EXPO_PUBLIC_BACKDOOR_SECRET`
+- **Secret Name**: `EXPO_PUBLIC_BACKDOOR_EMAIL` (must be set)
+- **Secret Name**: `EXPO_PUBLIC_BACKDOOR_SECRET` (already set up)
 - **Scope**: Project-level (shared across all build profiles)
-- **Status**: ✅ Configured
 
-The secret is automatically injected into all EAS builds (development, preview, production). No additional configuration needed in `eas.json` or build scripts.
+The secrets are automatically injected into all EAS builds (development, preview, production). No additional configuration needed in `eas.json` or build scripts.
 
 **Managing EAS Secrets**:
 ```bash
 # List all secrets
 eas secret:list
 
+# Set/update the backdoor email
+eas secret:create --name EXPO_PUBLIC_BACKDOOR_EMAIL --value "<backdoor-email-address>"
+# or update if it already exists
+eas secret:update --name EXPO_PUBLIC_BACKDOOR_EMAIL --value "<backdoor-email-address>"
+
 # Update/rotate the secret
 eas secret:update --name EXPO_PUBLIC_BACKDOOR_SECRET --value "new-secret-value"
 
 # Delete secret (if needed)
+eas secret:delete EXPO_PUBLIC_BACKDOOR_EMAIL
 eas secret:delete EXPO_PUBLIC_BACKDOOR_SECRET
 ```
 
@@ -85,10 +99,15 @@ eas secret:delete EXPO_PUBLIC_BACKDOOR_SECRET
 2. EAS Secret (`EXPO_PUBLIC_BACKDOOR_SECRET`)
 3. Local `.env.local` (for developers)
 
+**Note**: The backdoor email must be set in:
+1. Lambda environment variable (`BACKDOOR_EMAIL`)
+2. EAS Secret (`EXPO_PUBLIC_BACKDOOR_EMAIL`)
+3. Local `.env.local` (for developers)
+
 ## Usage
 
 1. Open the login screen
-2. Enter the backdoor email: `gAz23xG8Pka3Ffn9a@sigmacomputing.com`
+2. Enter the backdoor email (configured via environment variables)
 3. Click "Continue"
 4. The app will authenticate directly (no magic link email sent)
 
@@ -121,6 +140,12 @@ eas secret:delete EXPO_PUBLIC_BACKDOOR_SECRET
 - Ensure you've restarted the Expo dev server after updating `.env.local`
 
 ### "Access denied" error
-- Verify you're using the correct backdoor email address
+- Verify you're using the correct backdoor email address (check environment variables)
+- Check that the `BACKDOOR_EMAIL` environment variable is set in Lambda
+- Check that `EXPO_PUBLIC_BACKDOOR_EMAIL` is set in EAS Secrets or `.env.local`
 - Check that the secret matches between AWS Secrets Manager and the app configuration
+
+### "Backdoor authentication not configured" error
+- Ensure the `BACKDOOR_EMAIL` environment variable is set in the Lambda function configuration
+- Verify the Lambda has the correct environment variable configured
 
