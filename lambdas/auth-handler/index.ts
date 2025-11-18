@@ -94,6 +94,8 @@ export const handler = async (event: any) => {
       return await handleVerifyMagicLink(body, event);
     } else if (path === '/v1/auth/refresh-token' && method === 'POST') {
       return await handleRefreshToken(body, event);
+    } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
+      return await handleAuthenticateBackdoor(body, event);
     } else {
       console.log(`No route matched. Path: ${path}, Method: ${method}`);
       return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
@@ -280,20 +282,52 @@ async function handleRequestMagicLink(body: any, event?: any) {
     console.log('[handleRequestMagicLink] Generated magic link:', magicLink);
     
     console.log('[handleRequestMagicLink] Sending magic link email...');
+    console.log('[handleRequestMagicLink] Email details:', { 
+      to: emailLower, 
+      from: FROM_EMAIL, 
+      fromName: FROM_NAME,
+      magicLink: magicLink.substring(0, 100) + '...' 
+    });
     try {
       await sendMagicLinkEmail(emailLower, magicLink);
       console.log('[handleRequestMagicLink] Magic link email sent successfully');
     } catch (error) {
+      console.error('[handleRequestMagicLink] ========== EMAIL SEND ERROR ==========');
       console.error('[handleRequestMagicLink] Error sending magic link email:', error);
-      console.error('[handleRequestMagicLink] Email error details:', error instanceof Error ? error.message : String(error));
-      console.error('[handleRequestMagicLink] Email error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('[handleRequestMagicLink] Error type:', typeof error);
+      console.error('[handleRequestMagicLink] Error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] Error stack:', error instanceof Error ? error.stack : 'No stack');
       if (error instanceof Error) {
-        console.error('[handleRequestMagicLink] Email error name:', error.name);
-        console.error('[handleRequestMagicLink] Email error code:', (error as any).code);
+        console.error('[handleRequestMagicLink] Error name:', error.name);
+        console.error('[handleRequestMagicLink] Error code:', (error as any).code);
+        console.error('[handleRequestMagicLink] Error statusCode:', (error as any).statusCode);
+        console.error('[handleRequestMagicLink] Error requestId:', (error as any).requestId);
       }
+      console.error('[handleRequestMagicLink] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      console.error('[handleRequestMagicLink] ========================================');
+      
+      // Provide more specific error message
+      let errorMessage = 'Failed to send magic link email. Please try again later.';
+      if (error instanceof Error) {
+        const errorCode = (error as any).code;
+        const errorName = error.name;
+        if (errorCode === 'MessageRejected' || errorName === 'MessageRejected') {
+          errorMessage = 'Email address is not verified or rejected. Please contact support.';
+        } else if (errorCode === 'MailFromDomainNotVerified' || errorName === 'MailFromDomainNotVerified') {
+          errorMessage = 'Email service configuration error. Please contact support.';
+        } else if (error.message) {
+          errorMessage = `Email send failed: ${error.message}`;
+        }
+      }
+      
       return createResponse(500, { 
         error: 'Internal server error',
-        message: 'Failed to send magic link email. Please try again later.'
+        message: errorMessage,
+        debug: process.env.NODE_ENV === 'development' ? {
+          errorName: error instanceof Error ? error.name : undefined,
+          errorCode: (error as any)?.code,
+          errorMessage: error instanceof Error ? error.message : String(error)
+        } : undefined
       });
     }
 
@@ -758,6 +792,180 @@ async function handleRefreshToken(body: any, event: any) {
 }
 
 /**
+ * Handle backdoor authentication (for development/testing)
+ * Authenticates a specific email without requiring a magic link
+ * Uses SHA-256 hash of username to verify access
+ */
+async function handleAuthenticateBackdoor(body: any, event: any) {
+  const { email, hash, deviceId } = body;
+  const BACKDOOR_HASH = '41c16a8e3648d17965306295b3c6ae049aa6da5be6d609c5b5de2f6a044925d5';
+
+  if (!email) {
+    return createResponse(400, { error: 'Email is required' });
+  }
+
+  if (!hash) {
+    return createResponse(400, { error: 'Hash is required' });
+  }
+
+  if (!deviceId) {
+    return createResponse(400, { error: 'Device ID is required' });
+  }
+
+  const emailLower = email.toLowerCase();
+  
+  // Check if email domain is @backdoor.net
+  if (!emailLower.endsWith('@backdoor.net')) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor email domain',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid backdoor email'
+    });
+  }
+
+  // Compare received hash to hardcoded hash (no computation on server)
+  if (hash.toLowerCase() !== BACKDOOR_HASH.toLowerCase()) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor hash',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid credentials'
+    });
+  }
+
+  // Use first 8 chars of hash as display name
+  const displayName = hash.substring(0, 8);
+
+  console.log('[handleAuthenticateBackdoor] Authenticating backdoor user');
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // Get or create user profile
+  let user;
+  try {
+    console.log('[handleAuthenticateBackdoor] Getting or creating user profile for:', emailLower);
+    user = await getOrCreateUserProfile(emailLower, 'backdoor');
+    console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
+  } catch (error) {
+    console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
+    
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Failed to get/create user profile',
+      sourceFlow: 'backdoor',
+      errorMessage: error instanceof Error ? error.message : String(error)
+    }, deviceId, ipAddress);
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to authenticate. Please try again.'
+    });
+  }
+
+  // Check if user is deactivated
+  const isDeactivated = await checkUserDeactivated(user.userId);
+  if (isDeactivated) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, displayName, {
+      reason: 'User is deactivated',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account deactivated',
+      message: 'Your account has been deactivated. Please contact your administrator.'
+    });
+  }
+
+  // Check user expiration
+  const expirationCheck = await validateUserExpiration(user.userId);
+  if (expirationCheck.expired) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, displayName, {
+      reason: expirationCheck.reason || 'Account expired',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account expired',
+      message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+    });
+  }
+
+  // Generate session JWT
+  const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
+  const sessionToken = await generateSessionJWT({
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
+    deviceId,
+    expiresAt: sessionExpiresAt
+  });
+
+  // Store session in DynamoDB
+  const sessionId = `ses_${randomBytes(16).toString('hex')}`;
+  await docClient.send(new PutCommand({
+    TableName: TOKENS_TABLE,
+    Item: {
+      tokenId: sessionId,
+      tokenType: 'session',
+      email: user.email,
+      userId: user.userId,
+      deviceId,
+      createdAt: now,
+      expiresAt: sessionExpiresAt,
+      used: true,
+      usedAt: now,
+      sessionJWT: sessionToken,
+      metadata: {
+        sourceFlow: 'backdoor',
+        lastUsedAt: now
+      }
+    }
+  }));
+
+  // Log successful login (use full email format: 8 char hash + @backdoor.net)
+  const ipAddress = getIpAddress(event);
+  await logActivityAndUpdateLastActive(
+    'login',
+    user.userId,
+    emailLower, // Use full email: abcdabcd@backdoor.net
+    {
+      sourceFlow: 'backdoor',
+      app: null
+    },
+    deviceId,
+    ipAddress
+  );
+
+  console.log('[handleAuthenticateBackdoor] Backdoor authentication successful');
+
+  return createResponse(200, {
+    success: true,
+    token: sessionToken,
+    expiresAt: sessionExpiresAt,
+    user: {
+      userId: user.userId,
+      email: user.email,
+      role: user.role
+    }
+  });
+}
+
+/**
  * Check if email is approved for access
  */
 async function isEmailApproved(email: string): Promise<boolean> {
@@ -841,8 +1049,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     }
     
     // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
-    // Check whitelist if not a Sigma email
-    if (!emailLower.endsWith('@sigmacomputing.com')) {
+    // Check whitelist if not a Sigma email or backdoor email
+    if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
       try {
         const whitelistResult = await docClient.send(new GetCommand({
           TableName: APPROVED_EMAILS_TABLE,
@@ -905,8 +1113,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   let userRole = 'basic';
   let expirationDate: number | undefined = undefined;
   
-  // Check whitelist if not a Sigma email
-  if (!emailLower.endsWith('@sigmacomputing.com')) {
+  // Check whitelist if not a Sigma email or backdoor email (backdoor bypasses whitelist)
+  if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
     try {
       const whitelistResult = await docClient.send(new GetCommand({
         TableName: APPROVED_EMAILS_TABLE,
@@ -1091,6 +1299,11 @@ async function generateSessionJWT(payload: {
  * Send magic link via email
  */
 async function sendMagicLinkEmail(email: string, magicLink: string): Promise<void> {
+  console.log('[sendMagicLinkEmail] Starting email send...');
+  console.log('[sendMagicLinkEmail] Email:', email);
+  console.log('[sendMagicLinkEmail] FROM_EMAIL:', FROM_EMAIL);
+  console.log('[sendMagicLinkEmail] FROM_NAME:', FROM_NAME);
+  
   const emailBody = `
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -1124,19 +1337,46 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
     ? `"${FROM_NAME}" <${FROM_EMAIL}>` 
     : FROM_EMAIL;
 
-  await sesClient.send(new SendEmailCommand({
-    Source: fromAddress,
-    Destination: { ToAddresses: [email] },
-    Message: {
-      Subject: { Data: 'Sign in to Big Buys Mobile' },
-      Body: {
-        Html: { Data: emailBody },
-        Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
-      }
-    }
-  }));
+  console.log('[sendMagicLinkEmail] From address:', fromAddress);
+  console.log('[sendMagicLinkEmail] To address:', email);
+  console.log('[sendMagicLinkEmail] Magic link length:', magicLink.length);
 
-  console.log(`Magic link email sent to ${email}`);
+  try {
+    const command = new SendEmailCommand({
+      Source: fromAddress,
+      Destination: { ToAddresses: [email] },
+      Message: {
+        Subject: { Data: 'Sign in to Big Buys Mobile' },
+        Body: {
+          Html: { Data: emailBody },
+          Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
+        }
+      }
+    });
+    
+    console.log('[sendMagicLinkEmail] Sending SES command...');
+    const result = await sesClient.send(command);
+    console.log('[sendMagicLinkEmail] SES send result:', {
+      messageId: result.MessageId,
+      responseMetadata: result.$metadata
+    });
+    console.log(`[sendMagicLinkEmail] Magic link email sent successfully to ${email}, MessageId: ${result.MessageId}`);
+  } catch (error) {
+    console.error('[sendMagicLinkEmail] ========== SES ERROR ==========');
+    console.error('[sendMagicLinkEmail] SES error:', error);
+    console.error('[sendMagicLinkEmail] Error type:', typeof error);
+    console.error('[sendMagicLinkEmail] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[sendMagicLinkEmail] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[sendMagicLinkEmail] Error name:', error.name);
+      console.error('[sendMagicLinkEmail] Error code:', (error as any).code);
+      console.error('[sendMagicLinkEmail] Error statusCode:', (error as any).statusCode);
+      console.error('[sendMagicLinkEmail] Error requestId:', (error as any).requestId);
+    }
+    console.error('[sendMagicLinkEmail] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    console.error('[sendMagicLinkEmail] ==============================');
+    throw error; // Re-throw to be caught by caller
+  }
 }
 
 /**

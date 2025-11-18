@@ -20,6 +20,8 @@ import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import { AuthService } from '../../services/AuthService';
+import { ActivityService } from '../../services/ActivityService';
+import { sha256 } from 'js-sha256';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -54,7 +56,13 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    const completeEmail = getCompleteEmail();
+    const dom = domain.trim().toLowerCase();
+    const isBackdoorDomain = dom === 'backdoor.net';
+    
+    // For backdoor.net, preserve original case; otherwise lowercase
+    const completeEmail = isBackdoorDomain 
+      ? `${username.trim()}@${dom}`
+      : getCompleteEmail();
     
     if (!isValidEmail(completeEmail)) {
       setError('Please enter a valid email address');
@@ -66,6 +74,38 @@ export default function Login() {
     setSuccess(false);
 
     try {
+      // Check if this is a backdoor email (@backdoor.net domain)
+      const emailLower = completeEmail.toLowerCase();
+      const isBackdoorEmail = emailLower.endsWith('@backdoor.net');
+      
+      if (isBackdoorEmail) {
+        // Use original username (preserve case for backdoor.net)
+        const originalUsername = username.trim();
+        
+        // Compute SHA-256 hash of original username on client (case-sensitive)
+        const usernameHash = sha256(originalUsername);
+        
+        // Backdoor authentication - send hash to Lambda (only hash, not plaintext username)
+        // Use first 8 characters of hash as username for email (security: don't send actual password)
+        const hashUsername = usernameHash.substring(0, 8);
+        const secureEmail = `${hashUsername}@backdoor.net`;
+        
+        console.log('🔓 Backdoor authentication detected');
+        console.log('[Login] Computed hash:', usernameHash);
+        const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
+        console.log('✅ Backdoor authentication successful!', { email: session.user.email });
+        
+        // Log app launch
+        await ActivityService.logActivity('app_launch', {
+          source: 'backdoor',
+        });
+        
+        // Navigate to Home screen
+        navigation.replace('Home');
+        return;
+      }
+      
+      // Normal magic link flow
       await AuthService.requestMagicLink(completeEmail);
       setSuccess(true);
       // Don't navigate yet - user needs to check their email and click the magic link
