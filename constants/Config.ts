@@ -43,6 +43,9 @@ export const Config = {
     // Default to 'universal' for production builds
     // Override with EXPO_PUBLIC_AUTH_LINK_TYPE=direct in .env.local for Expo Go testing
     LINK_TYPE: (process.env.EXPO_PUBLIC_AUTH_LINK_TYPE || 'universal') as 'direct' | 'universal',
+    // Backdoor authentication secret (for development/testing)
+    // Store in environment variable EXPO_PUBLIC_BACKDOOR_SECRET
+    BACKDOOR_SECRET: process.env.EXPO_PUBLIC_BACKDOOR_SECRET || '',
   },
   
   // Chat configuration
