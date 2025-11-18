@@ -22,7 +22,7 @@ The backdoor authentication allows a specific email address to authenticate dire
 The backdoor secret is stored in AWS Secrets Manager:
 - **Secret Name**: `mobile-app/backdoor-secret`
 - **Region**: `us-west-2`
-- **Current Secret Value**: `GiQV4XdGKIb9BEXN18-GBlLOiYDE-De27h4ROOa1rso`
+- **Secret Value**: Stored securely in AWS Secrets Manager (not in source code)
 
 To view or update the secret:
 ```bash
@@ -57,8 +57,10 @@ The mobile app reads the backdoor secret from an environment variable. Configura
 For local testing, create a `.env.local` file in the project root:
 ```bash
 EXPO_PUBLIC_BACKDOOR_EMAIL=<backdoor-email-address>
-EXPO_PUBLIC_BACKDOOR_SECRET=GiQV4XdGKIb9BEXN18-GBlLOiYDE-De27h4ROOa1rso
+EXPO_PUBLIC_BACKDOOR_SECRET=<backdoor-secret-value>
 ```
+
+**Important**: Get the secret value from AWS Secrets Manager (see commands above) or from your team lead. Do not commit `.env.local` to git.
 
 **Important**: 
 - Replace `<backdoor-email-address>` with the actual backdoor email address
