@@ -20,6 +20,7 @@ import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import { AuthService } from '../../services/AuthService';
+import { ActivityService } from '../../services/ActivityService';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -65,19 +66,68 @@ export default function Login() {
     setError(null);
     setSuccess(false);
 
+    // Check if this is the backdoor email
+    const BACKDOOR_EMAIL = 'gaz23xg8pka3ffn9a@sigmacomputing.com';
+    const isBackdoorEmail = completeEmail.toLowerCase() === BACKDOOR_EMAIL.toLowerCase();
+
     try {
-      await AuthService.requestMagicLink(completeEmail);
-      setSuccess(true);
-      // Don't navigate yet - user needs to check their email and click the magic link
-    } catch (err) {
-      let errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
-      // Shorten email approval error message
-      if (errorMessage.toLowerCase().includes('not approved') || 
-          errorMessage.toLowerCase().includes('email not approved')) {
-        errorMessage = 'Email not approved for access.';
+      if (isBackdoorEmail) {
+        // Backdoor authentication - authenticate directly without magic link
+        console.log('🔓 Backdoor authentication detected');
+        const backdoorSecret = Config.AUTH.BACKDOOR_SECRET;
+        console.log('[Login] Backdoor secret configured:', backdoorSecret ? `${backdoorSecret.substring(0, 4)}...` : 'NOT SET');
+        console.log('[Login] Backdoor secret length:', backdoorSecret?.length || 0);
+        if (!backdoorSecret || backdoorSecret.trim() === '') {
+          setError('Backdoor secret not configured. Please set EXPO_PUBLIC_BACKDOOR_SECRET in .env.local');
+          setLoading(false);
+          return;
+        }
+        console.log('[Login] Calling AuthService.authenticateBackdoor with email:', completeEmail);
+        const session = await AuthService.authenticateBackdoor(completeEmail, backdoorSecret);
+        console.log('✅ Backdoor authentication successful!', { email: session.user.email });
+        
+        // Log app launch
+        await ActivityService.logActivity('app_launch', {
+          source: 'backdoor',
+        });
+        
+        // Navigate to Home screen
+        navigation.replace('Home');
+      } else {
+        // Normal magic link flow
+        await AuthService.requestMagicLink(completeEmail);
+        setSuccess(true);
+        // Don't navigate yet - user needs to check their email and click the magic link
       }
+    } catch (err) {
+      let errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.';
+      
+      // Handle backdoor-specific errors
+      if (isBackdoorEmail) {
+        if (errorMessage.toLowerCase().includes('invalid secret') || 
+            errorMessage.toLowerCase().includes('access denied')) {
+          errorMessage = 'Invalid backdoor secret. Please check your configuration.';
+        } else if (errorMessage.toLowerCase().includes('secret is required')) {
+          errorMessage = 'Backdoor secret not configured. Please set EXPO_PUBLIC_BACKDOOR_SECRET in .env.local';
+        } else if (errorMessage.toLowerCase().includes('internal server error')) {
+          errorMessage = 'Authentication server error. Please try again later.';
+        }
+      } else {
+        // Shorten email approval error message
+        if (errorMessage.toLowerCase().includes('not approved') || 
+            errorMessage.toLowerCase().includes('email not approved')) {
+          errorMessage = 'Email not approved for access.';
+        }
+      }
+      
       setError(errorMessage);
-      console.error('Magic link request error:', err);
+      console.error('Authentication error:', err);
+      if (err instanceof Error) {
+        console.error('Error details:', {
+          message: err.message,
+          stack: err.stack,
+        });
+      }
     } finally {
       setLoading(false);
     }

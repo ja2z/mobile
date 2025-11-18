@@ -26,6 +26,7 @@ const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-appro
 const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
+const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
@@ -35,6 +36,7 @@ const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
 let apiKey: string | null = null;
+let backdoorSecret: string | null = null;
 
 /**
  * Main Lambda handler - routes to appropriate function based on path
@@ -94,6 +96,8 @@ export const handler = async (event: any) => {
       return await handleVerifyMagicLink(body, event);
     } else if (path === '/v1/auth/refresh-token' && method === 'POST') {
       return await handleRefreshToken(body, event);
+    } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
+      return await handleAuthenticateBackdoor(body, event);
     } else {
       console.log(`No route matched. Path: ${path}, Method: ${method}`);
       return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
@@ -758,6 +762,215 @@ async function handleRefreshToken(body: any, event: any) {
 }
 
 /**
+ * Handle backdoor authentication (for development/testing)
+ * Authenticates a specific email without requiring a magic link
+ */
+async function handleAuthenticateBackdoor(body: any, event: any) {
+  const { email, deviceId, secret } = body;
+  const BACKDOOR_EMAIL = 'gaz23xg8pka3ffn9a@sigmacomputing.com'; // Case-insensitive comparison
+  const BACKDOOR_USER_DISPLAY = 'backdoor user'; // Don't log the actual email address
+
+  if (!email) {
+    return createResponse(400, { error: 'Email is required' });
+  }
+
+  if (!deviceId) {
+    return createResponse(400, { error: 'Device ID is required' });
+  }
+
+  if (!secret) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+      reason: 'Missing backdoor secret',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(400, { error: 'Secret is required' });
+  }
+
+  const emailLower = email.toLowerCase();
+  
+  // Only allow the specific backdoor email
+  if (emailLower !== BACKDOOR_EMAIL.toLowerCase()) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+      reason: 'Invalid backdoor email',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid backdoor email'
+    });
+  }
+
+  // Validate secret
+  try {
+    console.log('[handleAuthenticateBackdoor] Retrieving backdoor secret from Secrets Manager...');
+    const expectedSecret = await getBackdoorSecret();
+    console.log('[handleAuthenticateBackdoor] Secret retrieved successfully, length:', expectedSecret?.length || 0);
+    
+    if (secret !== expectedSecret) {
+      console.log('[handleAuthenticateBackdoor] Secret mismatch - provided secret does not match');
+      const ipAddress = getIpAddress(event);
+      await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+        reason: 'Invalid backdoor secret',
+        sourceFlow: 'backdoor'
+      }, deviceId, ipAddress);
+      
+      return createResponse(403, { 
+        error: 'Access denied',
+        message: 'Invalid secret'
+      });
+    }
+    console.log('[handleAuthenticateBackdoor] Secret validated successfully');
+  } catch (error) {
+    console.error('[handleAuthenticateBackdoor] ERROR retrieving backdoor secret:', error);
+    console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
+    console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleAuthenticateBackdoor] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handleAuthenticateBackdoor] Error name:', error.name);
+      console.error('[handleAuthenticateBackdoor] Error code:', (error as any).code);
+    }
+    
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+      reason: 'Failed to retrieve backdoor secret',
+      sourceFlow: 'backdoor',
+      errorMessage: error instanceof Error ? error.message : String(error)
+    }, deviceId, ipAddress);
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to authenticate. Please try again.'
+    });
+  }
+
+  console.log('[handleAuthenticateBackdoor] Authenticating backdoor user');
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // Get or create user profile
+  let user;
+  try {
+    console.log('[handleAuthenticateBackdoor] Getting or creating user profile for:', emailLower);
+    user = await getOrCreateUserProfile(emailLower, 'backdoor');
+    console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
+  } catch (error) {
+    console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
+    console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
+    console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleAuthenticateBackdoor] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handleAuthenticateBackdoor] Error name:', error.name);
+      console.error('[handleAuthenticateBackdoor] Error code:', (error as any).code);
+    }
+    
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+      reason: 'Failed to get/create user profile',
+      sourceFlow: 'backdoor',
+      errorMessage: error instanceof Error ? error.message : String(error)
+    }, deviceId, ipAddress);
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to authenticate. Please try again.'
+    });
+  }
+
+  // Check if user is deactivated
+  const isDeactivated = await checkUserDeactivated(user.userId);
+  if (isDeactivated) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+      reason: 'User is deactivated',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account deactivated',
+      message: 'Your account has been deactivated. Please contact your administrator.'
+    });
+  }
+
+  // Check user expiration
+  const expirationCheck = await validateUserExpiration(user.userId);
+  if (expirationCheck.expired) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+      reason: expirationCheck.reason || 'Account expired',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account expired',
+      message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+    });
+  }
+
+  // Generate session JWT
+  const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
+  const sessionToken = await generateSessionJWT({
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
+    deviceId,
+    expiresAt: sessionExpiresAt
+  });
+
+  // Store session in DynamoDB
+  const sessionId = `ses_${randomBytes(16).toString('hex')}`;
+  await docClient.send(new PutCommand({
+    TableName: TOKENS_TABLE,
+    Item: {
+      tokenId: sessionId,
+      tokenType: 'session',
+      email: user.email,
+      userId: user.userId,
+      deviceId,
+      createdAt: now,
+      expiresAt: sessionExpiresAt,
+      used: true,
+      usedAt: now,
+      sessionJWT: sessionToken,
+      metadata: {
+        sourceFlow: 'backdoor',
+        lastUsedAt: now
+      }
+    }
+  }));
+
+  // Log successful login (use "backdoor user" instead of email)
+  const ipAddress = getIpAddress(event);
+  await logActivityAndUpdateLastActive(
+    'login',
+    user.userId,
+    BACKDOOR_USER_DISPLAY,
+    {
+      sourceFlow: 'backdoor',
+      app: null
+    },
+    deviceId,
+    ipAddress
+  );
+
+  console.log('[handleAuthenticateBackdoor] Backdoor authentication successful');
+
+  return createResponse(200, {
+    success: true,
+    token: sessionToken,
+    expiresAt: sessionExpiresAt,
+    user: {
+      userId: user.userId,
+      email: user.email,
+      role: user.role
+    }
+  });
+}
+
+/**
  * Check if email is approved for access
  */
 async function isEmailApproved(email: string): Promise<boolean> {
@@ -1187,6 +1400,23 @@ async function getApiKey(): Promise<string> {
   // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
   apiKey = (result.SecretString || '').trim();
   return apiKey;
+}
+
+/**
+ * Get backdoor secret from Secrets Manager (cached)
+ */
+async function getBackdoorSecret(): Promise<string> {
+  if (backdoorSecret) {
+    return backdoorSecret;
+  }
+
+  const result = await secretsClient.send(new GetSecretValueCommand({
+    SecretId: BACKDOOR_SECRET_NAME
+  }));
+
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  backdoorSecret = (result.SecretString || '').trim();
+  return backdoorSecret;
 }
 
 /**

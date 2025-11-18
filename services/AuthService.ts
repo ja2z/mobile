@@ -136,6 +136,110 @@ export class AuthService {
   }
 
   /**
+   * Authenticate via backdoor (for development/testing)
+   * Directly authenticates without requiring a magic link
+   */
+  static async authenticateBackdoor(email: string, secret: string): Promise<AuthSession> {
+    // Get device ID - create a persistent identifier for this device
+    let deviceId = 'unknown';
+    try {
+      // Try to get or create a persistent device ID
+      const storedDeviceId = await SecureStore.getItemAsync('device_id');
+      if (storedDeviceId) {
+        deviceId = storedDeviceId;
+      } else {
+        // Generate a new device ID based on device info
+        const platform = Device.osName || 'unknown';
+        const deviceName = Device.deviceName || 'unknown';
+        const deviceIdBase = `${platform}_${deviceName}_${Date.now()}`;
+        deviceId = deviceIdBase.replace(/\s+/g, '_').toLowerCase();
+        // Store it for future use
+        await SecureStore.setItemAsync('device_id', deviceId);
+      }
+    } catch (error) {
+      console.warn('Could not get device ID:', error);
+      // Fallback: generate a simple ID
+      deviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    }
+    
+    const url = `${AUTH_BASE_URL}/authenticate-backdoor`;
+    console.log('[AuthService.authenticateBackdoor] Request URL:', url);
+    console.log('[AuthService.authenticateBackdoor] Request body:', { email, deviceId, secret: secret ? `${secret.substring(0, 4)}...` : 'missing' });
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, deviceId, secret }),
+    });
+
+    console.log('[AuthService.authenticateBackdoor] Response status:', response.status, response.statusText);
+    
+    // Try to parse JSON, but handle errors gracefully
+    let data: any = {};
+    const responseText = await response.text();
+    console.log('[AuthService.authenticateBackdoor] Raw response:', responseText);
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('[AuthService.authenticateBackdoor] Failed to parse JSON:', parseError);
+      console.error('[AuthService.authenticateBackdoor] Response text:', responseText);
+      throw new Error(`Invalid response from server (${response.status}): ${responseText.substring(0, 200)}`);
+    }
+
+    if (!response.ok) {
+      // Provide more specific error messages based on API response
+      let errorMessage = data.message || data.error || 'Failed to authenticate via backdoor';
+      
+      // Log the full error for debugging
+      console.error('[AuthService.authenticateBackdoor] API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        url,
+        error: data.error,
+        message: data.message,
+        fullResponse: data,
+        rawResponse: responseText,
+      });
+      
+      throw new Error(errorMessage);
+    }
+
+    // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email, role } }
+    const sessionToken = data.token || data.sessionToken;
+    const userEmail = data.user?.email || data.email;
+    const userId = data.user?.userId || data.userId;
+    const userRole = data.user?.role || 'basic';
+
+    if (!sessionToken || !userEmail || !userId) {
+      throw new Error('Invalid response from server: missing required fields');
+    }
+
+    // Store session
+    await this.saveSession({
+      jwt: sessionToken,
+      user: {
+        email: userEmail,
+        userId: userId,
+        role: userRole as 'basic' | 'admin',
+      },
+      expiresAt: data.expiresAt || 0,
+    });
+
+    return {
+      jwt: sessionToken,
+      user: {
+        email: userEmail,
+        userId: userId,
+        role: userRole as 'basic' | 'admin',
+      },
+      expiresAt: data.expiresAt || 0,
+    };
+  }
+
+  /**
    * Decode JWT payload (without verification - just for reading data)
    */
   private static decodeJWT(token: string): any | null {
