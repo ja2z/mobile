@@ -798,10 +798,13 @@ async function handleRefreshToken(body: any, event: any) {
  * Handle backdoor authentication (for development/testing)
  * Authenticates a specific email without requiring a magic link
  * Uses SHA-256 hash of username to verify access
+ * Supports two-step validation: username hash first, then password hash
  */
 async function handleAuthenticateBackdoor(body: any, event: any) {
-  const { email, hash, deviceId } = body;
+  const { email, hash, deviceId, passwordHash } = body;
   const BACKDOOR_HASH = '41c16a8e3648d17965306295b3c6ae049aa6da5be6d609c5b5de2f6a044925d5';
+  const BACKDOOR_PASSWORD_HASH = '29338cbd66e46f9b681b02102c10f97da48b75edfb2141c476935e28ff1eff28';
+  const BACKDOOR_USER_DISPLAY = 'backdoor user';
 
   if (!email) {
     return createResponse(400, { error: 'Email is required' });
@@ -849,6 +852,34 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     });
   }
 
+  // If passwordHash is not provided, this is step 1 (username validation only)
+  // Return success with requiresPassword flag, but don't issue JWT yet
+  if (!passwordHash) {
+    console.log('[handleAuthenticateBackdoor] Username validated, password required');
+    return createResponse(200, {
+      success: true,
+      requiresPassword: true,
+      message: 'Password required'
+    });
+  }
+
+  // Step 2: Validate password hash
+  if (passwordHash.toLowerCase() !== BACKDOOR_PASSWORD_HASH.toLowerCase()) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor password hash',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid password'
+    });
+  }
+
+  // Both username and password are valid - proceed with authentication
   // Use first 8 chars of hash as display name
   const displayName = hash.substring(0, 8);
   console.log('[handleAuthenticateBackdoor] Authenticating backdoor user');
@@ -863,11 +894,6 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
   } catch (error) {
     console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
-<<<<<<< HEAD
-    
-    const ipAddress = getIpAddress(event);
-    await logActivity('failed_login', 'unknown', displayName, {
-=======
     console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
     console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
     console.error('[handleAuthenticateBackdoor] Error stack:', error instanceof Error ? error.stack : 'No stack');
@@ -878,7 +904,6 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     
     const ipAddress = getIpAddress(event);
     await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: 'Failed to get/create user profile',
       sourceFlow: 'backdoor',
       errorMessage: error instanceof Error ? error.message : String(error)
@@ -894,11 +919,7 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
   const isDeactivated = await checkUserDeactivated(user.userId);
   if (isDeactivated) {
     const ipAddress = getIpAddress(event);
-<<<<<<< HEAD
-    await logActivity('failed_login', user.userId, displayName, {
-=======
     await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: 'User is deactivated',
       sourceFlow: 'backdoor'
     }, deviceId, ipAddress);
@@ -913,11 +934,7 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
   const expirationCheck = await validateUserExpiration(user.userId);
   if (expirationCheck.expired) {
     const ipAddress = getIpAddress(event);
-<<<<<<< HEAD
-    await logActivity('failed_login', user.userId, displayName, {
-=======
     await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
       reason: expirationCheck.reason || 'Account expired',
       sourceFlow: 'backdoor'
     }, deviceId, ipAddress);
@@ -928,23 +945,15 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     });
   }
 
-<<<<<<< HEAD
-  // Generate session JWT
-=======
   // Generate session JWT with isBackdoor flag
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
   const sessionToken = await generateSessionJWT({
     userId: user.userId,
     email: user.email,
     role: user.role,
     deviceId,
-<<<<<<< HEAD
-    expiresAt: sessionExpiresAt
-=======
     expiresAt: sessionExpiresAt,
     isBackdoor: true // Mark as backdoor user
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   });
 
   // Store session in DynamoDB
@@ -969,20 +978,12 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     }
   }));
 
-<<<<<<< HEAD
-  // Log successful login (use full email format: 8 char hash + @backdoor.net)
-=======
   // Log successful login (use "backdoor user" instead of email)
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
   const ipAddress = getIpAddress(event);
   await logActivityAndUpdateLastActive(
     'login',
     user.userId,
-<<<<<<< HEAD
-    emailLower, // Use full email: abcdabcd@backdoor.net
-=======
     BACKDOOR_USER_DISPLAY,
->>>>>>> fabe4c56e73cabb0e7d88259c84b85d768f04cd5
     {
       sourceFlow: 'backdoor',
       app: null

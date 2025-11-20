@@ -22,6 +22,7 @@ import type { RootStackParamList } from '../_layout';
 import { AuthService } from '../../services/AuthService';
 import { ActivityService } from '../../services/ActivityService';
 import { sha256 } from 'js-sha256';
+import { BackdoorPasswordModal } from '../../components/BackdoorPasswordModal';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -38,6 +39,11 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [storedUsernameHash, setStoredUsernameHash] = useState<string | null>(null);
+  const [storedSecureEmail, setStoredSecureEmail] = useState<string | null>(null);
   const usernameInputRef = useRef<TextInput>(null);
   const domainInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -92,17 +98,33 @@ export default function Login() {
         
         console.log('🔓 Backdoor authentication detected');
         console.log('[Login] Computed hash:', usernameHash);
-        const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
-        console.log('✅ Backdoor authentication successful!', { email: session.user.email });
         
-        // Log app launch
-        await ActivityService.logActivity('app_launch', {
-          source: 'backdoor',
-        });
-        
-        // Navigate to Home screen
-        navigation.replace('Home');
-        return;
+        try {
+          const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
+          console.log('✅ Backdoor authentication successful!', { email: session.user.email });
+          
+          // Log app launch
+          await ActivityService.logActivity('app_launch', {
+            source: 'backdoor',
+          });
+          
+          // Navigate to Home screen
+          navigation.replace('Home');
+          return;
+        } catch (err: any) {
+          // Check if password is required (step 1 of two-step validation)
+          if (err.requiresPassword === true) {
+            // Store the username hash and secure email for password submission
+            setStoredUsernameHash(usernameHash);
+            setStoredSecureEmail(secureEmail);
+            setShowPasswordModal(true);
+            setPasswordError(null);
+            setLoading(false);
+            return;
+          }
+          // Re-throw other errors to be handled by the outer catch block
+          throw err;
+        }
       }
       
       // Normal magic link flow
@@ -129,6 +151,58 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePasswordSubmit = async (password: string) => {
+    if (!storedUsernameHash || !storedSecureEmail) {
+      setPasswordError('Session expired. Please try again.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordError(null);
+
+    try {
+      // Compute SHA-256 hash of password on client
+      const passwordHash = sha256(password);
+      
+      console.log('🔐 Submitting password for backdoor authentication');
+      const session = await AuthService.authenticateBackdoor(storedSecureEmail, storedUsernameHash, passwordHash);
+      console.log('✅ Backdoor authentication with password successful!', { email: session.user.email });
+      
+      // Log app launch
+      await ActivityService.logActivity('app_launch', {
+        source: 'backdoor',
+      });
+      
+      // Clear stored values
+      setStoredUsernameHash(null);
+      setStoredSecureEmail(null);
+      setShowPasswordModal(false);
+      
+      // Navigate to Home screen
+      navigation.replace('Home');
+    } catch (err) {
+      let errorMessage = err instanceof Error ? err.message : 'Invalid password. Please try again.';
+      
+      // Provide user-friendly error message
+      if (errorMessage.toLowerCase().includes('invalid password') || 
+          errorMessage.toLowerCase().includes('access denied')) {
+        errorMessage = 'Invalid password. Please try again.';
+      }
+      
+      setPasswordError(errorMessage);
+      console.error('Password authentication error:', err);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setShowPasswordModal(false);
+    setPasswordError(null);
+    setStoredUsernameHash(null);
+    setStoredSecureEmail(null);
   };
 
   // Clear error when user starts typing, but debounce to prevent jitter
@@ -302,6 +376,15 @@ export default function Login() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Backdoor Password Modal */}
+      <BackdoorPasswordModal
+        visible={showPasswordModal}
+        onSubmit={handlePasswordSubmit}
+        onCancel={handlePasswordCancel}
+        loading={passwordLoading}
+        error={passwordError}
+      />
     </SafeAreaView>
   );
 }

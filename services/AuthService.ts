@@ -140,8 +140,9 @@ export class AuthService {
    * Directly authenticates without requiring a magic link
    * @param email - The backdoor email (username@backdoor.net)
    * @param hash - SHA-256 hash of the username (computed on client)
+   * @param passwordHash - Optional SHA-256 hash of the password (computed on client)
    */
-  static async authenticateBackdoor(email: string, hash: string): Promise<AuthSession> {
+  static async authenticateBackdoor(email: string, hash: string, passwordHash?: string): Promise<AuthSession> {
     // Get device ID - create a persistent identifier for this device
     let deviceId = 'unknown';
     try {
@@ -166,14 +167,19 @@ export class AuthService {
     
     const url = `${AUTH_BASE_URL}/authenticate-backdoor`;
     console.log('[AuthService.authenticateBackdoor] Request URL:', url);
-    console.log('[AuthService.authenticateBackdoor] Request body:', { email, hash: hash.substring(0, 16) + '...', deviceId });
+    console.log('[AuthService.authenticateBackdoor] Request body:', { 
+      email, 
+      hash: hash.substring(0, 16) + '...', 
+      passwordHash: passwordHash ? passwordHash.substring(0, 16) + '...' : undefined,
+      deviceId 
+    });
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, hash, deviceId }),
+      body: JSON.stringify({ email, hash, deviceId, passwordHash }),
     });
 
     console.log('[AuthService.authenticateBackdoor] Response status:', response.status, response.statusText);
@@ -207,6 +213,13 @@ export class AuthService {
       });
       
       throw new Error(errorMessage);
+    }
+
+    // Check if password is required (step 1 of two-step validation)
+    if (data.requiresPassword === true) {
+      const error = new Error('Password required') as any;
+      error.requiresPassword = true;
+      throw error;
     }
 
     // Lambda returns: { success: true, token: "...", expiresAt: ..., user: { userId, email, role } }
