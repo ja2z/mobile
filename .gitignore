@@ -48,3 +48,4 @@ lambdas/**/*.zip
 # ios build
 build-*.ipa
 eas-build*.log
+eas-deploy*.log

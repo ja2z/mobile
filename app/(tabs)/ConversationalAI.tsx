@@ -1,6 +1,9 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { ChatModal, ChatModalRef } from '../../components/ChatModal';
@@ -9,11 +12,15 @@ import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { ChatMessage } from '../../types/chat.types';
 
+type ConversationalAIRouteProp = RouteProp<RootStackParamList, 'ConversationalAI'>;
+
 /**
  * Conversational AI Page Component
  * Displays the Conversational AI workbook
  */
 export default function ConversationalAI() {
+  const route = useRoute<ConversationalAIRouteProp>();
+  const { appletId, appletName } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
   const chatModalRef = useRef<ChatModalRef>(null);
   
@@ -164,6 +171,8 @@ export default function ConversationalAI() {
         <DashboardView 
           ref={dashboardRef}
           workbookId={Config.WORKBOOKS.CONVERSATIONAL_AI}
+          appletId={appletId}
+          appletName={appletName}
         />
       </View>
       <ConversationalAINavigationBar

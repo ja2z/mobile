@@ -1,5 +1,8 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import crypto from 'crypto';
+import { validateUserExpiration, checkUserDeactivated } from '../shared/user-validation';
+import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
+import * as jwt from 'jsonwebtoken';
 
 // Get AWS region from environment or default to us-west-2
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2';
@@ -8,14 +11,23 @@ const AWS_REGION = process.env.AWS_REGION || 'us-west-2';
 const secretsManager = new SecretsManagerClient({ region: AWS_REGION });
 
 // Cache the secrets to avoid repeated calls
-let cachedSessionSecret = null;
-let cachedEmbedSecret = null;
+let cachedSessionSecret: string | null = null;
+let cachedEmbedSecret: string | null = null;
+
+/**
+ * Get IP address from event
+ */
+function getIpAddress(event: any): string | undefined {
+  return event.requestContext?.identity?.sourceIp || 
+         event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
+         event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim();
+}
 
 /**
  * Get session JWT secret (for verifying user session JWTs)
  * Uses mobile-app/jwt-secret, stored as plain string
  */
-async function getSessionSecret() {
+async function getSessionSecret(): Promise<string> {
     if (cachedSessionSecret) {
         console.log('Using cached session secret');
         return cachedSessionSecret;
@@ -39,7 +51,7 @@ async function getSessionSecret() {
         
         cachedSessionSecret = jwtSecret;
         return jwtSecret;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching session secret from Secrets Manager:', error);
         throw new Error(`Failed to fetch session JWT secret: ${error.message}`);
     }
@@ -49,7 +61,7 @@ async function getSessionSecret() {
  * Get embed JWT secret (for signing Sigma embed JWTs)
  * Uses sigma/jwt-secret, stored as JSON with JWT_SECRET field
  */
-async function getEmbedSecret() {
+async function getEmbedSecret(): Promise<string> {
     if (cachedEmbedSecret) {
         console.log('Using cached embed secret');
         return cachedEmbedSecret;
@@ -74,13 +86,13 @@ async function getEmbedSecret() {
         
         cachedEmbedSecret = jwtSecret;
         return jwtSecret;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching embed secret from Secrets Manager:', error);
         throw new Error(`Failed to fetch embed JWT secret: ${error.message}`);
     }
 }
 
-function base64UrlEncode(str) {
+function base64UrlEncode(str: string): string {
     return Buffer.from(str)
         .toString('base64')
         .replace(/\+/g, '-')
@@ -88,11 +100,11 @@ function base64UrlEncode(str) {
         .replace(/=/g, '');
 }
 
-function generateUUID() {
+function generateUUID(): string {
     return crypto.randomUUID();
 }
 
-function addEmbedToEmail(email) {
+function addEmbedToEmail(email: string): string {
     // Split email at @ symbol
     const [username, domain] = email.split('@');
     // Add +embed to username if it doesn't already contain +embed
@@ -107,7 +119,7 @@ function addEmbedToEmail(email) {
  * Verify JWT signature and expiration
  * Returns decoded payload if valid, throws error if invalid
  */
-function verifyJWT(token, secret) {
+function verifyJWT(token: string, secret: string): any {
     const parts = token.split('.');
     if (parts.length !== 3) {
         throw new Error('Invalid JWT format');
@@ -143,7 +155,7 @@ function verifyJWT(token, secret) {
     return payload;
 }
 
-function createJWT(payload, secret) {
+function createJWT(payload: any, secret: string): string {
     // Header
     const header = {
         alg: "HS256",
@@ -169,7 +181,7 @@ function createJWT(payload, secret) {
     return `${encodedHeader}.${encodedPayload}.${signature}`;
 }
 
-export const handler = async (event) => {
+export const handler = async (event: any) => {
     console.log('Lambda handler invoked');
     console.log('Event:', JSON.stringify(event, null, 2));
     
@@ -214,11 +226,11 @@ export const handler = async (event) => {
         console.log('Session secret retrieved successfully');
         
         // Verify the session JWT
-        let sessionPayload;
+        let sessionPayload: any;
         try {
             sessionPayload = verifyJWT(sessionJWT, sessionSecret);
             console.log('Session JWT verified successfully');
-        } catch (verifyError) {
+        } catch (verifyError: any) {
             console.error('JWT verification failed:', verifyError);
             return {
                 statusCode: 401,
@@ -234,8 +246,12 @@ export const handler = async (event) => {
             };
         }
         
-        // Extract user email from verified JWT
+        // Extract user info from verified JWT
+        const userId = sessionPayload.userId;
         const userEmail = sessionPayload.email;
+        const deviceId = sessionPayload.deviceId;
+        const isBackdoor = sessionPayload.isBackdoor || false;
+        
         if (!userEmail) {
             return {
                 statusCode: 401,
@@ -249,9 +265,71 @@ export const handler = async (event) => {
                 })
             };
         }
+
+        if (!userId) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'User ID not found in authentication token'
+                })
+            };
+        }
+
+        // Check if user is deactivated
+        let isDeactivated = false;
+        try {
+            isDeactivated = await checkUserDeactivated(userId);
+        } catch (validationError: any) {
+            console.error('Error checking if user is deactivated:', validationError);
+            // If validation fails, allow the request to proceed (fail open for availability)
+            // Log the error for investigation
+        }
+        if (isDeactivated) {
+            return {
+                statusCode: 403,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Account deactivated',
+                    message: 'Your account has been deactivated. Please contact your administrator.'
+                })
+            };
+        }
+
+        // Check user expiration
+        let expirationCheck: any = { expired: false };
+        try {
+            expirationCheck = await validateUserExpiration(userId, sessionPayload.exp);
+        } catch (validationError: any) {
+            console.error('Error validating user expiration:', validationError);
+            // If validation fails, allow the request to proceed (fail open for availability)
+            // Log the error for investigation
+        }
+        if (expirationCheck.expired) {
+            return {
+                statusCode: 403,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                },
+                body: JSON.stringify({
+                    success: false,
+                    error: 'Account expired',
+                    message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+                })
+            };
+        }
         
         // Parse request body
-        let body = {};
+        let body: any = {};
         try {
             body = event.body ? JSON.parse(event.body) : {};
             console.log('Parsed request body:', JSON.stringify(body, null, 2));
@@ -267,6 +345,8 @@ export const handler = async (event) => {
         const workbookId = body.workbook_id;
         const embedPath = body.embed_path || "papercrane-embedding-gcp/workbook";
         const teams = body.teams || ["all_clients_team", "acme_team"];
+        const appletId = body.applet_id;
+        const appletName = body.applet_name;
         
         console.log('Processing request with:', {
             merchantId,
@@ -274,6 +354,8 @@ export const handler = async (event) => {
             workbookId,
             embedPath,
             teams,
+            appletId,
+            appletName,
             authenticatedUser: userEmail
         });
         
@@ -303,11 +385,46 @@ export const handler = async (event) => {
         
         console.log('Creating embed JWT...');
         // Generate JWT using embed secret (this is synchronous, no need to await)
-        const jwt = createJWT(payload, embedSecret);
+        const jwtToken = createJWT(payload, embedSecret);
         console.log('Embed JWT created successfully');
         
         // Construct the full embedding URL
-        const embeddingUrl = `https://app.sigmacomputing.com/${embedPath}/${workbookId}?:jwt=${jwt}&:embed=true&:menu_position=none`;
+        const embeddingUrl = `https://app.sigmacomputing.com/${embedPath}/${workbookId}?:jwt=${jwtToken}&:embed=true&:menu_position=none`;
+        
+        // Log activity and update last active time (don't let failures break the main flow)
+        const ipAddress = getIpAddress(event);
+        try {
+            const activityMetadata: Record<string, any> = {
+                merchantId
+            };
+            if (appletId) {
+                activityMetadata.appletId = appletId;
+            }
+            if (appletName) {
+                activityMetadata.appletName = appletName;
+            }
+            
+            const emailForLogging = getActivityLogEmail(userEmail, isBackdoor);
+            console.log('[generate-url] Logging applet_launch activity:', {
+                userId,
+                originalEmail: userEmail,
+                isBackdoor,
+                emailForLogging
+            });
+            
+            await logActivityAndUpdateLastActive(
+                'applet_launch',
+                userId,
+                emailForLogging,
+                activityMetadata,
+                deviceId,
+                ipAddress
+            );
+        } catch (activityError: any) {
+            // Log the error but don't fail the request - activity logging is non-critical
+            console.error('Failed to log activity:', activityError?.statusCode || activityError?.message || activityError);
+            // Continue with the response even if activity logging failed
+        }
         
         console.log('Returning success response');
         // Return success response
@@ -322,16 +439,23 @@ export const handler = async (event) => {
             body: JSON.stringify({
                 success: true,
                 url: embeddingUrl,
-                jwt: jwt,
+                jwt: jwtToken,
                 expires_at: payload.exp
             })
         };
         
-    } catch (error) {
+    } catch (error: any) {
         console.error('❌ Lambda error:', error);
         console.error('❌ Error stack:', error.stack);
         console.error('❌ Error name:', error.name);
         console.error('❌ Error message:', error.message);
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error statusCode:', error.statusCode);
+        
+        // Log additional context for debugging
+        if (error.$metadata) {
+            console.error('❌ AWS SDK metadata:', JSON.stringify(error.$metadata, null, 2));
+        }
         
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         
@@ -346,7 +470,9 @@ export const handler = async (event) => {
                 error: errorMessage,
                 details: error instanceof Error ? {
                     name: error.name,
-                    message: error.message
+                    message: error.message,
+                    code: (error as any).code,
+                    statusCode: (error as any).statusCode
                 } : undefined
             })
         };

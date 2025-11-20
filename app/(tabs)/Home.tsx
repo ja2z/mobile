@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { AuthService } from '../../services/AuthService';
+import { ActivityService } from '../../services/ActivityService';
 import { ProfileMenu } from '../../components/ProfileMenu';
 import type { RootStackParamList } from '../_layout';
 
@@ -42,18 +43,41 @@ export default function Home() {
   const gridOpacity = useRef(new Animated.Value(1)).current;
 
   const handleNavigateToDashboard = () => {
-    navigation.navigate('Dashboard' as never);
+    navigation.navigate('Dashboard' as never, { 
+      appletId: '2', 
+      appletName: 'AOP Exec Dashboard' 
+    } as never);
   };
 
   const handleNavigateToAINewsletter = () => {
-    navigation.navigate('AINewsletter' as never);
+    navigation.navigate('AINewsletter' as never, { 
+      appletId: '3', 
+      appletName: 'AI Newsletter' 
+    } as never);
   };
 
   const handleNavigateToConversationalAI = () => {
-    navigation.navigate('ConversationalAI' as never);
+    navigation.navigate('ConversationalAI' as never, { 
+      appletId: '5', 
+      appletName: 'Conversational AI' 
+    } as never);
+  };
+
+  const handleNavigateToMyBuys = () => {
+    navigation.navigate('MyBuys' as never);
   };
 
   const appTiles: AppTile[] = [
+    { 
+      id: '9', 
+      title: 'My Buys', 
+      subtitle: 'Custom Embeds', 
+      description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
+      color: colors.tileColors.orange1,
+      iconName: 'layers-outline',
+      isActive: true,
+      onPress: handleNavigateToMyBuys,
+    },
     { 
       id: '1', 
       title: 'Data Dashboard', 
@@ -221,9 +245,10 @@ export default function Home() {
     expandTile(tile);
   };
 
-  const handleLaunchPress = () => {
+  const handleLaunchPress = async () => {
     if (selectedTile && selectedTile.onPress) {
       collapseTile();
+      
       // Delay navigation to allow animation to complete
       setTimeout(() => {
         selectedTile.onPress?.();

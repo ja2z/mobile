@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -20,6 +20,9 @@ import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import { AuthService } from '../../services/AuthService';
+import { ActivityService } from '../../services/ActivityService';
+import { sha256 } from 'js-sha256';
+import { BackdoorPasswordModal } from '../../components/BackdoorPasswordModal';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -36,6 +39,14 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [storedUsernameHash, setStoredUsernameHash] = useState<string | null>(null);
+  const [storedSecureEmail, setStoredSecureEmail] = useState<string | null>(null);
+  const usernameInputRef = useRef<TextInput>(null);
+  const domainInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const isValidEmail = (email: string) => {
     return email.includes('@') && email.length > 3 && email.split('@').length === 2;
@@ -51,7 +62,13 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    const completeEmail = getCompleteEmail();
+    const dom = domain.trim().toLowerCase();
+    const isBackdoorDomain = dom === 'backdoor.net';
+    
+    // For backdoor.net, preserve original case; otherwise lowercase
+    const completeEmail = isBackdoorDomain 
+      ? `${username.trim()}@${dom}`
+      : getCompleteEmail();
     
     if (!isValidEmail(completeEmail)) {
       setError('Please enter a valid email address');
@@ -63,21 +80,150 @@ export default function Login() {
     setSuccess(false);
 
     try {
+      // Check if this is a backdoor email (@backdoor.net domain)
+      const emailLower = completeEmail.toLowerCase();
+      const isBackdoorEmail = emailLower.endsWith('@backdoor.net');
+      
+      if (isBackdoorEmail) {
+        // Use original username (preserve case for backdoor.net)
+        const originalUsername = username.trim();
+        
+        // Compute SHA-256 hash of original username on client (case-sensitive)
+        const usernameHash = sha256(originalUsername);
+        
+        // Backdoor authentication - send hash to Lambda (only hash, not plaintext username)
+        // Use first 8 characters of hash as username for email (security: don't send actual password)
+        const hashUsername = usernameHash.substring(0, 8);
+        const secureEmail = `${hashUsername}@backdoor.net`;
+        
+        console.log('🔓 Backdoor authentication detected');
+        console.log('[Login] Computed hash:', usernameHash);
+        
+        try {
+          const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
+          console.log('✅ Backdoor authentication successful!', { email: session.user.email });
+          
+          // Log app launch
+          await ActivityService.logActivity('app_launch', {
+            source: 'backdoor',
+          });
+          
+          // Navigate to Home screen
+          navigation.replace('Home');
+          return;
+        } catch (err: any) {
+          // Check if password is required (step 1 of two-step validation)
+          if (err.requiresPassword === true) {
+            // Store the username hash and secure email for password submission
+            setStoredUsernameHash(usernameHash);
+            setStoredSecureEmail(secureEmail);
+            setShowPasswordModal(true);
+            setPasswordError(null);
+            setLoading(false);
+            return;
+          }
+          // Re-throw other errors to be handled by the outer catch block
+          throw err;
+        }
+      }
+      
+      // Normal magic link flow
       await AuthService.requestMagicLink(completeEmail);
       setSuccess(true);
       // Don't navigate yet - user needs to check their email and click the magic link
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send magic link. Please try again.';
+      let errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.';
+      
+      // Shorten email approval error message
+      if (errorMessage.toLowerCase().includes('not approved') || 
+          errorMessage.toLowerCase().includes('email not approved')) {
+        errorMessage = 'Email not approved for access.';
+      }
+      
       setError(errorMessage);
-      console.error('Magic link request error:', err);
+      console.error('Authentication error:', err);
+      if (err instanceof Error) {
+        console.error('Error details:', {
+          message: err.message,
+          stack: err.stack,
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSkip = () => {
-    // Bypass authentication for development
-    navigation.replace('Home');
+  const handlePasswordSubmit = async (password: string) => {
+    if (!storedUsernameHash || !storedSecureEmail) {
+      setPasswordError('Session expired. Please try again.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordError(null);
+
+    try {
+      // Compute SHA-256 hash of password on client
+      const passwordHash = sha256(password);
+      
+      console.log('🔐 Submitting password for backdoor authentication');
+      const session = await AuthService.authenticateBackdoor(storedSecureEmail, storedUsernameHash, passwordHash);
+      console.log('✅ Backdoor authentication with password successful!', { email: session.user.email });
+      
+      // Log app launch
+      await ActivityService.logActivity('app_launch', {
+        source: 'backdoor',
+      });
+      
+      // Clear stored values
+      setStoredUsernameHash(null);
+      setStoredSecureEmail(null);
+      setShowPasswordModal(false);
+      
+      // Navigate to Home screen
+      navigation.replace('Home');
+    } catch (err) {
+      let errorMessage = err instanceof Error ? err.message : 'Invalid password. Please try again.';
+      
+      // Provide user-friendly error message
+      if (errorMessage.toLowerCase().includes('invalid password') || 
+          errorMessage.toLowerCase().includes('access denied')) {
+        errorMessage = 'Invalid password. Please try again.';
+      }
+      
+      setPasswordError(errorMessage);
+      console.error('Password authentication error:', err);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setShowPasswordModal(false);
+    setPasswordError(null);
+    setStoredUsernameHash(null);
+    setStoredSecureEmail(null);
+  };
+
+  // Clear error when user starts typing, but debounce to prevent jitter
+  const handleUsernameChange = (text: string) => {
+    setUsername(text);
+    // Clear error on next tick to avoid layout recalculations during typing
+    if (error) {
+      requestAnimationFrame(() => {
+        setError(null);
+      });
+    }
+  };
+
+  const handleDomainChange = (text: string) => {
+    setDomain(text);
+    // Clear error on next tick to avoid layout recalculations during typing
+    if (error) {
+      requestAnimationFrame(() => {
+        setError(null);
+      });
+    }
   };
 
   const completeEmail = getCompleteEmail();
@@ -93,10 +239,14 @@ export default function Login() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="none"
+          scrollEnabled={true}
+          bounces={false}
         >
           <View style={styles.content}>
           {/* Header Section with Branding */}
@@ -114,49 +264,35 @@ export default function Login() {
 
           {/* Login Form */}
           <View style={styles.formContainer}>
-            {/* Error Message */}
-            {error && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={20} color={colors.error} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            {/* Success Message */}
-            {success && (
-              <View style={styles.successContainer}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-                <Text style={styles.successText}>
-                  Magic link sent! Check your email and tap the link to sign in.
-                </Text>
-              </View>
-            )}
-
             {/* Email Input */}
-            <View style={styles.inputContainer}>
+            <View style={styles.inputContainer} collapsable={false}>
               <Text style={styles.inputLabel}>Email Address</Text>
-              <View style={[
-                styles.inputRow,
-                isFocused && styles.inputRowFocused
-              ]}>
+              <View 
+                style={[
+                  styles.inputRow,
+                  isFocused && styles.inputRowFocused
+                ]}
+                collapsable={false}
+              >
                 {/* Username Input (30%) */}
-                <View style={styles.usernameWrapper}>
+                <View style={styles.usernameWrapper} pointerEvents="box-none" collapsable={false}>
                   <TextInput
+                    ref={usernameInputRef}
                     style={styles.usernameInput}
                     placeholder="username"
                     placeholderTextColor={colors.textSecondary}
                     value={username}
-                    onChangeText={setUsername}
+                    onChangeText={handleUsernameChange}
                     onFocus={() => setUsernameFocused(true)}
                     onBlur={() => setUsernameFocused(false)}
                     keyboardType="default"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    autoComplete="username"
-                    multiline={false}
-                    numberOfLines={1}
-                    scrollEnabled={false}
+                    autoComplete="off"
                     textAlignVertical="center"
+                    editable={!loading}
+                    selectTextOnFocus={false}
+                    importantForAccessibility="yes"
                   />
                 </View>
                 
@@ -164,27 +300,45 @@ export default function Login() {
                 <Text style={styles.atSymbol}>@</Text>
                 
                 {/* Domain Input (remaining) */}
-                <View style={styles.domainWrapper}>
+                <View style={styles.domainWrapper} pointerEvents="box-none" collapsable={false}>
                   <TextInput
+                    ref={domainInputRef}
                     style={styles.domainInput}
                     placeholder="domain.com"
                     placeholderTextColor={colors.textSecondary}
                     value={domain}
-                    onChangeText={setDomain}
+                    onChangeText={handleDomainChange}
                     onFocus={() => setDomainFocused(true)}
                     onBlur={() => setDomainFocused(false)}
                     keyboardType="default"
                     autoCapitalize="none"
                     autoCorrect={false}
                     autoComplete="off"
-                    multiline={false}
-                    numberOfLines={1}
-                    scrollEnabled={false}
                     textAlignVertical="center"
+                    editable={!loading}
+                    selectTextOnFocus={false}
+                    importantForAccessibility="yes"
                   />
                 </View>
               </View>
             </View>
+
+            {/* Error/Success Messages - Positioned absolutely to not affect layout */}
+            {error && (
+              <View style={styles.errorContainerAbsolute} pointerEvents="none">
+                <Ionicons name="alert-circle" size={20} color={colors.error} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {success && (
+              <View style={styles.successContainerAbsolute} pointerEvents="none">
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <Text style={styles.successText}>
+                  Magic link sent! Check your email and tap the link to sign in.
+                </Text>
+              </View>
+            )}
 
             {/* Subtitle moved below email input */}
             <Text style={styles.subtitle}>
@@ -219,19 +373,18 @@ export default function Login() {
 
           {/* Spacer */}
           <View style={styles.spacer} />
-
-          {/* Dev Bypass Button */}
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleSkip}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="code-outline" size={18} color={colors.textSecondary} />
-            <Text style={styles.skipButtonText}>Skip for Now (Dev Mode)</Text>
-          </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Backdoor Password Modal */}
+      <BackdoorPasswordModal
+        visible={showPasswordModal}
+        onSubmit={handlePasswordSubmit}
+        onCancel={handlePasswordCancel}
+        loading={passwordLoading}
+        error={passwordError}
+      />
     </SafeAreaView>
   );
 }
@@ -295,6 +448,7 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginTop: spacing.md,
+    position: 'relative',
   },
   inputContainer: {
     marginBottom: spacing.lg,
@@ -322,21 +476,20 @@ const styles = StyleSheet.create({
   usernameWrapper: {
     width: '30%',
     backgroundColor: 'transparent',
-    overflow: 'hidden',
-    flexShrink: 1,
-    height: 52,
-    maxHeight: 52,
     justifyContent: 'center',
   },
   usernameInput: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     color: colors.textPrimary,
-    padding: 0,
     paddingHorizontal: spacing.sm,
     paddingRight: spacing.xs,
-    margin: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 56,
     includeFontPadding: false,
-    lineHeight: undefined,
+    textAlignVertical: 'center',
+    flex: 1,
   },
   atSymbol: {
     ...typography.body,
@@ -353,21 +506,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     minWidth: 0,
-    overflow: 'hidden',
-    flexShrink: 1,
-    height: 52,
-    maxHeight: 52,
     justifyContent: 'center',
   },
   domainInput: {
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
     color: colors.textPrimary,
-    padding: 0,
     paddingHorizontal: spacing.sm,
     paddingLeft: spacing.xs,
-    margin: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 56,
     includeFontPadding: false,
-    lineHeight: undefined,
+    textAlignVertical: 'center',
+    flex: 1,
   },
   submitButton: {
     flexDirection: 'row',
@@ -402,27 +554,17 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
   },
-  skipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  skipButtonText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-    fontWeight: '500',
-  },
-  errorContainer: {
+  errorContainerAbsolute: {
+    position: 'absolute',
+    top: -70,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF2F2',
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    zIndex: 10,
   },
   errorText: {
     ...typography.bodySmall,
@@ -430,13 +572,17 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     flex: 1,
   },
-  successContainer: {
+  successContainerAbsolute: {
+    position: 'absolute',
+    top: -70,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    zIndex: 10,
   },
   successText: {
     ...typography.bodySmall,

@@ -4,12 +4,14 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
+import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateRole } from '../shared/user-validation';
+import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -24,26 +26,32 @@ const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-appro
 const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
+const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
 const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
+const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
 let apiKey: string | null = null;
+let backdoorSecret: string | null = null;
 
 /**
  * Main Lambda handler - routes to appropriate function based on path
  */
 export const handler = async (event: any) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
+  console.log('[handler] ========== LAMBDA INVOCATION START ==========');
+  console.log('[handler] Received event:', JSON.stringify(event, null, 2));
+  console.log('[handler] Event type:', typeof event);
+  console.log('[handler] Event keys:', Object.keys(event || {}));
 
   try {
     let path = event.path || event.rawPath;
     const method = event.httpMethod || event.requestContext?.http?.method;
 
-    console.log(`Original path: ${path}, method: ${method}`);
+    console.log('[handler] Original path:', path, 'method:', method);
 
     // Normalize path - API Gateway with AWS_PROXY does NOT include stage name in path
     // If resources are at /auth/... level, path will be /auth/...
@@ -64,24 +72,47 @@ export const handler = async (event: any) => {
     // Parse body for POST requests
     let body = {};
     if (method === 'POST' && event.body) {
-      body = JSON.parse(event.body);
+      console.log('[handler] Parsing request body, body type:', typeof event.body);
+      try {
+        body = JSON.parse(event.body);
+        console.log('[handler] Parsed body:', JSON.stringify(body));
+      } catch (parseError) {
+        console.error('[handler] Error parsing body:', parseError);
+        console.error('[handler] Body content:', event.body);
+        return createResponse(400, { error: 'Invalid JSON in request body' });
+      }
     }
 
     // Route to appropriate handler
+    console.log('[handler] Routing to handler, path:', path, 'method:', method);
     if (path === '/v1/auth/request-magic-link' && method === 'POST') {
-      return await handleRequestMagicLink(body);
+      console.log('[handler] Routing to handleRequestMagicLink');
+      const response = await handleRequestMagicLink(body, event);
+      console.log('[handler] handleRequestMagicLink returned, status:', response.statusCode);
+      return response;
     } else if (path === '/v1/auth/send-to-mobile' && method === 'POST') {
       return await handleSendToMobile(body, event);
     } else if (path === '/v1/auth/verify-magic-link' && method === 'POST') {
       return await handleVerifyMagicLink(body, event);
     } else if (path === '/v1/auth/refresh-token' && method === 'POST') {
       return await handleRefreshToken(body, event);
+    } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
+      return await handleAuthenticateBackdoor(body, event);
     } else {
       console.log(`No route matched. Path: ${path}, Method: ${method}`);
       return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
     }
   } catch (error) {
-    console.error('Unhandled error:', error);
+    console.error('[handler] ========== UNHANDLED ERROR IN MAIN HANDLER ==========');
+    console.error('[handler] Error type:', typeof error);
+    console.error('[handler] Error:', error);
+    console.error('[handler] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handler] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handler] Error name:', error.name);
+      console.error('[handler] Error code:', (error as any).code);
+    }
+    console.error('[handler] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return createResponse(500, { 
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error'
@@ -90,70 +121,239 @@ export const handler = async (event: any) => {
 };
 
 /**
+ * Get IP address from event
+ */
+function getIpAddress(event: any): string | undefined {
+  return event.requestContext?.identity?.sourceIp || 
+         event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
+         event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim();
+}
+
+/**
  * Handle email magic link request (self-service registration)
  */
-async function handleRequestMagicLink(body: any) {
-  const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
+async function handleRequestMagicLink(body: any, event?: any) {
+  console.log('[handleRequestMagicLink] Starting magic link request');
+  console.log('[handleRequestMagicLink] Body:', JSON.stringify(body));
+  console.log('[handleRequestMagicLink] Event keys:', Object.keys(event || {}));
+  
+  try {
+    const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
+    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType);
 
-  // Validate input
-  if (!email || !isValidEmail(email)) {
-    return createResponse(400, { error: 'Valid email is required' });
-  }
+    // Validate input
+    if (!email || !isValidEmail(email)) {
+      console.log('[handleRequestMagicLink] Invalid email format:', email);
+      // Log failed login attempt (don't let failures break the flow)
+      try {
+        const ipAddress = event ? getIpAddress(event) : undefined;
+        console.log('[handleRequestMagicLink] Logging failed login attempt, IP:', ipAddress);
+        await logActivity('failed_login', 'unknown', email, {
+          reason: 'Invalid email format',
+          sourceFlow: 'email'
+        }, undefined, ipAddress);
+        console.log('[handleRequestMagicLink] Failed login activity logged successfully');
+      } catch (activityError) {
+        console.error('[handleRequestMagicLink] Failed to log activity:', activityError);
+        console.error('[handleRequestMagicLink] Activity error stack:', activityError instanceof Error ? activityError.stack : 'No stack');
+      }
+      
+      return createResponse(400, { error: 'Valid email is required' });
+    }
 
-  // Validate linkType
-  if (linkType !== 'direct' && linkType !== 'universal') {
-    return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
-  }
+    // Validate linkType
+    if (linkType !== 'direct' && linkType !== 'universal') {
+      console.log('[handleRequestMagicLink] Invalid linkType:', linkType);
+      return createResponse(400, { error: 'Invalid linkType. Must be "direct" or "universal"' });
+    }
 
-  const emailLower = email.toLowerCase();
+    const emailLower = email.toLowerCase();
+    console.log('[handleRequestMagicLink] Normalized email:', emailLower);
 
-  // Check if email is approved
-  const isApproved = await isEmailApproved(emailLower);
-  if (!isApproved) {
-    return createResponse(403, { 
-      error: 'Email not approved',
-      message: 'This email is not approved for access. Please contact your administrator.'
+    // Check if email is approved
+    console.log('[handleRequestMagicLink] Checking if email is approved...');
+    let isApproved = false;
+    try {
+      isApproved = await isEmailApproved(emailLower);
+      console.log('[handleRequestMagicLink] Email approval check result:', isApproved);
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error checking email approval:', error);
+      console.error('[handleRequestMagicLink] Approval check error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] Approval check error stack:', error instanceof Error ? error.stack : 'No stack');
+      // Fail closed - if we can't check approval, don't allow access
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: 'Unable to verify email approval. Please try again later.'
+      });
+    }
+
+    if (!isApproved) {
+      console.log('[handleRequestMagicLink] Email not approved:', emailLower);
+      // Log failed login attempt (don't let failures break the flow)
+      try {
+        const ipAddress = event ? getIpAddress(event) : undefined;
+        console.log('[handleRequestMagicLink] Logging failed login (not approved), IP:', ipAddress);
+        await logActivity('failed_login', 'unknown', emailLower, {
+          reason: 'Email not approved',
+          sourceFlow: 'email'
+        }, undefined, ipAddress);
+        console.log('[handleRequestMagicLink] Failed login activity logged successfully');
+      } catch (activityError) {
+        console.error('[handleRequestMagicLink] Failed to log activity:', activityError);
+        console.error('[handleRequestMagicLink] Activity error stack:', activityError instanceof Error ? activityError.stack : 'No stack');
+      }
+      
+      return createResponse(403, { 
+        error: 'Email not approved',
+        message: 'This email is not approved for access. Please contact your administrator.'
+      });
+    }
+
+    // Generate magic link token
+    // Note: Don't create user profile here - only create after successful authentication
+    console.log('[handleRequestMagicLink] Generating magic link token...');
+    const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
+    console.log('[handleRequestMagicLink] Generated tokenId:', tokenId);
+    
+    // Generate temporary userId for token (will be replaced with actual userId during verification)
+    console.log('[handleRequestMagicLink] Getting userId for email...');
+    let tempUserId: string;
+    try {
+      tempUserId = await getUserIdForEmail(emailLower);
+      console.log('[handleRequestMagicLink] Retrieved tempUserId:', tempUserId);
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error getting userId for email:', error);
+      console.error('[handleRequestMagicLink] getUserIdForEmail error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] getUserIdForEmail error stack:', error instanceof Error ? error.stack : 'No stack');
+      // Generate a temporary userId if lookup fails
+      tempUserId = `usr_${randomBytes(8).toString('hex')}`;
+      console.log('[handleRequestMagicLink] Generated fallback tempUserId:', tempUserId);
+    }
+    
+    if (!tempUserId) {
+      console.error('[handleRequestMagicLink] CRITICAL: tempUserId is undefined!');
+      throw new Error('tempUserId is undefined after getUserIdForEmail');
+    }
+    
+    const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
+    console.log('[handleRequestMagicLink] Token expiresAt:', expiresAt);
+
+    // Store token in DynamoDB
+    console.log('[handleRequestMagicLink] Storing token in DynamoDB, table:', TOKENS_TABLE);
+    try {
+      const tokenItem = {
+        tokenId,
+        tokenType: 'magic_link',
+        email: emailLower,
+        userId: tempUserId,
+        deviceId: null,
+        createdAt: Math.floor(Date.now() / 1000),
+        expiresAt,
+        used: false,
+        usedAt: null,
+        sessionJWT: null,
+        metadata: {
+          sourceFlow: 'email'
+        }
+      };
+      console.log('[handleRequestMagicLink] Token item to store:', JSON.stringify(tokenItem));
+      
+      await docClient.send(new PutCommand({
+        TableName: TOKENS_TABLE,
+        Item: tokenItem
+      }));
+      console.log('[handleRequestMagicLink] Token stored successfully in DynamoDB');
+    } catch (error) {
+      console.error('[handleRequestMagicLink] Error storing token in DynamoDB:', error);
+      console.error('[handleRequestMagicLink] DynamoDB error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] DynamoDB error stack:', error instanceof Error ? error.stack : 'No stack');
+      if (error instanceof Error) {
+        console.error('[handleRequestMagicLink] DynamoDB error name:', error.name);
+        console.error('[handleRequestMagicLink] DynamoDB error code:', (error as any).code);
+      }
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: 'Failed to create magic link. Please try again later.'
+      });
+    }
+
+    // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
+    // The redirect page will convert to bigbuys:// scheme for the app
+    console.log('[handleRequestMagicLink] Building redirect URL...');
+    const magicLink = buildRedirectUrl(tokenId, null);
+    console.log('[handleRequestMagicLink] Generated magic link:', magicLink);
+    
+    console.log('[handleRequestMagicLink] Sending magic link email...');
+    console.log('[handleRequestMagicLink] Email details:', { 
+      to: emailLower, 
+      from: FROM_EMAIL, 
+      fromName: FROM_NAME,
+      magicLink: magicLink.substring(0, 100) + '...' 
+    });
+    try {
+      await sendMagicLinkEmail(emailLower, magicLink);
+      console.log('[handleRequestMagicLink] Magic link email sent successfully');
+    } catch (error) {
+      console.error('[handleRequestMagicLink] ========== EMAIL SEND ERROR ==========');
+      console.error('[handleRequestMagicLink] Error sending magic link email:', error);
+      console.error('[handleRequestMagicLink] Error type:', typeof error);
+      console.error('[handleRequestMagicLink] Error details:', error instanceof Error ? error.message : String(error));
+      console.error('[handleRequestMagicLink] Error stack:', error instanceof Error ? error.stack : 'No stack');
+      if (error instanceof Error) {
+        console.error('[handleRequestMagicLink] Error name:', error.name);
+        console.error('[handleRequestMagicLink] Error code:', (error as any).code);
+        console.error('[handleRequestMagicLink] Error statusCode:', (error as any).statusCode);
+        console.error('[handleRequestMagicLink] Error requestId:', (error as any).requestId);
+      }
+      console.error('[handleRequestMagicLink] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      console.error('[handleRequestMagicLink] ========================================');
+      
+      // Provide more specific error message
+      let errorMessage = 'Failed to send magic link email. Please try again later.';
+      if (error instanceof Error) {
+        const errorCode = (error as any).code;
+        const errorName = error.name;
+        if (errorCode === 'MessageRejected' || errorName === 'MessageRejected') {
+          errorMessage = 'Email address is not verified or rejected. Please contact support.';
+        } else if (errorCode === 'MailFromDomainNotVerified' || errorName === 'MailFromDomainNotVerified') {
+          errorMessage = 'Email service configuration error. Please contact support.';
+        } else if (error.message) {
+          errorMessage = `Email send failed: ${error.message}`;
+        }
+      }
+      
+      return createResponse(500, { 
+        error: 'Internal server error',
+        message: errorMessage,
+        debug: process.env.NODE_ENV === 'development' ? {
+          errorName: error instanceof Error ? error.name : undefined,
+          errorCode: (error as any)?.code,
+          errorMessage: error instanceof Error ? error.message : String(error)
+        } : undefined
+      });
+    }
+
+    console.log('[handleRequestMagicLink] Magic link request completed successfully');
+    return createResponse(200, {
+      success: true,
+      message: 'Magic link sent to your email',
+      expiresIn: 900
+    });
+  } catch (error: any) {
+    console.error('[handleRequestMagicLink] UNEXPECTED ERROR:', error);
+    console.error('[handleRequestMagicLink] Error type:', typeof error);
+    console.error('[handleRequestMagicLink] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleRequestMagicLink] Error stack:', error?.stack);
+    if (error instanceof Error) {
+      console.error('[handleRequestMagicLink] Error name:', error.name);
+      console.error('[handleRequestMagicLink] Error code:', (error as any).code);
+    }
+    console.error('[handleRequestMagicLink] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'An unexpected error occurred. Please try again later.'
     });
   }
-
-  // Generate magic link token
-  // Note: Don't create user profile here - only create after successful authentication
-  const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
-  // Generate temporary userId for token (will be replaced with actual userId during verification)
-  const tempUserId = await getUserIdForEmail(emailLower);
-  const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
-
-  // Store token in DynamoDB
-  await docClient.send(new PutCommand({
-    TableName: TOKENS_TABLE,
-    Item: {
-      tokenId,
-      tokenType: 'magic_link',
-      email: emailLower,
-      userId: tempUserId,
-      deviceId: null,
-      createdAt: Math.floor(Date.now() / 1000),
-      expiresAt,
-      used: false,
-      usedAt: null,
-      sessionJWT: null,
-      metadata: {
-        sourceFlow: 'email'
-      }
-    }
-  }));
-
-  // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
-  // The redirect page will convert to bigbuys:// scheme for the app
-  const magicLink = buildRedirectUrl(tokenId, null);
-  
-  await sendMagicLinkEmail(emailLower, magicLink);
-
-  return createResponse(200, {
-    success: true,
-    message: 'Magic link sent to your email',
-    expiresIn: 900
-  });
 }
 
 /**
@@ -298,6 +498,13 @@ async function handleVerifyMagicLink(body: any, event: any) {
   }));
 
   if (!result.Item) {
+    // Log failed login attempt
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', 'unknown', {
+      reason: 'Invalid token',
+      sourceFlow: 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(404, { error: 'Invalid or expired token' });
   }
 
@@ -305,16 +512,40 @@ async function handleVerifyMagicLink(body: any, event: any) {
 
   // Validate token
   if (tokenData.tokenType !== 'magic_link') {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Invalid token type',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
     return createResponse(400, { error: 'Invalid token type' });
   }
 
   if (tokenData.used) {
-    return createResponse(400, { error: 'Token already used' });
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Token already used',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
+    return createResponse(400, { 
+      error: 'Token already used',
+      email: tokenData.email // Include email in error response
+    });
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (now > tokenData.expiresAt) {
-    return createResponse(400, { error: 'Token expired' });
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'Token expired',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+    }, deviceId, ipAddress);
+    
+    return createResponse(400, { 
+      error: 'Token expired',
+      email: tokenData.email // Include email in error response
+    });
   }
 
   // Mark token as used
@@ -328,10 +559,66 @@ async function handleVerifyMagicLink(body: any, event: any) {
 
   // Lazy provision user profile - only create when they actually authenticate
   // This is the first time we're certain the user has successfully authenticated
-  const user = await getOrCreateUserProfile(tokenData.email);
+  // SECURITY: This will now block registration if user is not actively whitelisted
+  let user;
+  try {
+    user = await getOrCreateUserProfile(tokenData.email, tokenData.metadata?.sourceFlow || 'email');
+  } catch (error) {
+    // Handle whitelist validation errors - block registration
+    if (error instanceof Error && (
+      error.message.includes('not approved') || 
+      error.message.includes('not on the whitelist') ||
+      error.message.includes('expired') ||
+      error.message.includes('Unable to verify email approval')
+    )) {
+      const ipAddress = getIpAddress(event);
+      await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+        reason: 'Registration blocked - not whitelisted',
+        sourceFlow: tokenData.metadata?.sourceFlow || 'unknown',
+        errorMessage: error.message
+      }, deviceId, ipAddress);
+      
+      return createResponse(403, { 
+        error: 'Registration not allowed',
+        message: error.message || 'This email is not approved for access. Please contact your administrator.'
+      });
+    }
+    // Re-throw other errors (shouldn't happen, but be safe)
+    throw error;
+  }
+
+  // Check if user is deactivated
+  const isDeactivated = await checkUserDeactivated(user.userId);
+  if (isDeactivated) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, user.email, {
+      reason: 'User is deactivated',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account deactivated',
+      message: 'Your account has been deactivated. Please contact your administrator.'
+    });
+  }
+
+  // Check user expiration
+  const expirationCheck = await validateUserExpiration(user.userId);
+  if (expirationCheck.expired) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, user.email, {
+      reason: expirationCheck.reason || 'Account expired',
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account expired',
+      message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+    });
+  }
 
   // Generate session JWT
-  const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
+  const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
   const sessionToken = await generateSessionJWT({
     userId: user.userId,
     email: user.email,
@@ -363,6 +650,20 @@ async function handleVerifyMagicLink(body: any, event: any) {
     }
   }));
 
+  // Log successful login
+  const ipAddress = getIpAddress(event);
+  await logActivityAndUpdateLastActive(
+    'login',
+    user.userId,
+    user.email,
+    {
+      sourceFlow: tokenData.metadata?.sourceFlow || 'email',
+      app: tokenData.metadata?.app || null
+    },
+    deviceId,
+    ipAddress
+  );
+
   return createResponse(200, {
     success: true,
     token: sessionToken,
@@ -393,9 +694,37 @@ async function handleRefreshToken(body: any, event: any) {
 
     const now = Math.floor(Date.now() / 1000);
     
+    // Check if user is deactivated
+    const isDeactivated = await checkUserDeactivated(decoded.userId);
+    if (isDeactivated) {
+      return createResponse(403, { 
+        error: 'Account deactivated',
+        message: 'Your account has been deactivated. Please contact your administrator.'
+      });
+    }
+
+    // Check user expiration
+    const expirationCheck = await validateUserExpiration(decoded.userId, decoded.exp);
+    if (expirationCheck.expired) {
+      return createResponse(403, { 
+        error: 'Account expired',
+        message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+      });
+    }
+    
     // Check if token is close to expiry (within 7 days)
     const timeUntilExpiry = decoded.exp - now;
     if (timeUntilExpiry > 7 * 24 * 60 * 60) {
+      // Update last active time even if not refreshing token
+      await logActivityAndUpdateLastActive(
+        'token_refresh',
+        decoded.userId,
+        decoded.email,
+        { action: 'no_refresh_needed' },
+        decoded.deviceId,
+        getIpAddress(event)
+      );
+      
       return createResponse(200, {
         success: true,
         message: 'Token still valid, no refresh needed',
@@ -410,14 +739,15 @@ async function handleRefreshToken(body: any, event: any) {
     // Validate role from token or use default
     const role = validateRole(userProfile?.role || decoded.role) || 'basic';
 
-    // Generate new session JWT
-    const sessionExpiresAt = now + (30 * 24 * 60 * 60); // 30 days
+    // Generate new session JWT, preserving isBackdoor flag if present
+    const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
     const newToken = await generateSessionJWT({
       userId: decoded.userId,
       email: decoded.email,
       role: role,
       deviceId: decoded.deviceId,
-      expiresAt: sessionExpiresAt
+      expiresAt: sessionExpiresAt,
+      isBackdoor: decoded.isBackdoor || false
     });
 
     // Update session in DynamoDB
@@ -442,6 +772,16 @@ async function handleRefreshToken(body: any, event: any) {
       }
     }));
 
+    // Update last active time
+    await logActivityAndUpdateLastActive(
+      'token_refresh',
+      decoded.userId,
+      getActivityLogEmail(decoded.email, decoded.isBackdoor),
+      { action: 'token_refreshed' },
+      decoded.deviceId,
+      getIpAddress(event)
+    );
+
     return createResponse(200, {
       success: true,
       token: newToken,
@@ -455,37 +795,265 @@ async function handleRefreshToken(body: any, event: any) {
 }
 
 /**
+ * Handle backdoor authentication (for development/testing)
+ * Authenticates a specific email without requiring a magic link
+ * Uses SHA-256 hash of username to verify access
+ * Supports two-step validation: username hash first, then password hash
+ */
+async function handleAuthenticateBackdoor(body: any, event: any) {
+  const { email, hash, deviceId, passwordHash } = body;
+  const BACKDOOR_HASH = '41c16a8e3648d17965306295b3c6ae049aa6da5be6d609c5b5de2f6a044925d5';
+  const BACKDOOR_PASSWORD_HASH = '29338cbd66e46f9b681b02102c10f97da48b75edfb2141c476935e28ff1eff28';
+  const BACKDOOR_USER_DISPLAY = 'backdoor user';
+
+  if (!email) {
+    return createResponse(400, { error: 'Email is required' });
+  }
+
+  if (!hash) {
+    return createResponse(400, { error: 'Hash is required' });
+  }
+
+  if (!deviceId) {
+    return createResponse(400, { error: 'Device ID is required' });
+  }
+
+  const emailLower = email.toLowerCase();
+  
+  // Check if email domain is @backdoor.net
+  if (!emailLower.endsWith('@backdoor.net')) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor email domain',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid backdoor email'
+    });
+  }
+
+  // Compare received hash to hardcoded hash (no computation on server)
+  if (hash.toLowerCase() !== BACKDOOR_HASH.toLowerCase()) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor hash',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid credentials'
+    });
+  }
+
+  // If passwordHash is not provided, this is step 1 (username validation only)
+  // Return success with requiresPassword flag, but don't issue JWT yet
+  if (!passwordHash) {
+    console.log('[handleAuthenticateBackdoor] Username validated, password required');
+    return createResponse(200, {
+      success: true,
+      requiresPassword: true,
+      message: 'Password required'
+    });
+  }
+
+  // Step 2: Validate password hash
+  if (passwordHash.toLowerCase() !== BACKDOOR_PASSWORD_HASH.toLowerCase()) {
+    const ipAddress = getIpAddress(event);
+    // Use first 8 chars of hash for display name
+    const displayName = hash.substring(0, 8);
+    await logActivity('failed_login', 'unknown', displayName, {
+      reason: 'Invalid backdoor password hash',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Access denied',
+      message: 'Invalid password'
+    });
+  }
+
+  // Both username and password are valid - proceed with authentication
+  // Use first 8 chars of hash as display name
+  const displayName = hash.substring(0, 8);
+  console.log('[handleAuthenticateBackdoor] Authenticating backdoor user');
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // Get or create user profile
+  let user;
+  try {
+    console.log('[handleAuthenticateBackdoor] Getting or creating user profile for:', emailLower);
+    user = await getOrCreateUserProfile(emailLower, 'backdoor');
+    console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
+  } catch (error) {
+    console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
+    console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
+    console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[handleAuthenticateBackdoor] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[handleAuthenticateBackdoor] Error name:', error.name);
+      console.error('[handleAuthenticateBackdoor] Error code:', (error as any).code);
+    }
+    
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', BACKDOOR_USER_DISPLAY, {
+      reason: 'Failed to get/create user profile',
+      sourceFlow: 'backdoor',
+      errorMessage: error instanceof Error ? error.message : String(error)
+    }, deviceId, ipAddress);
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to authenticate. Please try again.'
+    });
+  }
+
+  // Check if user is deactivated
+  const isDeactivated = await checkUserDeactivated(user.userId);
+  if (isDeactivated) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+      reason: 'User is deactivated',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account deactivated',
+      message: 'Your account has been deactivated. Please contact your administrator.'
+    });
+  }
+
+  // Check user expiration
+  const expirationCheck = await validateUserExpiration(user.userId);
+  if (expirationCheck.expired) {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', user.userId, BACKDOOR_USER_DISPLAY, {
+      reason: expirationCheck.reason || 'Account expired',
+      sourceFlow: 'backdoor'
+    }, deviceId, ipAddress);
+    
+    return createResponse(403, { 
+      error: 'Account expired',
+      message: expirationCheck.reason || 'Your account has expired. Please contact your administrator.'
+    });
+  }
+
+  // Generate session JWT with isBackdoor flag
+  const sessionExpiresAt = now + (14 * 24 * 60 * 60); // 14 days
+  const sessionToken = await generateSessionJWT({
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
+    deviceId,
+    expiresAt: sessionExpiresAt,
+    isBackdoor: true // Mark as backdoor user
+  });
+
+  // Store session in DynamoDB
+  const sessionId = `ses_${randomBytes(16).toString('hex')}`;
+  await docClient.send(new PutCommand({
+    TableName: TOKENS_TABLE,
+    Item: {
+      tokenId: sessionId,
+      tokenType: 'session',
+      email: user.email,
+      userId: user.userId,
+      deviceId,
+      createdAt: now,
+      expiresAt: sessionExpiresAt,
+      used: true,
+      usedAt: now,
+      sessionJWT: sessionToken,
+      metadata: {
+        sourceFlow: 'backdoor',
+        lastUsedAt: now
+      }
+    }
+  }));
+
+  // Log successful login (use "backdoor user" instead of email)
+  const ipAddress = getIpAddress(event);
+  await logActivityAndUpdateLastActive(
+    'login',
+    user.userId,
+    BACKDOOR_USER_DISPLAY,
+    {
+      sourceFlow: 'backdoor',
+      app: null
+    },
+    deviceId,
+    ipAddress
+  );
+
+  console.log('[handleAuthenticateBackdoor] Backdoor authentication successful');
+
+  return createResponse(200, {
+    success: true,
+    token: sessionToken,
+    expiresAt: sessionExpiresAt,
+    user: {
+      userId: user.userId,
+      email: user.email,
+      role: user.role
+    }
+  });
+}
+
+/**
  * Check if email is approved for access
  */
 async function isEmailApproved(email: string): Promise<boolean> {
+  console.log('[isEmailApproved] Checking approval for email:', email);
   const emailLower = email.toLowerCase();
 
   // Auto-approve Sigma emails
   if (emailLower.endsWith('@sigmacomputing.com')) {
+    console.log('[isEmailApproved] Email is Sigma domain, auto-approved');
     return true;
   }
 
   // Check approved emails table
+  console.log('[isEmailApproved] Checking approved emails table:', APPROVED_EMAILS_TABLE);
   try {
     const result = await docClient.send(new GetCommand({
       TableName: APPROVED_EMAILS_TABLE,
       Key: { email: emailLower }
     }));
 
+    console.log('[isEmailApproved] DynamoDB query result:', result.Item ? 'Found item' : 'No item found');
+
     if (!result.Item) {
+      console.log('[isEmailApproved] Email not found in approved emails table');
       return false;
     }
 
     // Check if approval has expiration date
-    if (result.Item.expiresAt) {
+    if (result.Item.expirationDate) {
       const now = Math.floor(Date.now() / 1000);
-      return now < result.Item.expiresAt;
+      const isNotExpired = now < result.Item.expirationDate;
+      console.log('[isEmailApproved] Email has expiration date:', result.Item.expirationDate, 'now:', now, 'isNotExpired:', isNotExpired);
+      return isNotExpired;
     }
 
+    console.log('[isEmailApproved] Email approved (no expiration)');
     return true;
   } catch (error) {
-    console.error('Error checking email approval:', error);
-    return false;
+    console.error('[isEmailApproved] Error checking email approval:', error);
+    console.error('[isEmailApproved] Error details:', error instanceof Error ? error.message : String(error));
+    console.error('[isEmailApproved] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[isEmailApproved] Error name:', error.name);
+      console.error('[isEmailApproved] Error code:', (error as any).code);
+    }
+    // Re-throw to let caller handle it
+    throw error;
   }
 }
 
@@ -494,7 +1062,7 @@ async function isEmailApproved(email: string): Promise<boolean> {
  * Returns user object with userId, email, and role
  * Only call this after successful authentication (token verification)
  */
-async function getOrCreateUserProfile(email: string): Promise<{ userId: string; email: string; role: string }> {
+async function getOrCreateUserProfile(email: string, registrationMethod: string = 'email'): Promise<{ userId: string; email: string; role: string }> {
   const emailLower = email.toLowerCase();
   
   // First, try to find existing user by email using email-index GSI
@@ -510,6 +1078,69 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
     // User exists, validate and return their profile
     const user = queryResult.Items[0];
     const role = validateRole(user.role) || 'basic';
+    
+    // Update registration method if not set
+    if (!user.registrationMethod) {
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: user.userId },
+        UpdateExpression: 'SET registrationMethod = :method',
+        ExpressionAttributeValues: { ':method': registrationMethod }
+      }));
+    }
+    
+    // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
+    // Check whitelist if not a Sigma email or backdoor email
+    if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+      try {
+        const whitelistResult = await docClient.send(new GetCommand({
+          TableName: APPROVED_EMAILS_TABLE,
+          Key: { email: emailLower }
+        }));
+
+        if (whitelistResult.Item && whitelistResult.Item.expirationDate) {
+          const whitelistExpiration = whitelistResult.Item.expirationDate;
+          const now = Math.floor(Date.now() / 1000);
+          
+          // Check if whitelist entry has expired
+          if (now >= whitelistExpiration) {
+            throw new Error('Whitelist entry has expired');
+          }
+          
+          // Update user expiration date if:
+          // 1. User doesn't have an expiration date, OR
+          // 2. Whitelist expiration is different from user expiration
+          if (!user.expirationDate || user.expirationDate !== whitelistExpiration) {
+            await docClient.send(new UpdateCommand({
+              TableName: USERS_TABLE,
+              Key: { userId: user.userId },
+              UpdateExpression: 'SET expirationDate = :expirationDate, updatedAt = :now',
+              ExpressionAttributeValues: {
+                ':expirationDate': whitelistExpiration,
+                ':now': now
+              }
+            }));
+            console.log(`Synced expiration date for existing user ${user.userId} from whitelist: ${whitelistExpiration}`);
+          }
+        } else if (whitelistResult.Item && !whitelistResult.Item.expirationDate && user.expirationDate) {
+          // If whitelist has no expiration but user has one, remove user expiration
+          const now = Math.floor(Date.now() / 1000);
+          await docClient.send(new UpdateCommand({
+            TableName: USERS_TABLE,
+            Key: { userId: user.userId },
+            UpdateExpression: 'SET updatedAt = :now REMOVE expirationDate',
+            ExpressionAttributeValues: {
+              ':now': now
+            }
+          }));
+          console.log(`Removed expiration date for existing user ${user.userId} (whitelist has no expiration)`);
+        }
+      } catch (error) {
+        console.error('Error syncing expiration date from whitelist:', error);
+        // Continue even if sync fails - don't block login
+      }
+    }
+    
     return {
       userId: user.userId,
       email: user.email,
@@ -518,70 +1149,95 @@ async function getOrCreateUserProfile(email: string): Promise<{ userId: string; 
   }
 
   // User doesn't exist - lazy provisioning: create new user profile
+  // SECURITY: For non-Sigma emails, registration is ONLY allowed if actively whitelisted
+  // Check whitelist for role and expiration
+  let userRole = 'basic';
+  let expirationDate: number | undefined = undefined;
+  
+  // Check whitelist if not a Sigma email or backdoor email (backdoor bypasses whitelist)
+  if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+    try {
+      const whitelistResult = await docClient.send(new GetCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower }
+      }));
+
+      // SECURITY FIX: Block registration if not actively whitelisted
+      if (!whitelistResult.Item) {
+        console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} is not whitelisted`);
+        throw new Error('Email not approved for registration. This email is not on the whitelist.');
+      }
+
+      // Check if whitelist entry has expired
+      if (whitelistResult.Item.expirationDate) {
+        const now = Math.floor(Date.now() / 1000);
+        if (now >= whitelistResult.Item.expirationDate) {
+          console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} whitelist entry has expired`);
+          throw new Error('Whitelist entry has expired. This email is no longer approved for access.');
+        }
+        // Set user expiration to whitelist expiration
+        expirationDate = whitelistResult.Item.expirationDate;
+      }
+      
+      // Use role from whitelist if specified
+      if (whitelistResult.Item.role) {
+        userRole = validateRole(whitelistResult.Item.role) || 'basic';
+      }
+      
+      // Mark user as registered in whitelist (only set if not already set to preserve first registration time)
+      const now = Math.floor(Date.now() / 1000);
+      await docClient.send(new UpdateCommand({
+        TableName: APPROVED_EMAILS_TABLE,
+        Key: { email: emailLower },
+        UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
+        ExpressionAttributeValues: { ':now': now }
+      }));
+    } catch (error) {
+      // Re-throw whitelist validation errors to block registration
+      if (error instanceof Error && (
+        error.message.includes('not approved') || 
+        error.message.includes('expired')
+      )) {
+        console.error(`[getOrCreateUserProfile] Whitelist validation failed: ${error.message}`);
+        throw error;
+      }
+      // For other errors (e.g., DynamoDB errors), log and re-throw to be safe
+      console.error('[getOrCreateUserProfile] Error checking whitelist:', error);
+      throw new Error('Unable to verify email approval. Registration blocked for security.');
+    }
+  }
+
   const userId = `usr_${randomBytes(8).toString('hex')}`;
   const now = Math.floor(Date.now() / 1000);
-  
-  // Default role: "basic" for all users
-  // Admins can be promoted manually in DynamoDB if needed
-  const defaultRole = 'basic';
+
+  const userItem: any = {
+    userId,
+    email: emailLower,
+    role: userRole,
+    registrationMethod,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  if (expirationDate) {
+    userItem.expirationDate = expirationDate;
+  }
 
   await docClient.send(new PutCommand({
     TableName: USERS_TABLE,
-    Item: {
-      userId,
-      email: emailLower,
-      role: defaultRole,
-      createdAt: now,
-      updatedAt: now
-    }
+    Item: userItem
   }));
 
-  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${defaultRole}`);
+  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${userRole}${expirationDate ? `, expires: ${expirationDate}` : ''}`);
 
   return {
     userId,
     email: emailLower,
-    role: defaultRole
+    role: userRole
   };
 }
 
-/**
- * Validate role - only allow "basic" and "admin"
- */
-function validateRole(role: string | undefined): string | null {
-  if (!role) {
-    return null;
-  }
-  // Only allow "basic" and "admin" roles
-  if (role === 'basic' || role === 'admin') {
-    return role;
-  }
-  // Invalid role, return null to use default
-  console.warn(`Invalid role "${role}" detected, defaulting to "basic"`);
-  return null;
-}
-
-/**
- * Get user profile by userId
- */
-async function getUserProfile(userId: string): Promise<{ userId: string; email: string; role: string } | null> {
-  const result = await docClient.send(new GetCommand({
-    TableName: USERS_TABLE,
-    Key: { userId }
-  }));
-
-  if (!result.Item) {
-    return null;
-  }
-
-  const role = validateRole(result.Item.role) || 'basic';
-
-  return {
-    userId: result.Item.userId,
-    email: result.Item.email,
-    role: role
-  };
-}
+// validateRole and getUserProfile are now imported from shared/user-validation
 
 /**
  * Get user ID for email (without creating profile)
@@ -589,21 +1245,44 @@ async function getUserProfile(userId: string): Promise<{ userId: string; email: 
  * Try to find existing userId from tokens, otherwise generate a temporary one
  */
 async function getUserIdForEmail(email: string): Promise<string> {
-  // Query for existing sessions/tokens for this email to get userId
-  const result = await docClient.send(new QueryCommand({
-    TableName: TOKENS_TABLE,
-    IndexName: 'email-index',
-    KeyConditionExpression: 'email = :email',
-    ExpressionAttributeValues: { ':email': email.toLowerCase() },
-    Limit: 1
-  }));
+  console.log('[getUserIdForEmail] Looking up userId for email:', email);
+  console.log('[getUserIdForEmail] Using TOKENS_TABLE:', TOKENS_TABLE);
+  
+  try {
+    // Query for existing sessions/tokens for this email to get userId
+    console.log('[getUserIdForEmail] Querying DynamoDB with email-index...');
+    const result = await docClient.send(new QueryCommand({
+      TableName: TOKENS_TABLE,
+      IndexName: 'email-index',
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: { ':email': email.toLowerCase() },
+      Limit: 1
+    }));
 
-  if (result.Items && result.Items.length > 0) {
-    return result.Items[0].userId;
+    console.log('[getUserIdForEmail] Query result items count:', result.Items?.length || 0);
+
+    if (result.Items && result.Items.length > 0) {
+      const userId = result.Items[0].userId;
+      console.log('[getUserIdForEmail] Found existing userId:', userId);
+      return userId;
+    }
+    
+    console.log('[getUserIdForEmail] No existing tokens found, will generate new userId');
+  } catch (error) {
+    console.error('[getUserIdForEmail] Error querying for userId by email:', error);
+    console.error('[getUserIdForEmail] Error details:', error instanceof Error ? error.message : String(error));
+    console.error('[getUserIdForEmail] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[getUserIdForEmail] Error name:', error.name);
+      console.error('[getUserIdForEmail] Error code:', (error as any).code);
+    }
+    // Fall through to generate new userId
   }
 
   // No existing tokens - generate temporary userId (will be replaced during verification)
-  return `usr_${randomBytes(8).toString('hex')}`;
+  const newUserId = `usr_${randomBytes(8).toString('hex')}`;
+  console.log('[getUserIdForEmail] Generated new temporary userId:', newUserId);
+  return newUserId;
 }
 
 /**
@@ -640,27 +1319,36 @@ async function generateSessionJWT(payload: {
   role: string;
   deviceId: string;
   expiresAt: number;
+  isBackdoor?: boolean;
 }): Promise<string> {
   const secret = await getJWTSecret();
   
-  return jwt.sign(
-    {
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role,
-      deviceId: payload.deviceId,
-      iat: Math.floor(Date.now() / 1000),
-      exp: payload.expiresAt
-    },
-    secret,
-    { algorithm: 'HS256' }
-  );
+  const jwtPayload: any = {
+    userId: payload.userId,
+    email: payload.email,
+    role: payload.role,
+    deviceId: payload.deviceId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: payload.expiresAt
+  };
+  
+  // Include isBackdoor flag if present
+  if (payload.isBackdoor) {
+    jwtPayload.isBackdoor = true;
+  }
+  
+  return jwt.sign(jwtPayload, secret, { algorithm: 'HS256' });
 }
 
 /**
  * Send magic link via email
  */
 async function sendMagicLinkEmail(email: string, magicLink: string): Promise<void> {
+  console.log('[sendMagicLinkEmail] Starting email send...');
+  console.log('[sendMagicLinkEmail] Email:', email);
+  console.log('[sendMagicLinkEmail] FROM_EMAIL:', FROM_EMAIL);
+  console.log('[sendMagicLinkEmail] FROM_NAME:', FROM_NAME);
+  
   const emailBody = `
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -694,19 +1382,46 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
     ? `"${FROM_NAME}" <${FROM_EMAIL}>` 
     : FROM_EMAIL;
 
-  await sesClient.send(new SendEmailCommand({
-    Source: fromAddress,
-    Destination: { ToAddresses: [email] },
-    Message: {
-      Subject: { Data: 'Sign in to Big Buys Mobile' },
-      Body: {
-        Html: { Data: emailBody },
-        Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
-      }
-    }
-  }));
+  console.log('[sendMagicLinkEmail] From address:', fromAddress);
+  console.log('[sendMagicLinkEmail] To address:', email);
+  console.log('[sendMagicLinkEmail] Magic link length:', magicLink.length);
 
-  console.log(`Magic link email sent to ${email}`);
+  try {
+    const command = new SendEmailCommand({
+      Source: fromAddress,
+      Destination: { ToAddresses: [email] },
+      Message: {
+        Subject: { Data: 'Sign in to Big Buys Mobile' },
+        Body: {
+          Html: { Data: emailBody },
+          Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
+        }
+      }
+    });
+    
+    console.log('[sendMagicLinkEmail] Sending SES command...');
+    const result = await sesClient.send(command);
+    console.log('[sendMagicLinkEmail] SES send result:', {
+      messageId: result.MessageId,
+      responseMetadata: result.$metadata
+    });
+    console.log(`[sendMagicLinkEmail] Magic link email sent successfully to ${email}, MessageId: ${result.MessageId}`);
+  } catch (error) {
+    console.error('[sendMagicLinkEmail] ========== SES ERROR ==========');
+    console.error('[sendMagicLinkEmail] SES error:', error);
+    console.error('[sendMagicLinkEmail] Error type:', typeof error);
+    console.error('[sendMagicLinkEmail] Error message:', error instanceof Error ? error.message : String(error));
+    console.error('[sendMagicLinkEmail] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    if (error instanceof Error) {
+      console.error('[sendMagicLinkEmail] Error name:', error.name);
+      console.error('[sendMagicLinkEmail] Error code:', (error as any).code);
+      console.error('[sendMagicLinkEmail] Error statusCode:', (error as any).statusCode);
+      console.error('[sendMagicLinkEmail] Error requestId:', (error as any).requestId);
+    }
+    console.error('[sendMagicLinkEmail] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    console.error('[sendMagicLinkEmail] ==============================');
+    throw error; // Re-throw to be caught by caller
+  }
 }
 
 /**
@@ -757,6 +1472,23 @@ async function getApiKey(): Promise<string> {
   // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
   apiKey = (result.SecretString || '').trim();
   return apiKey;
+}
+
+/**
+ * Get backdoor secret from Secrets Manager (cached)
+ */
+async function getBackdoorSecret(): Promise<string> {
+  if (backdoorSecret) {
+    return backdoorSecret;
+  }
+
+  const result = await secretsClient.send(new GetSecretValueCommand({
+    SecretId: BACKDOOR_SECRET_NAME
+  }));
+
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  backdoorSecret = (result.SecretString || '').trim();
+  return backdoorSecret;
 }
 
 /**

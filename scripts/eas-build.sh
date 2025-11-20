@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # EAS Build Script for iOS
-# Usage: ./eas-build.sh [production|development]
+# Usage: ./eas-build.sh [production|development|deploy <ipa-path>]
 
 set -e
 
@@ -14,15 +14,17 @@ NC='\033[0m' # No Color
 
 # Function to print usage
 print_usage() {
-    echo -e "${YELLOW}Usage:${NC} ./eas-build.sh [production|development]"
+    echo -e "${YELLOW}Usage:${NC} ./eas-build.sh [production|development|deploy <ipa-path>]"
     echo ""
     echo "Arguments:"
-    echo "  production   - Build production version and submit to TestFlight"
-    echo "  development  - Build development version (no submission)"
+    echo "  production          - Build production version and submit to TestFlight"
+    echo "  development         - Build development version (no submission)"
+    echo "  deploy <ipa-path>   - Submit existing IPA file to TestFlight"
     echo ""
-    echo "Example:"
+    echo "Examples:"
     echo "  ./eas-build.sh production"
     echo "  ./eas-build.sh development"
+    echo "  ./eas-build.sh deploy ./build-1234567890.ipa"
     exit 1
 }
 
@@ -44,6 +46,91 @@ show_progress() {
     done
 }
 
+# Function to find IPA file
+find_ipa_file() {
+    local project_root=$1
+    local log_file=$2
+    local ipa_path=""
+    
+    # First, try to parse from build log output
+    if [ -f "$log_file" ]; then
+        # Look for "You can find the build artifacts in" pattern
+        ipa_path=$(grep -i "You can find the build artifacts in" "$log_file" | tail -1 | sed -E 's/.*You can find the build artifacts in[[:space:]]+([^[:space:]]+).*/\1/' | xargs)
+        
+        # Also try "Writing artifacts to" pattern
+        if [ -z "$ipa_path" ]; then
+            ipa_path=$(grep -i "Writing artifacts to" "$log_file" | tail -1 | sed -E 's/.*Writing artifacts to[[:space:]]+([^[:space:]]+).*/\1/' | xargs)
+        fi
+        
+        # Verify the parsed path exists
+        if [ -n "$ipa_path" ] && [ -f "$ipa_path" ]; then
+            echo "$ipa_path"
+            return 0
+        fi
+    fi
+    
+    # Fallback: find most recent IPA in project root
+    cd "$project_root"
+    
+    # Find IPA files and get the most recent one (macOS/BSD compatible)
+    # Try macOS/BSD stat first (stat -f)
+    local ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    
+    # If stat -f doesn't work (Linux), try stat -c instead
+    if [ -z "$ipa_relative" ]; then
+        ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    fi
+    
+    # Convert relative path to absolute path
+    if [ -n "$ipa_relative" ]; then
+        # Remove leading ./ if present
+        ipa_relative="${ipa_relative#./}"
+        ipa_path="$project_root/$ipa_relative"
+    fi
+    
+    if [ -n "$ipa_path" ] && [ -f "$ipa_path" ]; then
+        echo "$ipa_path"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to submit IPA to TestFlight
+submit_ipa() {
+    local ipa_path=$1
+    local log_file=$2
+    
+    log "Submitting to TestFlight..."
+    echo -e "${YELLOW}Submitting to TestFlight...${NC}"
+    
+    # Run submit command and capture output
+    local submit_output=$(mktemp)
+    eas submit -p ios --path "$ipa_path" --non-interactive >> "$log_file" 2>&1
+    local submit_exit_code=$?
+    
+    # Check for errors in the output
+    local has_error=false
+    if grep -qi "submission failed\|error\|failed" "$log_file"; then
+        has_error=true
+    fi
+    
+    # Check exit code or error messages
+    if [ $submit_exit_code -ne 0 ] || [ "$has_error" = true ]; then
+        log "ERROR: Submission failed"
+        echo -e "${RED}Submission failed!${NC}"
+        echo -e "${YELLOW}Last few lines of submission output:${NC}"
+        tail -20 "$log_file" | grep -A 20 -i "error\|failed\|submission" || tail -10 "$log_file"
+        echo ""
+        echo -e "${RED}Check log file for details: ${log_file}${NC}"
+        return 1
+    fi
+    
+    log "Submission completed successfully!"
+    echo -e "${GREEN}✓ Submission completed successfully!${NC}"
+    return 0
+}
+
 # Check if argument is provided
 if [ $# -eq 0 ]; then
     echo -e "${RED}Error: No build type specified${NC}"
@@ -52,6 +139,87 @@ if [ $# -eq 0 ]; then
 fi
 
 BUILD_TYPE=$1
+
+# Handle deploy mode
+if [ "$BUILD_TYPE" == "deploy" ]; then
+    if [ $# -lt 2 ]; then
+        echo -e "${RED}Error: deploy mode requires IPA file path${NC}"
+        echo ""
+        print_usage
+    fi
+    
+    IPA_PATH="$2"
+    
+    # Convert to absolute path if relative
+    if [[ ! "$IPA_PATH" = /* ]]; then
+        IPA_PATH="$(cd "$(dirname "$IPA_PATH")" && pwd)/$(basename "$IPA_PATH")"
+    fi
+    
+    if [ ! -f "$IPA_PATH" ]; then
+        echo -e "${RED}Error: IPA file not found: $IPA_PATH${NC}"
+        exit 1
+    fi
+    
+    # Determine script directory and project root
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+    if [[ "$SCRIPT_DIR" == */scripts ]]; then
+        PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+    else
+        PROJECT_ROOT="$SCRIPT_DIR"
+    fi
+    
+    cd "$PROJECT_ROOT"
+    
+    # Create logs directory if it doesn't exist
+    LOGS_DIR="$PROJECT_ROOT/scripts/logs"
+    mkdir -p "$LOGS_DIR"
+    
+    # Setup log file
+    LOG_FILE="$LOGS_DIR/eas-deploy-$(date '+%Y%m%d-%H%M%S').log"
+    
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "${GREEN}EAS Deploy Script${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "IPA File: ${BLUE}$IPA_PATH${NC}"
+    echo -e "Log File: ${BLUE}${LOG_FILE}${NC}"
+    echo -e "Start Time: ${BLUE}$(timestamp)${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    echo ""
+    
+    START_TIME=$(date +%s)
+    
+    # Log function
+    log() {
+        echo "[$(timestamp)] $1" | tee -a "$LOG_FILE"
+    }
+    
+    log "Starting deploy process..."
+    log "IPA file: $IPA_PATH"
+    
+    # Submit the IPA
+    if ! submit_ipa "$IPA_PATH" "$LOG_FILE"; then
+        exit 1
+    fi
+    
+    # Calculate total time
+    END_TIME=$(date +%s)
+    TOTAL_TIME=$((END_TIME - START_TIME))
+    MINUTES=$((TOTAL_TIME / 60))
+    SECONDS=$((TOTAL_TIME % 60))
+    
+    log "Total deploy time: ${MINUTES}m ${SECONDS}s"
+    
+    echo ""
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "${GREEN}Deploy Complete!${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    echo -e "Total Time: ${YELLOW}${MINUTES}m ${SECONDS}s${NC}"
+    echo -e "End Time: ${BLUE}$(timestamp)${NC}"
+    echo -e "Log File: ${BLUE}${LOG_FILE}${NC}"
+    echo -e "${GREEN}===========================================================${NC}"
+    
+    exit 0
+fi
 
 # Validate build type
 if [ "$BUILD_TYPE" != "production" ] && [ "$BUILD_TYPE" != "development" ]; then
@@ -126,12 +294,14 @@ if [ "$BUILD_TYPE" == "production" ]; then
     log "Build completed successfully!"
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
     
-    # Find the IPA file (most recent .ipa in project root)
-    IPA_PATH=$(find "$PROJECT_ROOT" -maxdepth 1 -name "*.ipa" -type f -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+    # Find the IPA file
+    IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
     
-    if [ -z "$IPA_PATH" ]; then
+    if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
         log "ERROR: Could not find IPA file"
-        echo -e "${RED}Could not find IPA file!${NC}"
+        echo -e "${RED}Could not find IPA file in project root: $PROJECT_ROOT${NC}"
+        echo -e "${YELLOW}Searching for IPA files...${NC}"
+        find "$PROJECT_ROOT" -name "*.ipa" -type f 2>/dev/null | head -5
         exit 1
     fi
     
@@ -140,27 +310,9 @@ if [ "$BUILD_TYPE" == "production" ]; then
     echo ""
     
     # Submit to TestFlight
-    log "Submitting to TestFlight..."
-    echo -e "${YELLOW}Submitting to TestFlight...${NC}"
-    
-    eas submit -p ios --path "$IPA_PATH" --non-interactive >> "$LOG_FILE" 2>&1 &
-    SUBMIT_PID=$!
-    
-    # Show progress
-    show_progress $SUBMIT_PID "Submitting to TestFlight"
-    
-    # Wait for submission to complete
-    wait $SUBMIT_PID
-    SUBMIT_EXIT_CODE=$?
-    
-    if [ $SUBMIT_EXIT_CODE -ne 0 ]; then
-        log "ERROR: Submission failed with exit code $SUBMIT_EXIT_CODE"
-        echo -e "${RED}Submission failed! Check log file: ${LOG_FILE}${NC}"
-        exit $SUBMIT_EXIT_CODE
+    if ! submit_ipa "$IPA_PATH" "$LOG_FILE"; then
+        exit 1
     fi
-    
-    log "Submission completed successfully!"
-    echo -e "${GREEN}✓ Submission completed successfully!${NC}"
     
 else
     log "Building development version..."

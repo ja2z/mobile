@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Animated, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
@@ -8,6 +8,10 @@ import { colors, spacing, typography } from '../constants/Theme';
 
 interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
+  appletId?: string; // Optional applet ID for activity logging
+  appletName?: string; // Optional applet name for activity logging
+  initialUrl?: string; // Optional: if provided, use this URL directly instead of fetching
+  initialJwt?: string; // Optional: JWT token if using initialUrl
 }
 
 export interface DashboardViewRef {
@@ -77,7 +81,7 @@ const SkeletonPlaceholder: React.FC = () => {
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId }, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -228,13 +232,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         // Continue without email - lambda will use default
       }
       
-      // Build params object with workbook_id and user_email
-      const params: { workbook_id?: string; user_email?: string } = {};
+      // Build params object with workbook_id, user_email, and applet info
+      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string } = {};
       if (workbookId) {
         params.workbook_id = workbookId;
       }
       if (userEmail) {
         params.user_email = userEmail;
+      }
+      if (appletId) {
+        params.applet_id = appletId;
+      }
+      if (appletName) {
+        params.applet_name = appletName;
       }
       
       console.log('📤 Calling embed URL API with params:', JSON.stringify(params));
@@ -258,8 +268,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         fetchUrl();
       }, refreshTimeout);
       
-    } catch (err) {
+    } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard URL';
+      
+      // Handle expiration errors
+      if (err.isExpirationError) {
+        Alert.alert(
+          'Account Expired',
+          errorMessage,
+          [{ text: 'OK' }]
+        );
+        setError(errorMessage);
+        return;
+      }
       
       // Log detailed error information for debugging
       if (err instanceof Error) {
@@ -279,9 +300,20 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
 
   /**
    * Fetch URL on component mount and cleanup on unmount
+   * Or use initialUrl if provided
    */
   useEffect(() => {
-    fetchUrl();
+    if (initialUrl) {
+      // Use provided URL directly
+      console.log('📱 Using initialUrl:', initialUrl);
+      setUrl(initialUrl);
+      setJwt(initialJwt || null);
+      setFetchingUrl(false);
+      setLoading(true); // Will be set to false when workbook:loaded is received
+    } else {
+      // Fetch URL from API
+      fetchUrl();
+    }
     
     return () => {
       // Cleanup: clear the refresh timeout when component unmounts
@@ -289,7 +321,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         clearTimeout(refreshTimeoutRef.current);
       }
     };
-  }, []);
+  }, [initialUrl, initialJwt]);
 
   /**
    * Log state changes for debugging

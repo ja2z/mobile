@@ -5,19 +5,19 @@
     "scheme": "bigbuys",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/bigbuys.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/bigbuys_transparent.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F2A648"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
+      "icon": "./assets/bigbuys.png",
       "associatedDomains": [
-        "applinks:mobile.bigbuys.io",
         "applinks:mobile.bigbuys.io"
       ],
       "infoPlist": {
@@ -60,6 +60,7 @@
     },
     "plugins": [
       "expo-secure-store",
+      "expo-font",
       [
         "@react-native-voice/voice",
         {

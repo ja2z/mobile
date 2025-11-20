@@ -20,6 +20,8 @@ interface EmbedUrlParams {
   user_email?: string;
   embed_path?: string;
   teams?: string[];
+  applet_id?: string;
+  applet_name?: string;
 }
 
 /**
@@ -57,6 +59,9 @@ export class EmbedUrlService {
       });
 
       console.log('📡 API response status:', response.status, response.statusText);
+
+      // Handle expiration errors
+      await AuthService.handleApiResponse(response);
 
       if (!response.ok) {
         // Try to get error details from response body

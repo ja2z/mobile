@@ -1,0 +1,285 @@
+# AWS CLI Usage Guide
+
+## Overview
+
+This project uses AWS CLI for managing Lambda functions, API Gateway, and other AWS resources. Authentication uses SAML via Okta and expires after **1 hour**.
+
+## Critical: Always Check Authentication First
+
+**⚠️ IMPORTANT:** AWS authentication expires after 1 hour. **ALWAYS verify AWS CLI is working before running any AWS commands.**
+
+### Quick Authentication Check
+
+Before running any AWS commands, run this check:
+
+```bash
+export AWS_PROFILE=saml
+aws sts get-caller-identity --no-verify-ssl 2>&1 | grep -q "UserId" && echo "✓ AWS CLI authenticated" || echo "✗ AWS CLI NOT authenticated - run: export AWS_PROFILE=saml"
+```
+
+If authentication fails, you'll need to re-authenticate (the user will need to do this manually via their Okta/SAML flow).
+
+## Environment Setup
+
+All AWS CLI commands in this project require:
+
+```bash
+export AWS_PROFILE=saml
+export AWS_CA_BUNDLE=""
+export PYTHONHTTPSVERIFY=0
+```
+
+These settings:
+- Use the `saml` AWS profile (Okta authentication)
+- Disable SSL verification (required for corporate proxy/VPN)
+- Suppress Python SSL warnings
+
+## AWS CLI Command Wrapper
+
+When creating scripts that use AWS CLI, use this wrapper function to handle SSL and warnings:
+
+```bash
+# AWS CLI command wrapper to add --no-verify-ssl and filter warnings
+aws_cmd() {
+    aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning" >&2)
+}
+```
+
+Then use `aws_cmd` instead of `aws`:
+
+```bash
+aws_cmd lambda get-function-configuration --function-name admin-handler --region us-west-2
+```
+
+## Common AWS Resources
+
+### Lambda Functions
+- **admin-handler**: `arn:aws:lambda:us-west-2:763903610969:function:admin-handler`
+- **auth-handler**: `arn:aws:lambda:us-west-2:763903610969:function:auth-handler`
+
+### API Gateway
+- **API ID**: `qx7x0uioo1`
+- **Region**: `us-west-2`
+- **Stage**: `v1`
+- **Base URL**: `https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1`
+
+## Verification Before Running Commands
+
+### Step 1: Check Authentication
+
+```bash
+export AWS_PROFILE=saml
+aws sts get-caller-identity --no-verify-ssl
+```
+
+**Expected output:**
+```json
+{
+    "UserId": "AROA...",
+    "Account": "763903610969",
+    "Arn": "arn:aws:sts::763903610969:assumed-role/..."
+}
+```
+
+**If you get an error:** Authentication has expired. User needs to re-authenticate via Okta/SAML.
+
+### Step 2: Test a Simple Command
+
+```bash
+export AWS_PROFILE=saml
+export AWS_CA_BUNDLE=""
+export PYTHONHTTPSVERIFY=0
+
+# Test with a simple, read-only command
+aws lambda get-function-configuration \
+    --function-name admin-handler \
+    --region us-west-2 \
+    --no-verify-ssl \
+    --query '[FunctionName,Runtime,Handler]' \
+    --output table
+```
+
+**Expected output:** A table showing function configuration.
+
+**If you get SSL errors:** The environment variables aren't set correctly.
+
+**If you get permission errors:** Authentication might be expired or insufficient permissions.
+
+## Best Practices
+
+### 1. Always Check Auth First
+
+Before any AWS operation, verify authentication:
+
+```bash
+# Quick check
+aws sts get-caller-identity --no-verify-ssl 2>&1 | grep -q "UserId" || { echo "ERROR: Not authenticated"; exit 1; }
+```
+
+### 2. Use Read-Only Commands for Testing
+
+Test authentication with read-only commands first:
+- `aws lambda get-function-configuration` (read-only)
+- `aws apigateway get-rest-api` (read-only)
+- `aws logs tail` (read-only)
+
+### 3. Handle SSL Warnings
+
+Always use `--no-verify-ssl` and filter warnings:
+
+```bash
+aws_cmd() {
+    aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning" >&2)
+}
+```
+
+### 4. Check Command Success
+
+After running AWS commands, check exit codes:
+
+```bash
+if [ $? -eq 0 ]; then
+    echo "✓ Command succeeded"
+else
+    echo "✗ Command failed"
+    exit 1
+fi
+```
+
+## Common Commands
+
+### Lambda Operations
+
+```bash
+# Get Lambda configuration
+aws_cmd lambda get-function-configuration \
+    --function-name admin-handler \
+    --region us-west-2
+
+# Invoke Lambda directly (for testing)
+aws_cmd lambda invoke \
+    --function-name admin-handler \
+    --region us-west-2 \
+    --cli-binary-format raw-in-base64-out \
+    --payload file://test-event.json \
+    response.json
+
+# Check Lambda permissions
+aws_cmd lambda get-policy \
+    --function-name admin-handler \
+    --region us-west-2 \
+    --query 'Policy' \
+    --output text | jq '.'
+```
+
+### API Gateway Operations
+
+```bash
+# List all resources
+aws_cmd apigateway get-resources \
+    --rest-api-id qx7x0uioo1 \
+    --region us-west-2 \
+    --query 'items[*].[path,id]' \
+    --output table
+
+# Get method configuration
+aws_cmd apigateway get-method \
+    --rest-api-id qx7x0uioo1 \
+    --resource-id <RESOURCE_ID> \
+    --http-method GET \
+    --region us-west-2
+
+# Create deployment
+aws_cmd apigateway create-deployment \
+    --rest-api-id qx7x0uioo1 \
+    --stage-name v1 \
+    --region us-west-2 \
+    --description "Deployment description"
+```
+
+### CloudWatch Logs
+
+```bash
+# Tail Lambda logs
+aws_cmd logs tail /aws/lambda/admin-handler \
+    --follow \
+    --region us-west-2
+
+# Get recent logs
+aws_cmd logs tail /aws/lambda/admin-handler \
+    --since 5m \
+    --region us-west-2
+```
+
+## Error Handling
+
+### Authentication Expired
+
+**Symptoms:**
+- `Unable to locate credentials`
+- `The security token included in the request is expired`
+- `An error occurred (ExpiredTokenException)`
+
+**Solution:** User needs to re-authenticate via Okta/SAML.
+
+### SSL Certificate Errors
+
+**Symptoms:**
+- `SSL validation failed`
+- `certificate verify failed`
+
+**Solution:** Ensure these are set:
+```bash
+export AWS_CA_BUNDLE=""
+export PYTHONHTTPSVERIFY=0
+```
+
+And use `--no-verify-ssl` flag.
+
+### Permission Denied
+
+**Symptoms:**
+- `AccessDenied`
+- `User is not authorized to perform`
+
+**Solution:** Check IAM permissions or verify authentication is for correct role.
+
+## Script Template
+
+When creating new AWS CLI scripts, use this template:
+
+```bash
+#!/bin/bash
+
+# Set AWS profile and disable SSL verification
+export AWS_PROFILE=saml
+export AWS_CA_BUNDLE=""
+export PYTHONHTTPSVERIFY=0
+
+# AWS CLI command wrapper
+aws_cmd() {
+    aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning" >&2)
+}
+
+# Verify authentication before proceeding
+echo "Checking AWS authentication..."
+if ! aws_cmd sts get-caller-identity --query 'Account' --output text > /dev/null 2>&1; then
+    echo "✗ ERROR: AWS CLI not authenticated"
+    echo "   Please run: export AWS_PROFILE=saml"
+    echo "   Then re-authenticate via Okta/SAML"
+    exit 1
+fi
+
+echo "✓ AWS CLI authenticated"
+echo ""
+
+# Your script commands here...
+```
+
+## Notes
+
+- **Authentication expires after 1 hour** - Always check before running commands
+- **Corporate proxy/VPN** requires SSL verification to be disabled
+- **All scripts should verify auth** before making AWS API calls
+- **Use read-only commands** to test authentication first
+- **Filter SSL warnings** to keep output clean

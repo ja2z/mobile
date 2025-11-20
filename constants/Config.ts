@@ -8,6 +8,8 @@ export const Config = {
   API: {
     EMBED_URL_ENDPOINT: 'https://3x4hwcq05f.execute-api.us-west-2.amazonaws.com/v1/generateSigmaEmbedURL',
     AUTH_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/auth',
+    ADMIN_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/admin',
+    MY_BUYS_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/my-buys',
   },
   
   // App configuration
@@ -41,6 +43,12 @@ export const Config = {
     // Default to 'universal' for production builds
     // Override with EXPO_PUBLIC_AUTH_LINK_TYPE=direct in .env.local for Expo Go testing
     LINK_TYPE: (process.env.EXPO_PUBLIC_AUTH_LINK_TYPE || 'universal') as 'direct' | 'universal',
+    // Backdoor authentication email (for development/testing)
+    // Store in environment variable EXPO_PUBLIC_BACKDOOR_EMAIL
+    BACKDOOR_EMAIL: process.env.EXPO_PUBLIC_BACKDOOR_EMAIL || '',
+    // Backdoor authentication secret (for development/testing)
+    // Store in environment variable EXPO_PUBLIC_BACKDOOR_SECRET
+    BACKDOOR_SECRET: process.env.EXPO_PUBLIC_BACKDOOR_SECRET || '',
   },
   
   // Chat configuration

@@ -9,8 +9,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
+import type { RootStackParamList } from '../app/_layout';
 
 interface ProfileMenuProps {
   visible: boolean;
@@ -18,14 +21,18 @@ interface ProfileMenuProps {
   onLogout: () => void;
 }
 
+type ProfileMenuNavigationProp = StackNavigationProp<RootStackParamList>;
+
 /**
  * Profile Menu Component
  * Displays user profile information and logout option
  */
 export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
+  const navigation = useNavigation<ProfileMenuNavigationProp>();
   const [email, setEmail] = useState<string>('');
   const [sessionStartDate, setSessionStartDate] = useState<Date | null>(null);
   const [sessionExpirationDate, setSessionExpirationDate] = useState<Date | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,9 +46,11 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
     try {
       const session = await AuthService.getSession();
       const startDate = await AuthService.getSessionStartDate();
+      const adminStatus = await AuthService.isAdmin();
 
       if (session) {
         setEmail(session.user.email);
+        setIsAdmin(adminStatus);
         
         // Session start date (from JWT iat)
         setSessionStartDate(startDate);
@@ -57,6 +66,11 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAdminPress = () => {
+    onClose();
+    navigation.navigate('Admin' as never);
   };
 
   const formatDate = (date: Date | null): string => {
@@ -136,6 +150,20 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
                       </Text>
                     </View>
                   </View>
+
+                  {/* Admin Button (only for admin users) */}
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={styles.adminButton}
+                      onPress={handleAdminPress}
+                      activeOpacity={0.7}
+                      accessibilityLabel="Admin"
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name="shield-outline" size={20} color={colors.primary} />
+                      <Text style={styles.adminButtonText}>Admin</Text>
+                    </TouchableOpacity>
+                  )}
 
                   {/* Logout Button */}
                   <TouchableOpacity
@@ -228,6 +256,23 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
     fontWeight: '500',
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.background,
+  },
+  adminButtonText: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
   },
   logoutButton: {
     flexDirection: 'row',
