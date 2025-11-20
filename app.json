@@ -21,7 +21,9 @@
         "applinks:mobile.bigbuys.io"
       ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to enable voice-to-text messaging.",
+        "NSSpeechRecognitionUsageDescription": "This app needs speech recognition to convert your voice to text."
       }
     },
     "android": {
@@ -32,6 +34,9 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.sigmacomputing.bigbuys",
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -54,7 +59,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",
+          "speechRecognitionPermission": "Allow Big Buys to use speech recognition to convert your voice to text."
+        }
+      ]
     ],
     "extra": {
       "eas": {

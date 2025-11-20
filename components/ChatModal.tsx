@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatMessage, ChatModalProps } from '../types/chat.types';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
+import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 /**
  * Ref interface for ChatModal
@@ -40,6 +41,49 @@ export const ChatModal = forwardRef<ChatModalRef, ChatModalProps>(({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  
+  // Voice recording hook
+  const {
+    isRecording,
+    partialResults,
+    startRecording,
+    stopRecording,
+  } = useVoiceRecording({
+    onResult: (text) => {
+      console.log('🎤 Voice result:', text);
+      setInputValue(text);
+    },
+    onError: (error) => {
+      console.error('🎤 Voice error:', error);
+    },
+  });
+  
+  // Pulse animation for recording indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  // Animate pulse effect during recording
+  useEffect(() => {
+    if (isRecording) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isRecording, pulseAnim]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -236,6 +280,18 @@ export const ChatModal = forwardRef<ChatModalRef, ChatModalProps>(({
 
               {/* Input Area */}
               <View style={styles.inputContainer}>
+                {/* Recording Indicator */}
+                {isRecording && (
+                  <View style={styles.recordingIndicator}>
+                    <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                      <View style={styles.recordingDot} />
+                    </Animated.View>
+                    <Text style={styles.recordingText}>
+                      {partialResults.length > 0 ? partialResults[0] : 'Listening...'}
+                    </Text>
+                  </View>
+                )}
+                
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.input}
@@ -245,24 +301,50 @@ export const ChatModal = forwardRef<ChatModalRef, ChatModalProps>(({
                     placeholderTextColor={colors.textSecondary}
                     multiline
                     maxLength={1000}
-                    editable={!isWaitingForResponse}
+                    editable={!isWaitingForResponse && !isRecording}
                     returnKeyType="default"
                     blurOnSubmit={false}
                   />
+                  
+                  {/* Microphone Button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.micButton,
+                      isRecording && styles.micButtonRecording,
+                      isWaitingForResponse && styles.micButtonDisabled,
+                    ]}
+                    onPress={isRecording ? stopRecording : startRecording}
+                    disabled={isWaitingForResponse}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={isRecording ? 'stop-circle' : 'mic-outline'}
+                      size={22}
+                      color={
+                        isWaitingForResponse
+                          ? colors.textSecondary
+                          : isRecording
+                          ? '#FFFFFF'
+                          : colors.primary
+                      }
+                    />
+                  </TouchableOpacity>
+                  
+                  {/* Send Button */}
                   <TouchableOpacity
                     style={[
                       styles.sendButton,
-                      (!inputValue.trim() || isWaitingForResponse) && styles.sendButtonDisabled,
+                      (!inputValue.trim() || isWaitingForResponse || isRecording) && styles.sendButtonDisabled,
                     ]}
                     onPress={handleSend}
-                    disabled={!inputValue.trim() || isWaitingForResponse}
+                    disabled={!inputValue.trim() || isWaitingForResponse || isRecording}
                     activeOpacity={0.7}
                   >
                     <Ionicons
                       name="send"
                       size={20}
                       color={
-                        !inputValue.trim() || isWaitingForResponse
+                        !inputValue.trim() || isWaitingForResponse || isRecording
                           ? colors.textSecondary
                           : '#FFFFFF'
                       }
@@ -773,6 +855,46 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: colors.border,
+  },
+  micButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  micButtonRecording: {
+    backgroundColor: colors.error,
+    borderColor: colors.error,
+  },
+  micButtonDisabled: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  recordingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+  },
+  recordingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.error,
+    marginRight: spacing.sm,
+  },
+  recordingText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    flex: 1,
   },
 });
 
