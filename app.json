@@ -55,7 +55,15 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/bigbuys_transparent.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F2A648"
+        }
+      ]
     ],
     "extra": {
       "eas": {
