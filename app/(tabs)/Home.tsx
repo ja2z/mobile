@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { AuthService } from '../../services/AuthService';
@@ -242,6 +243,23 @@ export default function Home() {
   };
 
   const handleTilePress = (tile: AppTile) => {
+    // If tile is active and has onPress handler, navigate directly
+    if (tile.isActive && tile.onPress) {
+      tile.onPress();
+    } else {
+      // Otherwise, show description modal
+      expandTile(tile);
+    }
+  };
+
+  const handleTileLongPress = (tile: AppTile) => {
+    // Provide haptic feedback to confirm long press
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      // Haptics not available on this device, silently continue
+    }
+    // Show description modal on long press
     expandTile(tile);
   };
 
@@ -364,8 +382,9 @@ export default function Home() {
                 key={tile.id}
                 style={styles.tileButton}
                 onPress={() => handleTilePress(tile)}
+                onLongPress={() => handleTileLongPress(tile)}
                 activeOpacity={0.7}
-                accessibilityLabel={`${tile.title} - ${tile.subtitle}`}
+                accessibilityLabel={`${tile.title} - ${tile.subtitle}${tile.isActive && tile.onPress ? ' - Long press for description' : ''}`}
                 accessibilityRole="button"
                 disabled={!!selectedTile}
               >
