@@ -6,7 +6,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
@@ -17,7 +16,6 @@ import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const sesClient = new SESClient({});
-const snsClient = new SNSClient({});
 const secretsClient = new SecretsManagerClient({});
 
 // Environment variables
@@ -27,6 +25,7 @@ const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
+const TELNYX_API_KEY_SECRET_NAME = process.env.TELNYX_API_KEY_SECRET_NAME || 'mobile-app/telnyx-api-key';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
@@ -37,6 +36,7 @@ const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 let jwtSecret: string | null = null;
 let apiKey: string | null = null;
 let backdoorSecret: string | null = null;
+let telnyxApiKey: string | null = null;
 
 /**
  * Main Lambda handler - routes to appropriate function based on path
@@ -480,7 +480,7 @@ async function handleSendToMobile(body: any, event: any) {
     ? buildDirectSchemeUrl(tokenId, app)
     : buildRedirectUrl(tokenId, app);
   
-  // Log magic link for debugging/workaround (especially when SNS isn't configured)
+  // Log magic link for debugging
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
   
   await sendMagicLinkSMS(phoneNumber, magicLink);
@@ -1424,20 +1424,41 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
 }
 
 /**
- * Send magic link via SMS
+ * Send magic link via SMS using Telnyx API
  */
 async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise<void> {
   const message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
 
-  // Log the magic link for debugging/workaround when SNS isn't configured
-  console.log(`Magic link SMS would be sent to ${phoneNumber}: ${magicLink}`);
+  try {
+    // Get Telnyx API key from Secrets Manager
+    const apiKey = await getTelnyxApiKey();
 
-  await snsClient.send(new PublishCommand({
-    PhoneNumber: phoneNumber,
-    Message: message
-  }));
+    // Send SMS via Telnyx API
+    const response = await fetch('https://api.telnyx.com/v2/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        from: '+16505013151',
+        to: phoneNumber,
+        text: message
+      })
+    });
 
-  console.log(`Magic link SMS sent to ${phoneNumber}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Telnyx API error: ${response.status} ${response.statusText}`, errorText);
+      throw new Error(`Failed to send SMS via Telnyx: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log(`Magic link SMS sent to ${phoneNumber} via Telnyx`, result);
+  } catch (error: any) {
+    console.error(`Error sending SMS to ${phoneNumber}:`, error);
+    throw error;
+  }
 }
 
 /**
@@ -1488,6 +1509,23 @@ async function getBackdoorSecret(): Promise<string> {
   // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
   backdoorSecret = (result.SecretString || '').trim();
   return backdoorSecret;
+}
+
+/**
+ * Get Telnyx API key from Secrets Manager (cached)
+ */
+async function getTelnyxApiKey(): Promise<string> {
+  if (telnyxApiKey) {
+    return telnyxApiKey;
+  }
+
+  const result = await secretsClient.send(new GetSecretValueCommand({
+    SecretId: TELNYX_API_KEY_SECRET_NAME
+  }));
+
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  telnyxApiKey = (result.SecretString || '').trim();
+  return telnyxApiKey;
 }
 
 /**
