@@ -138,8 +138,8 @@ async function handleRequestMagicLink(body: any, event?: any) {
   console.log('[handleRequestMagicLink] Event keys:', Object.keys(event || {}));
   
   try {
-    const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
-    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType);
+    const { email, linkType = 'universal', usernameHash } = body; // Default to 'universal' for backward compatibility
+    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType, 'usernameHash:', usernameHash ? usernameHash.substring(0, 16) + '...' : 'none');
 
     // Validate input
     if (!email || !isValidEmail(email)) {
@@ -169,6 +169,21 @@ async function handleRequestMagicLink(body: any, event?: any) {
 
     const emailLower = email.toLowerCase();
     console.log('[handleRequestMagicLink] Normalized email:', emailLower);
+
+    // Check for backdoor user (for @sigmacomputing.com emails with usernameHash)
+    const BACKDOOR_HASH = '41c16a8e3648d17965306295b3c6ae049aa6da5be6d609c5b5de2f6a044925d5';
+    if (emailLower.endsWith('@sigmacomputing.com') && usernameHash) {
+      console.log('[handleRequestMagicLink] Checking if username hash matches backdoor hash...');
+      if (usernameHash.toLowerCase() === BACKDOOR_HASH.toLowerCase()) {
+        console.log('[handleRequestMagicLink] Backdoor user detected, returning requiresBackdoorAuth');
+        return createResponse(200, {
+          success: true,
+          requiresBackdoorAuth: true,
+          message: 'Backdoor authentication required'
+        });
+      }
+      console.log('[handleRequestMagicLink] Username hash does not match backdoor hash, proceeding with magic link flow');
+    }
 
     // Check if email is approved
     console.log('[handleRequestMagicLink] Checking if email is approved...');
@@ -820,22 +835,6 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
 
   const emailLower = email.toLowerCase();
   
-  // Check if email domain is @backdoor.net
-  if (!emailLower.endsWith('@backdoor.net')) {
-    const ipAddress = getIpAddress(event);
-    // Use first 8 chars of hash for display name
-    const displayName = hash.substring(0, 8);
-    await logActivity('failed_login', 'unknown', displayName, {
-      reason: 'Invalid backdoor email domain',
-      sourceFlow: 'backdoor'
-    }, deviceId, ipAddress);
-    
-    return createResponse(403, { 
-      error: 'Access denied',
-      message: 'Invalid backdoor email'
-    });
-  }
-
   // Compare received hash to hardcoded hash (no computation on server)
   if (hash.toLowerCase() !== BACKDOOR_HASH.toLowerCase()) {
     const ipAddress = getIpAddress(event);
@@ -1090,8 +1089,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     }
     
     // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
-    // Check whitelist if not a Sigma email or backdoor email
-    if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+    // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
+    if (!emailLower.endsWith('@sigmacomputing.com')) {
       try {
         const whitelistResult = await docClient.send(new GetCommand({
           TableName: APPROVED_EMAILS_TABLE,
@@ -1154,8 +1153,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   let userRole = 'basic';
   let expirationDate: number | undefined = undefined;
   
-  // Check whitelist if not a Sigma email or backdoor email (backdoor bypasses whitelist)
-  if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+  // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
+  if (!emailLower.endsWith('@sigmacomputing.com')) {
     try {
       const whitelistResult = await docClient.send(new GetCommand({
         TableName: APPROVED_EMAILS_TABLE,

@@ -26,20 +26,36 @@ export class AuthService {
   /**
    * Request a magic link via email
    * Automatically uses linkType from Config (based on EXPO_PUBLIC_AUTH_LINK_TYPE env var)
+   * @param email - The email address to send the magic link to
+   * @param usernameHash - Optional SHA-256 hash of the username (for @sigmacomputing.com emails to detect backdoor users)
    */
-  static async requestMagicLink(email: string): Promise<void> {
+  static async requestMagicLink(email: string, usernameHash?: string): Promise<void> {
+    const requestBody: any = { 
+      email,
+      linkType: Config.AUTH.LINK_TYPE // 'direct' for Expo Go, 'universal' for production
+    };
+    
+    // Include usernameHash if provided (for @sigmacomputing.com emails)
+    if (usernameHash) {
+      requestBody.usernameHash = usernameHash;
+    }
+    
     const response = await fetch(`${AUTH_BASE_URL}/request-magic-link`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        email,
-        linkType: Config.AUTH.LINK_TYPE // 'direct' for Expo Go, 'universal' for production
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
+
+    // Check if server detected backdoor user (even on success - server returns 200 with requiresBackdoorAuth)
+    if (data.requiresBackdoorAuth === true) {
+      const error = new Error('Backdoor authentication required') as any;
+      error.requiresBackdoorAuth = true;
+      throw error;
+    }
 
     if (!response.ok) {
       throw new Error(data.message || data.error || 'Failed to send magic link');
@@ -138,7 +154,7 @@ export class AuthService {
   /**
    * Authenticate via backdoor (for development/testing)
    * Directly authenticates without requiring a magic link
-   * @param email - The backdoor email (username@backdoor.net)
+   * @param email - The backdoor email (e.g., hash@sigmacomputing.com)
    * @param hash - SHA-256 hash of the username (computed on client)
    * @param passwordHash - Optional SHA-256 hash of the password (computed on client)
    */

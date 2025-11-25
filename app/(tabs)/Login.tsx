@@ -62,13 +62,7 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    const dom = domain.trim().toLowerCase();
-    const isBackdoorDomain = dom === 'backdoor.net';
-    
-    // For backdoor.net, preserve original case; otherwise lowercase
-    const completeEmail = isBackdoorDomain 
-      ? `${username.trim()}@${dom}`
-      : getCompleteEmail();
+    const completeEmail = getCompleteEmail();
     
     if (!isValidEmail(completeEmail)) {
       setError('Please enter a valid email address');
@@ -80,57 +74,68 @@ export default function Login() {
     setSuccess(false);
 
     try {
-      // Check if this is a backdoor email (@backdoor.net domain)
       const emailLower = completeEmail.toLowerCase();
-      const isBackdoorEmail = emailLower.endsWith('@backdoor.net');
+      const isSigmaEmail = emailLower.endsWith('@sigmacomputing.com');
       
-      if (isBackdoorEmail) {
-        // Use original username (preserve case for backdoor.net)
+      // For @sigmacomputing.com emails, compute username hash to check for backdoor user
+      let usernameHash: string | undefined = undefined;
+      if (isSigmaEmail) {
         const originalUsername = username.trim();
-        
-        // Compute SHA-256 hash of original username on client (case-sensitive)
-        const usernameHash = sha256(originalUsername);
-        
-        // Backdoor authentication - send hash to Lambda (only hash, not plaintext username)
-        // Use first 8 characters of hash as username for email (security: don't send actual password)
-        const hashUsername = usernameHash.substring(0, 8);
-        const secureEmail = `${hashUsername}@backdoor.net`;
-        
-        console.log('🔓 Backdoor authentication detected');
-        console.log('[Login] Computed hash:', usernameHash);
-        
-        try {
-          const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
-          console.log('✅ Backdoor authentication successful!', { email: session.user.email });
-          
-          // Log app launch
-          await ActivityService.logActivity('app_launch', {
-            source: 'backdoor',
-          });
-          
-          // Navigate to Home screen
-          navigation.replace('Home');
-          return;
-        } catch (err: any) {
-          // Check if password is required (step 1 of two-step validation)
-          if (err.requiresPassword === true) {
-            // Store the username hash and secure email for password submission
-            setStoredUsernameHash(usernameHash);
-            setStoredSecureEmail(secureEmail);
-            setShowPasswordModal(true);
-            setPasswordError(null);
-            setLoading(false);
-            return;
-          }
-          // Re-throw other errors to be handled by the outer catch block
-          throw err;
-        }
+        usernameHash = sha256(originalUsername);
+        console.log('[Login] Computed username hash for sigma email:', usernameHash.substring(0, 16) + '...');
       }
       
-      // Normal magic link flow
-      await AuthService.requestMagicLink(completeEmail);
-      setSuccess(true);
-      // Don't navigate yet - user needs to check their email and click the magic link
+      // Request magic link (will return requiresBackdoorAuth if backdoor user detected)
+      try {
+        await AuthService.requestMagicLink(completeEmail, usernameHash);
+        setSuccess(true);
+        // Don't navigate yet - user needs to check their email and click the magic link
+      } catch (err: any) {
+        // Check if server detected backdoor user and requires backdoor auth
+        if (err.requiresBackdoorAuth === true) {
+          // Switch to backdoor authentication flow
+          if (!usernameHash) {
+            // Should not happen, but handle gracefully
+            throw new Error('Backdoor authentication required but username hash not available');
+          }
+          
+          // Use first 8 characters of hash as username for email (security: don't send actual username)
+          const hashUsername = usernameHash.substring(0, 8);
+          const secureEmail = `${hashUsername}@sigmacomputing.com`;
+          
+          console.log('🔓 Backdoor authentication detected by server');
+          console.log('[Login] Switching to backdoor flow');
+          
+          try {
+            const session = await AuthService.authenticateBackdoor(secureEmail, usernameHash);
+            console.log('✅ Backdoor authentication successful!', { email: session.user.email });
+            
+            // Log app launch
+            await ActivityService.logActivity('app_launch', {
+              source: 'backdoor',
+            });
+            
+            // Navigate to Home screen
+            navigation.replace('Home');
+            return;
+          } catch (backdoorErr: any) {
+            // Check if password is required (step 1 of two-step validation)
+            if (backdoorErr.requiresPassword === true) {
+              // Store the username hash and secure email for password submission
+              setStoredUsernameHash(usernameHash);
+              setStoredSecureEmail(secureEmail);
+              setShowPasswordModal(true);
+              setPasswordError(null);
+              setLoading(false);
+              return;
+            }
+            // Re-throw other errors to be handled by the outer catch block
+            throw backdoorErr;
+          }
+        }
+        // Re-throw other errors (not backdoor-related)
+        throw err;
+      }
     } catch (err) {
       let errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.';
       
