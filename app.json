@@ -62,6 +62,14 @@
       "expo-secure-store",
       "expo-font",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/bigbuys_transparent.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F2A648"
+        }
+      ],
+      [
         "@react-native-voice/voice",
         {
           "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",

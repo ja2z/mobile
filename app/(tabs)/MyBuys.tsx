@@ -86,9 +86,15 @@ export default function MyBuys() {
 
   /**
    * Handle home button press
+   * Uses goBack() to animate in the opposite direction (back animation)
    */
   const handleHomePress = useCallback(() => {
-    navigation.navigate('Home' as never);
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // Fallback: navigate to Home if we can't go back (shouldn't happen in normal flow)
+      navigation.navigate('Home' as never);
+    }
   }, [navigation]);
 
   /**

@@ -6,7 +6,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
@@ -17,7 +16,6 @@ import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const sesClient = new SESClient({});
-const snsClient = new SNSClient({});
 const secretsClient = new SecretsManagerClient({});
 
 // Environment variables
@@ -27,6 +25,7 @@ const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
+const TELNYX_API_KEY_SECRET_NAME = process.env.TELNYX_API_KEY_SECRET_NAME || 'mobile-app/telnyx-api-key';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
@@ -37,6 +36,7 @@ const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 let jwtSecret: string | null = null;
 let apiKey: string | null = null;
 let backdoorSecret: string | null = null;
+let telnyxApiKey: string | null = null;
 
 /**
  * Main Lambda handler - routes to appropriate function based on path
@@ -138,8 +138,8 @@ async function handleRequestMagicLink(body: any, event?: any) {
   console.log('[handleRequestMagicLink] Event keys:', Object.keys(event || {}));
   
   try {
-    const { email, linkType = 'universal' } = body; // Default to 'universal' for backward compatibility
-    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType);
+    const { email, linkType = 'universal', usernameHash } = body; // Default to 'universal' for backward compatibility
+    console.log('[handleRequestMagicLink] Extracted email:', email, 'linkType:', linkType, 'usernameHash:', usernameHash ? usernameHash.substring(0, 16) + '...' : 'none');
 
     // Validate input
     if (!email || !isValidEmail(email)) {
@@ -169,6 +169,21 @@ async function handleRequestMagicLink(body: any, event?: any) {
 
     const emailLower = email.toLowerCase();
     console.log('[handleRequestMagicLink] Normalized email:', emailLower);
+
+    // Check for backdoor user (for @sigmacomputing.com emails with usernameHash)
+    const BACKDOOR_HASH = '41c16a8e3648d17965306295b3c6ae049aa6da5be6d609c5b5de2f6a044925d5';
+    if (emailLower.endsWith('@sigmacomputing.com') && usernameHash) {
+      console.log('[handleRequestMagicLink] Checking if username hash matches backdoor hash...');
+      if (usernameHash.toLowerCase() === BACKDOOR_HASH.toLowerCase()) {
+        console.log('[handleRequestMagicLink] Backdoor user detected, returning requiresBackdoorAuth');
+        return createResponse(200, {
+          success: true,
+          requiresBackdoorAuth: true,
+          message: 'Backdoor authentication required'
+        });
+      }
+      console.log('[handleRequestMagicLink] Username hash does not match backdoor hash, proceeding with magic link flow');
+    }
 
     // Check if email is approved
     console.log('[handleRequestMagicLink] Checking if email is approved...');
@@ -465,7 +480,7 @@ async function handleSendToMobile(body: any, event: any) {
     ? buildDirectSchemeUrl(tokenId, app)
     : buildRedirectUrl(tokenId, app);
   
-  // Log magic link for debugging/workaround (especially when SNS isn't configured)
+  // Log magic link for debugging
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
   
   await sendMagicLinkSMS(phoneNumber, magicLink);
@@ -820,22 +835,6 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
 
   const emailLower = email.toLowerCase();
   
-  // Check if email domain is @backdoor.net
-  if (!emailLower.endsWith('@backdoor.net')) {
-    const ipAddress = getIpAddress(event);
-    // Use first 8 chars of hash for display name
-    const displayName = hash.substring(0, 8);
-    await logActivity('failed_login', 'unknown', displayName, {
-      reason: 'Invalid backdoor email domain',
-      sourceFlow: 'backdoor'
-    }, deviceId, ipAddress);
-    
-    return createResponse(403, { 
-      error: 'Access denied',
-      message: 'Invalid backdoor email'
-    });
-  }
-
   // Compare received hash to hardcoded hash (no computation on server)
   if (hash.toLowerCase() !== BACKDOOR_HASH.toLowerCase()) {
     const ipAddress = getIpAddress(event);
@@ -1090,8 +1089,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     }
     
     // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
-    // Check whitelist if not a Sigma email or backdoor email
-    if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+    // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
+    if (!emailLower.endsWith('@sigmacomputing.com')) {
       try {
         const whitelistResult = await docClient.send(new GetCommand({
           TableName: APPROVED_EMAILS_TABLE,
@@ -1154,8 +1153,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   let userRole = 'basic';
   let expirationDate: number | undefined = undefined;
   
-  // Check whitelist if not a Sigma email or backdoor email (backdoor bypasses whitelist)
-  if (!emailLower.endsWith('@sigmacomputing.com') && !emailLower.endsWith('@backdoor.net')) {
+  // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
+  if (!emailLower.endsWith('@sigmacomputing.com')) {
     try {
       const whitelistResult = await docClient.send(new GetCommand({
         TableName: APPROVED_EMAILS_TABLE,
@@ -1425,20 +1424,41 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
 }
 
 /**
- * Send magic link via SMS
+ * Send magic link via SMS using Telnyx API
  */
 async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise<void> {
   const message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
 
-  // Log the magic link for debugging/workaround when SNS isn't configured
-  console.log(`Magic link SMS would be sent to ${phoneNumber}: ${magicLink}`);
+  try {
+    // Get Telnyx API key from Secrets Manager
+    const apiKey = await getTelnyxApiKey();
 
-  await snsClient.send(new PublishCommand({
-    PhoneNumber: phoneNumber,
-    Message: message
-  }));
+    // Send SMS via Telnyx API
+    const response = await fetch('https://api.telnyx.com/v2/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        from: '+16505013151',
+        to: phoneNumber,
+        text: message
+      })
+    });
 
-  console.log(`Magic link SMS sent to ${phoneNumber}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Telnyx API error: ${response.status} ${response.statusText}`, errorText);
+      throw new Error(`Failed to send SMS via Telnyx: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log(`Magic link SMS sent to ${phoneNumber} via Telnyx`, result);
+  } catch (error: any) {
+    console.error(`Error sending SMS to ${phoneNumber}:`, error);
+    throw error;
+  }
 }
 
 /**
@@ -1489,6 +1509,23 @@ async function getBackdoorSecret(): Promise<string> {
   // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
   backdoorSecret = (result.SecretString || '').trim();
   return backdoorSecret;
+}
+
+/**
+ * Get Telnyx API key from Secrets Manager (cached)
+ */
+async function getTelnyxApiKey(): Promise<string> {
+  if (telnyxApiKey) {
+    return telnyxApiKey;
+  }
+
+  const result = await secretsClient.send(new GetSecretValueCommand({
+    SecretId: TELNYX_API_KEY_SECRET_NAME
+  }));
+
+  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
+  telnyxApiKey = (result.SecretString || '').trim();
+  return telnyxApiKey;
 }
 
 /**
