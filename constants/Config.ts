@@ -20,6 +20,7 @@ export const Config = {
     AOP_EXEC_DASHBOARD: '6vzpQFMQkEiBIbnybiwrH3',
     AI_NEWSLETTER: '70xl8hMTdNeqN75p4i4dSG',
     CONVERSATIONAL_AI: '5vuwQqluzlA5gmq9A82vt7',
+    OPERATIONS: '285cUkL2a6T21lfRQk4brT',
   },
   
   // Navigation configuration

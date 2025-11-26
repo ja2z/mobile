@@ -11,6 +11,7 @@ import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
+import Operations from './(tabs)/Operations';
 import Admin from './(tabs)/Admin';
 import ActivityLog from './(tabs)/ActivityLog';
 import EditUser from './(tabs)/EditUser';
@@ -32,6 +33,7 @@ export type RootStackParamList = {
   Dashboard: { appletId?: string; appletName?: string };
   AINewsletter: { appletId?: string; appletName?: string };
   ConversationalAI: { appletId?: string; appletName?: string };
+  Operations: { appletId?: string; appletName?: string };
   Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
@@ -399,6 +401,14 @@ export default function RootLayout() {
           component={ConversationalAI}
           options={{
             title: 'Conversational AI',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="Operations" 
+          component={Operations}
+          options={{
+            title: 'Operations',
             headerShown: true,
           }}
         />

@@ -68,6 +68,13 @@ export default function Home() {
     navigation.navigate('MyBuys' as never);
   };
 
+  const handleNavigateToOperations = () => {
+    navigation.navigate('Operations' as never, { 
+      appletId: '7', 
+      appletName: 'Operations' 
+    } as never);
+  };
+
   const appTiles: AppTile[] = [
     { 
       id: '9', 
@@ -143,7 +150,8 @@ export default function Home() {
       description: 'Streamline your operations workflow with powerful automation and monitoring capabilities.',
       color: colors.tileColors.orange3,
       iconName: 'git-network-outline',
-      isActive: false,
+      isActive: true,
+      onPress: handleNavigateToOperations,
     },
     { 
       id: '8', 
