@@ -9,7 +9,7 @@ import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { ChatModal, ChatModalRef } from '../../components/ChatModal';
-import { ConversationalAINavigationBar } from '../../components/ConversationalAINavigationBar';
+import { NavigationBar } from '../../components/NavigationBar';
 import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { ChatMessage } from '../../types/chat.types';
@@ -33,6 +33,14 @@ export default function ConversationalAI() {
   const [selectedPage, setSelectedPage] = useState('yCrP3yCLoa'); // Default to 'Chat'
   const [isFilterActive, setIsFilterActive] = useState(false);
   const [previousPage, setPreviousPage] = useState('yCrP3yCLoa');
+  
+  // Define pages for navigation bar
+  const pages = [
+    { id: 'yCrP3yCLoa', name: 'Chat', icon: 'chatbubbles-outline' as const },
+    { id: 'CNyZilcqir', name: 'Ask', icon: 'help-circle-outline' as const },
+    { id: 'efRWfolUlX', name: 'Compare', icon: 'git-compare-outline' as const },
+    { id: 'ekPedGdc26', name: 'History', icon: 'time-outline' as const },
+  ];
   
   // Chat modal state
   const [chatModalVisible, setChatModalVisible] = useState(false);
@@ -212,7 +220,8 @@ export default function ConversationalAI() {
           appletName={appletName}
         />
       </View>
-      <ConversationalAINavigationBar
+      <NavigationBar
+        pages={pages}
         selectedPage={selectedPage}
         onPageSelect={handlePageSelect}
         onFilterPress={handleFilterPress}

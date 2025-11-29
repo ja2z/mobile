@@ -29,6 +29,14 @@ export default function Dashboard() {
   const [isFilterActive, setIsFilterActive] = useState(false);
   const [previousPage, setPreviousPage] = useState('nVSaruy7Wf');
   
+  // Define pages for navigation bar
+  const pages = [
+    { id: 'nVSaruy7Wf', name: 'Dash', icon: 'grid-outline' as const },
+    { id: 'Vk5j4ngio3', name: 'Bar', icon: 'bar-chart-outline' as const },
+    { id: 'ADyAhWunig', name: 'Line', icon: 'trending-up-outline' as const },
+    { id: 'lYEajzgMLj', name: 'Card', icon: 'card-outline' as const },
+  ];
+  
   // Use custom hook for embed URL info modal and header button
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
 
@@ -124,6 +132,7 @@ export default function Dashboard() {
         />
       </View>
       <NavigationBar
+        pages={pages}
         selectedPage={selectedPage}
         onPageSelect={handlePageSelect}
         onFilterPress={handleFilterPress}

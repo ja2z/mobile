@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
 
 interface NavigationBarProps {
+  pages: Array<{ id: string; name: string; icon: keyof typeof Ionicons.glyphMap }>;
   selectedPage: string;
   onPageSelect: (pageId: string, pageName: string) => void;
   onFilterPress: () => void;
@@ -12,20 +13,15 @@ interface NavigationBarProps {
 
 /**
  * Navigation Bar Component
- * Bottom sticky navigation with 4 page buttons and 1 filter button
+ * Bottom sticky navigation with page buttons and 1 filter button
  */
 export const NavigationBar: React.FC<NavigationBarProps> = ({
+  pages,
   selectedPage,
   onPageSelect,
   onFilterPress,
   isFilterActive,
 }) => {
-  const pages = [
-    { id: 'nVSaruy7Wf', name: 'Dash', icon: 'grid-outline' as const },
-    { id: 'Vk5j4ngio3', name: 'Bar', icon: 'bar-chart-outline' as const },
-    { id: 'ADyAhWunig', name: 'Line', icon: 'trending-up-outline' as const },
-    { id: 'lYEajzgMLj', name: 'Card', icon: 'card-outline' as const },
-  ];
 
   return (
     <View style={styles.container}>
