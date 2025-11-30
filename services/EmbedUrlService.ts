@@ -22,6 +22,8 @@ interface EmbedUrlParams {
   teams?: string[];
   applet_id?: string;
   applet_name?: string;
+  page_id?: string;
+  variables?: Record<string, string>;
 }
 
 /**

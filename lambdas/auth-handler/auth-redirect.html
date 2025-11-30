@@ -91,16 +91,24 @@
   </div>
 
   <script>
-    // Extract token from URL query parameter
+    // Extract token and other parameters from URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
     const app = urlParams.get('app');
+    const pageId = urlParams.get('pageId');
+    const variables = urlParams.get('variables');
     
     if (token) {
       // Build deep link URL
       let deepLink = 'bigbuys://auth?token=' + encodeURIComponent(token);
       if (app) {
         deepLink += '&app=' + encodeURIComponent(app);
+      }
+      if (app && pageId) {
+        deepLink += '&pageId=' + encodeURIComponent(pageId);
+      }
+      if (app && variables) {
+        deepLink += '&variables=' + encodeURIComponent(variables);
       }
       
       // Update the fallback link

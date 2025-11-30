@@ -37,28 +37,47 @@ STAGE="v1"
 REGION="us-west-2"
 
 # API Gateway 1 throttling settings
-RATE_LIMIT_1=1000      # requests per second
-BURST_LIMIT_1=2000     # burst capacity
+# General endpoints: More restrictive to prevent abuse
+RATE_LIMIT_1=200       # requests per second (reduced from 1000)
+BURST_LIMIT_1=400      # burst capacity (reduced from 2000)
 QUOTA_LIMIT_1=1000000  # requests per day
+
+# Short URL endpoints: Very strict limits to prevent brute force attacks
+SHORT_URL_RATE_LIMIT=10    # requests per second (very restrictive)
+SHORT_URL_BURST_LIMIT=20   # burst capacity (very restrictive)
 
 echo "=========================================="
 echo "API Gateway 1: $API_ID_1"
 echo "=========================================="
-echo "Rate Limit: $RATE_LIMIT_1 requests/second"
-echo "Burst Limit: $BURST_LIMIT_1 requests"
+echo "General Endpoints:"
+echo "  Rate Limit: $RATE_LIMIT_1 requests/second"
+echo "  Burst Limit: $BURST_LIMIT_1 requests"
+echo ""
+echo "Short URL Endpoints (/s/{shortId}, /v1/s/{shortId}, /auth/s/{shortId}):"
+echo "  Rate Limit: $SHORT_URL_RATE_LIMIT requests/second"
+echo "  Burst Limit: $SHORT_URL_BURST_LIMIT requests"
+echo "  (Strict limits to prevent brute force attacks on magic links)"
+echo ""
 echo "Quota Limit: $QUOTA_LIMIT_1 requests/day"
 echo ""
 
 # Update API Gateway 1
 echo "Updating throttling settings..."
-# Note: Throttling must be set at method level using /*/* paths
+# Note: Throttling must be set at method level
+# First set general limits for all endpoints
 cat > /tmp/stage-update-1.json << EOF
 {
   "restApiId": "$API_ID_1",
   "stageName": "$STAGE",
   "patchOperations": [
     {"op": "replace", "path": "/*/*/throttling/burstLimit", "value": "$BURST_LIMIT_1"},
-    {"op": "replace", "path": "/*/*/throttling/rateLimit", "value": "$RATE_LIMIT_1"}
+    {"op": "replace", "path": "/*/*/throttling/rateLimit", "value": "$RATE_LIMIT_1"},
+    {"op": "replace", "path": "/s/{shortId}/GET/throttling/burstLimit", "value": "$SHORT_URL_BURST_LIMIT"},
+    {"op": "replace", "path": "/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"},
+    {"op": "replace", "path": "/v1/s/{shortId}/GET/throttling/burstLimit", "value": "$SHORT_URL_BURST_LIMIT"},
+    {"op": "replace", "path": "/v1/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"},
+    {"op": "replace", "path": "/auth/s/{shortId}/GET/throttling/burstLimit", "value": "$SHORT_URL_BURST_LIMIT"},
+    {"op": "replace", "path": "/auth/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"}
   ]
 }
 EOF
@@ -75,7 +94,7 @@ else
 fi
 
 echo ""
-echo "Verifying configuration..."
+echo "Verifying general endpoint configuration..."
 aws_cmd apigateway get-stage \
     --rest-api-id $API_ID_1 \
     --stage-name $STAGE \
@@ -84,14 +103,41 @@ aws_cmd apigateway get-stage \
     --output json
 
 echo ""
+echo "Verifying short URL endpoint configuration..."
+echo "  /s/{shortId}/GET:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/s/{shortId}/GET".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo "  /v1/s/{shortId}/GET:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/v1/s/{shortId}/GET".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo "  /auth/s/{shortId}/GET:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/auth/s/{shortId}/GET".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo ""
 echo ""
 
 # API Gateway 2 Configuration
 API_ID_2="3x4hwcq05f"
 
 # API Gateway 2 throttling settings
-RATE_LIMIT_2=500       # requests per second
-BURST_LIMIT_2=1000     # burst capacity
+# More restrictive limits for second API Gateway
+RATE_LIMIT_2=200       # requests per second (reduced from 500)
+BURST_LIMIT_2=400      # burst capacity (reduced from 1000)
 QUOTA_LIMIT_2=500000   # requests per day
 
 echo "=========================================="
@@ -141,6 +187,11 @@ echo ""
 echo -e "${GREEN}=========================================="
 echo "✓ Rate limiting configuration complete!"
 echo "==========================================${NC}"
+echo ""
+echo -e "${YELLOW}Security Improvements:${NC}"
+echo "  • General endpoints: Reduced to 200 req/sec (from 1000) to prevent abuse"
+echo "  • Short URL endpoints: Strict 10 req/sec limit to prevent brute force attacks"
+echo "  • Short URL endpoints protect magic link authentication tokens"
 echo ""
 echo "Next steps:"
 echo "1. Monitor CloudWatch metrics for throttling events"

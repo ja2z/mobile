@@ -332,7 +332,9 @@ export const handler = async (event: any) => {
         let body: any = {};
         try {
             body = event.body ? JSON.parse(event.body) : {};
-            console.log('Parsed request body:', JSON.stringify(body, null, 2));
+            console.log('🔧 ===== GENERATE-URL LAMBDA REQUEST =====');
+            console.log('🔧 Raw event.body:', event.body);
+            console.log('🔧 Parsed request body:', JSON.stringify(body, null, 2));
         } catch (parseError) {
             console.error('Error parsing request body:', parseError);
             throw new Error('Invalid JSON in request body');
@@ -347,8 +349,23 @@ export const handler = async (event: any) => {
         const teams = body.teams || ["all_clients_team", "acme_team"];
         const appletId = body.applet_id;
         const appletName = body.applet_name;
+        const pageId = body.page_id;
+        const variables = body.variables; // Should be Record<string, string>
         
-        console.log('Processing request with:', {
+        console.log('🔧 Extracted parameters:');
+        console.log('🔧   merchantId:', merchantId);
+        console.log('🔧   userEmail:', userEmailForEmbed);
+        console.log('🔧   workbookId:', workbookId);
+        console.log('🔧   embedPath:', embedPath);
+        console.log('🔧   teams:', teams);
+        console.log('🔧   appletId:', appletId);
+        console.log('🔧   appletName:', appletName);
+        console.log('🔧   page_id (from body):', pageId);
+        console.log('🔧   page_id type:', typeof pageId);
+        console.log('🔧   variables (from body):', JSON.stringify(variables, null, 2));
+        console.log('🔧   variables type:', typeof variables);
+        console.log('🔧   variables is object:', variables && typeof variables === 'object');
+        console.log('🔧 Processing request with:', {
             merchantId,
             userEmail: userEmailForEmbed,
             workbookId,
@@ -356,6 +373,8 @@ export const handler = async (event: any) => {
             teams,
             appletId,
             appletName,
+            pageId,
+            variables,
             authenticatedUser: userEmail
         });
         
@@ -388,8 +407,73 @@ export const handler = async (event: any) => {
         const jwtToken = createJWT(payload, embedSecret);
         console.log('Embed JWT created successfully');
         
-        // Construct the full embedding URL
-        const embeddingUrl = `https://app.sigmacomputing.com/${embedPath}/${workbookId}?:jwt=${jwtToken}&:embed=true&:menu_position=none`;
+        // Construct the base embedding URL
+        // If pageId is provided, add /page/{pageId} to the path
+        console.log('🔧 ===== CONSTRUCTING EMBED URL =====');
+        let baseUrl = `https://app.sigmacomputing.com/${embedPath}/${workbookId}`;
+        console.log('🔧 Base URL (before pageId):', baseUrl);
+        if (pageId) {
+            baseUrl += `/page/${encodeURIComponent(pageId)}`;
+            console.log('🔧 Added pageId to URL path:', pageId);
+            console.log('🔧 Base URL (after pageId):', baseUrl);
+        } else {
+            console.log('🔧 No pageId provided, skipping /page/{pageId}');
+        }
+        
+        // Start building query parameters
+        // Flag to toggle URL encoding - set to false to disable encoding
+        const ENABLE_URL_ENCODING = false;
+        
+        let embeddingUrl: string;
+        
+        if (ENABLE_URL_ENCODING) {
+            // Use URLSearchParams for automatic encoding
+            const queryParams = new URLSearchParams();
+            queryParams.append(':jwt', jwtToken);
+            queryParams.append(':embed', 'true');
+            queryParams.append(':menu_position', 'none');
+            console.log('🔧 Base query params:', queryParams.toString());
+            
+            // Add variables as query parameters if provided
+            if (variables && typeof variables === 'object') {
+                console.log('🔧 Adding variables to query params:');
+                for (const [key, value] of Object.entries(variables)) {
+                    if (key && value !== null && value !== undefined) {
+                        queryParams.append(key, String(value));
+                        console.log(`🔧   Added: ${key} = ${String(value)}`);
+                    }
+                }
+            } else {
+                console.log('🔧 No variables provided or variables is not an object');
+            }
+            
+            embeddingUrl = `${baseUrl}?${queryParams.toString()}`;
+        } else {
+            // Build query string manually without encoding
+            const queryParts: string[] = [];
+            queryParts.push(`:jwt=${jwtToken}`);
+            queryParts.push(`:embed=true`);
+            queryParts.push(`:menu_position=none`);
+            console.log('🔧 Base query params (unencoded):', queryParts.join('&'));
+            
+            // Add variables as query parameters if provided
+            if (variables && typeof variables === 'object') {
+                console.log('🔧 Adding variables to query params (unencoded):');
+                for (const [key, value] of Object.entries(variables)) {
+                    if (key && value !== null && value !== undefined) {
+                        queryParts.push(`${key}=${String(value)}`);
+                        console.log(`🔧   Added (unencoded): ${key} = ${String(value)}`);
+                    }
+                }
+            } else {
+                console.log('🔧 No variables provided or variables is not an object');
+            }
+            
+            embeddingUrl = `${baseUrl}?${queryParts.join('&')}`;
+        }
+        
+        console.log('🔧 Final embedding URL:', embeddingUrl);
+        console.log('🔧 ===== END CONSTRUCTING EMBED URL =====');
         
         // Log activity and update last active time (don't let failures break the main flow)
         const ipAddress = getIpAddress(event);
