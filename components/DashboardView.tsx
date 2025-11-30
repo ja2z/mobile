@@ -21,6 +21,8 @@ export interface DashboardViewRef {
   sendChatPrompt: (prompt: string) => void;
   onChatOpen: (callback: (sessionId: string) => void) => void;
   onChatResponse: (callback: (response: any) => void) => void;
+  onInventoryVerification: (callback: (data: any) => void) => void;
+  queryWorkbookVariables?: () => void;
 }
 
 /**
@@ -94,6 +96,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   // Chat-related callback refs
   const chatOpenCallbackRef = useRef<((sessionId: string) => void) | null>(null);
   const chatResponseCallbackRef = useRef<((response: any) => void) | null>(null);
+  
+  // Inventory verification callback ref
+  const inventoryVerificationCallbackRef = useRef<((data: any) => void) | null>(null);
 
   /**
    * Send a message to the embedded iframe
@@ -198,6 +203,23 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     chatResponseCallbackRef.current = callback;
   };
 
+  /**
+   * Register callback for inventory verification requests
+   */
+  const onInventoryVerification = (callback: (data: any) => void) => {
+    inventoryVerificationCallbackRef.current = callback;
+  };
+
+  /**
+   * Query workbook variables for debugging
+   */
+  const queryWorkbookVariables = () => {
+    console.log('🔍 Querying workbook variables using workbook:variables:list...');
+    sendMessage({
+      type: 'workbook:variables:list'
+    });
+  };
+
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     sendMessage,
@@ -206,6 +228,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     sendChatPrompt,
     onChatOpen,
     onChatResponse,
+    onInventoryVerification,
+    queryWorkbookVariables,
   }));
 
   /**
@@ -373,8 +397,24 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       } else if (data.type === 'workbook:loaded') {
         console.log('🎉 ✅ WORKBOOK LOADED SUCCESSFULLY! 🎉');
         console.log('📊 Workbook variables:', data.workbook?.variables || 'none');
+        if (data.workbook?.variables) {
+          console.log('📊 Available variable names:', Object.keys(data.workbook.variables));
+        }
         setWorkbookLoaded(true);
         setLoading(false);
+      } else if (data.type === 'workbook:variables:current') {
+        console.log('🔍 ===== WORKBOOK VARIABLES LIST RESPONSE =====');
+        console.log('📋 Full response data:', JSON.stringify(data, null, 2));
+        if (data.variables) {
+          const varNames = Object.keys(data.variables);
+          console.log('📋 Total variables:', varNames.length);
+          console.log('📋 Variable names:', varNames);
+          console.log('📋 Variable values:', JSON.stringify(data.variables, null, 2));
+          console.log('📋 Looking for inventory variables...');
+          console.log('📋 p_stockroom_qty exists?', varNames.includes('p_stockroom_qty'));
+          console.log('📋 p_transfer_qty exists?', varNames.includes('p_transfer_qty'));
+        }
+        console.log('🔍 ===== END VARIABLES LIST =====\n');
       } else if (data.type === 'chat:open') {
         // Handle sessionId change - open native chat modal
         console.log('💬 Chat open requested with sessionId:', data.sessionId);
@@ -386,6 +426,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         console.log('💬 Chat response received:', data.message);
         if (chatResponseCallbackRef.current && data.message) {
           chatResponseCallbackRef.current(data.message);
+        }
+      } else if (data.type === 'action:outbound') {
+        // Handle outbound action events from Sigma workbook
+        console.log('📦 Action outbound event received:', data);
+        console.log('📦 Event name:', data.name);
+        console.log('📦 Event values:', data.values);
+        
+        // Check if this is an inventory verification event
+        if (data.name === 'inventory:verify' || data.name === 'Event-Name') {
+          console.log('📦 Triggering inventory verification');
+          if (inventoryVerificationCallbackRef.current && data.values) {
+            inventoryVerificationCallbackRef.current(data.values);
+          }
         }
       } else if (data.type === 'workbook:variables:onchange') {
         // Handle variable changes - check for sessionId and chat response

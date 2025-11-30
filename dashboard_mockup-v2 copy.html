@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Planning Dashboard - Mockup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f9fafb;
+            color: #111827;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            padding: 24px 32px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .tab:hover:not(.active) {
+            background: #e5e7eb;
+        }
+
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .kpi-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .kpi-value {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .kpi-label {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .kpi-sublabel {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .kpi-critical { color: #dc2626; }
+        .kpi-high { color: #ea580c; }
+        .kpi-demand { color: #3b82f6; }
+        .kpi-transfer { color: #10b981; }
+
+        /* Filters */
+        .filters {
+            background: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .filter-label {
+            font-size: 14px;
+            font-weight: 500;
+            margin-right: 8px;
+        }
+
+        select {
+            padding: 8px 32px 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        /* Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        /* Card/Panel */
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-action {
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 16px 12px;
+            font-size: 14px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        tr.critical {
+            background: #fee2e2;
+        }
+
+        tr.high {
+            background: #ffedd5;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        .trend-up {
+            color: #dc2626;
+            font-weight: 600;
+        }
+
+        .trend-down {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-critical {
+            background: #dc2626;
+            color: white;
+        }
+
+        .badge-high {
+            background: #ea580c;
+            color: white;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+
+        .chart {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* Line Chart SVG */
+        .line-chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-top: 16px;
+            font-size: 13px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        /* Transfer Cards */
+        .transfer-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+
+        .transfer-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .transfer-header {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .store-section {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .store-section.shortage {
+            background: #fee2e2;
+            border-left: 4px solid #dc2626;
+        }
+
+        .store-section.excess {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+        }
+
+        .store-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .store-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .store-location {
+            font-size: 13px;
+            color: #6b7280;
+            margin-bottom: 12px;
+        }
+
+        .store-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            font-size: 13px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-label {
+            color: #6b7280;
+            font-size: 11px;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .transfer-arrow {
+            text-align: center;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #f59e0b;
+        }
+
+        .transfer-action {
+            margin-top: 16px;
+            text-align: center;
+        }
+
+        /* Mobile View */
+        .mobile-container {
+            max-width: 375px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .mobile-header {
+            background: #3b82f6;
+            color: white;
+            padding: 16px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .mobile-content {
+            padding: 24px;
+        }
+
+        .notification-badge {
+            background: #dc2626;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        .mobile-card {
+            background: #f9fafb;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .mobile-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .mobile-value {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+
+        .mobile-btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: 8px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+
+        .mobile-btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .mobile-btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        /* Status Timeline */
+        .status-timeline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 16px 0;
+        }
+
+        .status-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            position: relative;
+        }
+
+        .status-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            z-index: 2;
+        }
+
+        .status-dot.completed {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-dot.active {
+            background: #3b82f6;
+            color: white;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        }
+
+        .status-dot.pending {
+            background: #e5e7eb;
+            color: #9ca3af;
+        }
+
+        .status-line {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            right: -50%;
+            height: 2px;
+            background: #e5e7eb;
+            z-index: 1;
+        }
+
+        .status-line.completed {
+            background: #10b981;
+        }
+
+        .status-label {
+            font-size: 11px;
+            text-align: center;
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .status-label.active {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .status-label.completed {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        /* Transfer Card */
+        .transfer-status-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid #3b82f6;
+        }
+
+        .transfer-status-card.critical {
+            border-left-color: #dc2626;
+        }
+
+        .transfer-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .transfer-info {
+            flex: 1;
+        }
+
+        .transfer-id {
+            font-size: 12px;
+            color: #6b7280;
+            font-family: monospace;
+        }
+
+        .transfer-product {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 4px 0 8px 0;
+        }
+
+        .transfer-status-badge {
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .status-warehouse-review {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-initiated {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-confirmed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-pending {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .transfer-details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .detail-section {
+            padding: 12px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .detail-subvalue {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        .quantity-comparison {
+            display: flex;
+            gap: 24px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+
+        .qty-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        .qty-label {
+            font-size: 11px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .qty-value {
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .qty-requested {
+            color: #3b82f6;
+        }
+
+        .qty-confirmed {
+            color: #10b981;
+        }
+
+        .qty-system {
+            color: #6b7280;
+        }
+
+        /* Page toggle */
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            justify-content: center;
+        }
+
+        .toggle-btn {
+            padding: 10px 24px;
+            background: white;
+            border: 2px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .toggle-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body>
+    <!-- View Toggle -->
+    <div class="view-toggle">
+        <button class="toggle-btn active" onclick="showView('desktop')">🖥️ Desktop View</button>
+        <button class="toggle-btn" onclick="showView('mobile')">📱 Mobile View</button>
+    </div>
+
+    <!-- Desktop View -->
+    <div id="desktop-view" class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Inventory Planning Dashboard</h1>
+            <p>Monitor inventory levels and manage transfers across stores</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showPage(1)">Critical Alerts</button>
+            <button class="tab" onclick="showPage(2)">Transfer Recommendations</button>
+            <button class="tab" onclick="showPage(3)">Active Transfers</button>
+            <button class="tab" onclick="showPage(4)">Full Inventory</button>
+        </div>
+
+        <!-- Page 1: Critical Alerts -->
+        <div id="page1" class="page active">
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-icon">⚠️</div>
+                    <div class="kpi-value kpi-critical">2</div>
+                    <div class="kpi-label kpi-critical">Critical Items</div>
+                    <div class="kpi-sublabel">Immediate action required</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-icon">⚡</div>
+                    <div class="kpi-value kpi-high">2</div>
+                    <div class="kpi-label kpi-high">High Risk Items</div>
+                    <div class="kpi-sublabel">Reorder soon</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-icon">📈</div>
+                    <div class="kpi-value kpi-demand">4</div>
+                    <div class="kpi-label kpi-demand">Demand Spikes</div>
+                    <div class="kpi-sublabel">30d > 90d avg by 20%+</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-icon">🔄</div>
+                    <div class="kpi-value kpi-transfer">2</div>
+                    <div class="kpi-label kpi-transfer">Transfers Available</div>
+                    <div class="kpi-sublabel">Ready to execute</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters">
+                <span class="filter-label">Filters:</span>
+                <select>
+                    <option>All Stores</option>
+                    <option selected>West Region</option>
+                </select>
+                <select>
+                    <option selected>All Products</option>
+                    <option>Audio</option>
+                    <option>Mobile Devices</option>
+                </select>
+                <select>
+                    <option selected>Latest Week (Nov 9, 2025)</option>
+                    <option>Last 4 Weeks</option>
+                </select>
+            </div>
+
+            <!-- Critical Alerts Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        🚨 Critical Inventory Alerts
+                    </div>
+                    <a href="#" class="panel-action">View All →</a>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Store Name</th>
+                            <th>City</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Needed</th>
+                            <th>Days</th>
+                            <th>Trend</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="critical">
+                            <td><strong>Big Buys Flagship LA #100010</strong></td>
+                            <td>Los Angeles</td>
+                            <td>Sony WH-1000XM5 Headphones</td>
+                            <td><strong>2</strong></td>
+                            <td>28</td>
+                            <td><strong style="color: #dc2626;">2.9</strong></td>
+                            <td><span class="trend-up">↗️ +27%</span></td>
+                            <td><button class="btn btn-primary" onclick="showPage(2)">Find Transfer</button></td>
+                        </tr>
+                        <tr class="critical">
+                            <td><strong>Big Buys Flagship Norwalk #100013</strong></td>
+                            <td>Norwalk</td>
+                            <td>Apple AirPods Pro Series</td>
+                            <td><strong>5</strong></td>
+                            <td>22</td>
+                            <td><strong style="color: #dc2626;">2.4</strong></td>
+                            <td><span class="trend-up">↗️ +41%</span></td>
+                            <td><button class="btn btn-primary" onclick="showPage(2)">Find Transfer</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Sales Velocity Trends Chart -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        📊 Sales Velocity Trends - Last 12 Weeks
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <svg class="line-chart" viewBox="0 0 800 250">
+                        <!-- Grid lines -->
+                        <line x1="60" y1="30" x2="60" y2="220" stroke="#e5e7eb" stroke-width="2"/>
+                        <line x1="60" y1="220" x2="760" y2="220" stroke="#e5e7eb" stroke-width="2"/>
+                        
+                        <!-- Y-axis labels -->
+                        <text x="40" y="35" font-size="12" fill="#6b7280">2.5</text>
+                        <text x="40" y="82" font-size="12" fill="#6b7280">2.0</text>
+                        <text x="40" y="128" font-size="12" fill="#6b7280">1.5</text>
+                        <text x="40" y="174" font-size="12" fill="#6b7280">1.0</text>
+                        <text x="40" y="220" font-size="12" fill="#6b7280">0.5</text>
+                        
+                        <!-- Sony WH-1000XM5 - 90-day avg (baseline) -->
+                        <polyline points="80,200 140,198 200,195 260,195 320,192 380,190 440,185 500,180 560,175 620,170 680,165 740,160"
+                                  fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="5,5"/>
+                        
+                        <!-- Sony WH-1000XM5 - 30-day avg (elevated) -->
+                        <polyline points="80,190 140,188 200,185 260,182 320,178 380,172 440,165 500,158 560,150 620,142 680,135 740,128"
+                                  fill="none" stroke="#f59e0b" stroke-width="2.5"/>
+                        
+                        <!-- Sony WH-1000XM5 - 7-day avg (spike) -->
+                        <polyline points="80,185 140,183 200,180 260,175 320,168 380,160 440,150 500,138 560,125 620,112 680,100 740,88"
+                                  fill="none" stroke="#ef4444" stroke-width="3"/>
+                        
+                        <!-- Data points on last value -->
+                        <circle cx="740" cy="160" r="4" fill="#10b981"/>
+                        <circle cx="740" cy="128" r="4" fill="#f59e0b"/>
+                        <circle cx="740" cy="88" r="5" fill="#ef4444"/>
+                        
+                        <!-- X-axis dates -->
+                        <text x="80" y="240" font-size="11" fill="#6b7280">Aug 17</text>
+                        <text x="260" y="240" font-size="11" fill="#6b7280">Sep 14</text>
+                        <text x="440" y="240" font-size="11" fill="#6b7280">Oct 12</text>
+                        <text x="680" y="240" font-size="11" fill="#6b7280">Nov 9</text>
+                        
+                        <!-- Product label -->
+                        <text x="400" y="60" font-size="14" font-weight="600" text-anchor="middle" fill="#374151">Sony WH-1000XM5</text>
+                    </svg>
+                </div>
+
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ef4444;"></div>
+                        <span>7-day avg</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #f59e0b;"></div>
+                        <span>30-day avg</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #10b981; opacity: 0.5;"></div>
+                        <span>90-day avg (baseline)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page 2: Transfer Recommendations -->
+        <div id="page2" class="page">
+            <div class="panel" style="margin-bottom: 24px;">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        🤖 AI-Powered Transfer Recommendations
+                    </div>
+                    <span style="font-size: 13px; color: #6b7280;">Optimize inventory across your network</span>
+                </div>
+            </div>
+
+            <div class="transfer-grid">
+                <!-- Transfer Card 1: Sony -->
+                <div class="transfer-card">
+                    <div class="transfer-header">
+                        Transfer Recommendation #1
+                    </div>
+                    
+                    <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                        <strong>Product:</strong> Sony WH-1000XM5 Headphones<br>
+                        <span style="font-size: 12px; color: #6b7280;">SKU: AU-SO-0000000608</span>
+                    </div>
+
+                    <div class="store-section shortage">
+                        <div class="store-label">🔴 Shortage Store</div>
+                        <div class="store-name">Big Buys Flagship LA #100010</div>
+                        <div class="store-location">Los Angeles, CA</div>
+                        
+                        <div class="store-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Current</span>
+                                <span class="metric-value" style="color: #dc2626;">2 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Needed</span>
+                                <span class="metric-value">28 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Days Supply</span>
+                                <span class="metric-value" style="color: #dc2626;">2.9 days ⚠️</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Trend</span>
+                                <span class="metric-value" style="color: #dc2626;">+27% ↗️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="transfer-arrow">
+                        ↓ Transfer 50 units ↓
+                    </div>
+
+                    <div class="store-section excess">
+                        <div class="store-label">📦 Excess Inventory Store</div>
+                        <div class="store-name">Big Buys Premium Pacoima #100019</div>
+                        <div class="store-location">Pacoima, CA (15 miles away)</div>
+                        
+                        <div class="store-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Current</span>
+                                <span class="metric-value">120 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Available</span>
+                                <span class="metric-value" style="color: #10b981;">90 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Days Supply</span>
+                                <span class="metric-value">857 days 📦</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Trend</span>
+                                <span class="metric-value">-30% ↘️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="transfer-action">
+                        <button class="btn btn-primary" style="padding: 12px 32px; font-size: 15px;">
+                            Initiate Transfer Request →
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Transfer Card 2: Apple -->
+                <div class="transfer-card">
+                    <div class="transfer-header">
+                        Transfer Recommendation #2
+                    </div>
+                    
+                    <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                        <strong>Product:</strong> Apple AirPods Pro Series<br>
+                        <span style="font-size: 12px; color: #6b7280;">SKU: AU-APPLE-0000000571</span>
+                    </div>
+
+                    <div class="store-section shortage">
+                        <div class="store-label">🔴 Shortage Store</div>
+                        <div class="store-name">Big Buys Flagship Norwalk #100013</div>
+                        <div class="store-location">Norwalk, CA</div>
+                        
+                        <div class="store-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Current</span>
+                                <span class="metric-value" style="color: #dc2626;">5 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Needed</span>
+                                <span class="metric-value">22 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Days Supply</span>
+                                <span class="metric-value" style="color: #dc2626;">2.4 days ⚠️</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Trend</span>
+                                <span class="metric-value" style="color: #dc2626;">+41% ↗️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="transfer-arrow">
+                        ↓ Transfer 40 units ↓
+                    </div>
+
+                    <div class="store-section excess">
+                        <div class="store-label">📦 Excess Inventory Store</div>
+                        <div class="store-name">Big Buys Premium LA #100021</div>
+                        <div class="store-location">Los Angeles, CA (5 miles away)</div>
+                        
+                        <div class="store-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Current</span>
+                                <span class="metric-value">120 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Available</span>
+                                <span class="metric-value" style="color: #10b981;">85 units</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Days Supply</span>
+                                <span class="metric-value">293 days 📦</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Trend</span>
+                                <span class="metric-value">-20% ↘️</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="transfer-action">
+                        <button class="btn btn-primary" style="padding: 12px 32px; font-size: 15px;">
+                            Initiate Transfer Request →
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page 3: Active Transfers -->
+        <div id="page3" class="page">
+            <div class="panel" style="margin-bottom: 24px;">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        🔄 Active Transfer Requests
+                    </div>
+                    <span style="font-size: 13px; color: #6b7280;">Track transfer progress and confirmations</span>
+                </div>
+            </div>
+
+            <!-- Transfer Status Card -->
+            <div class="transfer-status-card critical">
+                <div class="transfer-header-row">
+                    <div class="transfer-info">
+                        <div class="transfer-id">TR-20251109-001</div>
+                        <div class="transfer-product">Sony WH-1000XM5 Headphones</div>
+                        <div style="font-size: 13px; color: #6b7280;">SKU: AU-SO-0000000608 • Requested: Nov 9, 2025 3:24 PM</div>
+                    </div>
+                    <div class="transfer-status-badge status-warehouse-review">
+                        Warehouse Review
+                    </div>
+                </div>
+
+                <!-- Status Timeline -->
+                <div class="status-timeline">
+                    <div class="status-step">
+                        <div class="status-dot completed">✓</div>
+                        <div class="status-label completed">Initiated</div>
+                        <div class="status-line completed"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot active">📦</div>
+                        <div class="status-label active">Warehouse Review</div>
+                        <div class="status-line"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot pending">📋</div>
+                        <div class="status-label">Confirmed</div>
+                        <div class="status-line"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot pending">🚚</div>
+                        <div class="status-label">Shipped</div>
+                        <div class="status-line"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot pending">✅</div>
+                        <div class="status-label">Completed</div>
+                    </div>
+                </div>
+
+                <!-- Transfer Details -->
+                <div class="transfer-details-grid">
+                    <div class="detail-section">
+                        <div class="detail-label">📦 From (Source)</div>
+                        <div class="detail-value">Big Buys Pacoima #100019</div>
+                        <div class="detail-subvalue">Pacoima, California</div>
+                        <div style="margin-top: 8px; font-size: 13px;">
+                            System: <strong>120 units</strong> (857 days supply)
+                        </div>
+                    </div>
+                    <div class="detail-section">
+                        <div class="detail-label">🎯 To (Destination)</div>
+                        <div class="detail-value">Big Buys LA Flagship #100010</div>
+                        <div class="detail-subvalue">Los Angeles, California (15 miles)</div>
+                        <div style="margin-top: 8px; font-size: 13px;">
+                            Needs: <strong style="color: #dc2626;">28 units</strong> (2.9 days supply ⚠️)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quantity Summary -->
+                <div class="quantity-comparison">
+                    <div class="qty-item">
+                        <div class="qty-label">Requested</div>
+                        <div class="qty-value qty-requested">50</div>
+                        <div class="qty-label">units</div>
+                    </div>
+                    <div class="qty-item">
+                        <div class="qty-label">System Available</div>
+                        <div class="qty-value qty-system">120</div>
+                        <div class="qty-label">units</div>
+                    </div>
+                    <div class="qty-item">
+                        <div class="qty-label">Confirmed</div>
+                        <div class="qty-value" style="color: #9ca3af;">—</div>
+                        <div class="qty-label">pending</div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn btn-primary" disabled style="opacity: 0.5; cursor: not-allowed;">
+                        Awaiting Confirmation
+                    </button>
+                </div>
+            </div>
+
+            <!-- Completed Transfer Example -->
+            <div class="transfer-status-card">
+                <div class="transfer-header-row">
+                    <div class="transfer-info">
+                        <div class="transfer-id">TR-20251108-003</div>
+                        <div class="transfer-product">Logitech Wireless Keyboards</div>
+                        <div style="font-size: 13px; color: #6b7280;">SKU: AC-LO-0000001234 • Requested: Nov 8, 2025 10:15 AM</div>
+                    </div>
+                    <div class="transfer-status-badge" style="background: #d1fae5; color: #065f46;">
+                        Confirmed
+                    </div>
+                </div>
+
+                <!-- Status Timeline (Completed through Confirmed) -->
+                <div class="status-timeline">
+                    <div class="status-step">
+                        <div class="status-dot completed">✓</div>
+                        <div class="status-label completed">Initiated</div>
+                        <div class="status-line completed"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot completed">✓</div>
+                        <div class="status-label completed">Warehouse Review</div>
+                        <div class="status-line completed"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot completed">✓</div>
+                        <div class="status-label completed">Confirmed</div>
+                        <div class="status-line"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot pending">🚚</div>
+                        <div class="status-label">Shipped</div>
+                        <div class="status-line"></div>
+                    </div>
+                    <div class="status-step">
+                        <div class="status-dot pending">✅</div>
+                        <div class="status-label">Completed</div>
+                    </div>
+                </div>
+
+                <!-- Transfer Details -->
+                <div class="transfer-details-grid">
+                    <div class="detail-section">
+                        <div class="detail-label">📦 From</div>
+                        <div class="detail-value">Big Buys San Diego #100045</div>
+                        <div class="detail-subvalue">San Diego, California</div>
+                    </div>
+                    <div class="detail-section">
+                        <div class="detail-label">🎯 To</div>
+                        <div class="detail-value">Big Buys Oakland #100032</div>
+                        <div class="detail-subvalue">Oakland, California</div>
+                    </div>
+                </div>
+
+                <!-- Quantity Comparison (After Confirmation) -->
+                <div class="quantity-comparison">
+                    <div class="qty-item">
+                        <div class="qty-label">Requested</div>
+                        <div class="qty-value qty-requested">25</div>
+                        <div class="qty-label">units</div>
+                    </div>
+                    <div class="qty-item">
+                        <div class="qty-label">Physical Count</div>
+                        <div class="qty-value qty-system">32</div>
+                        <div class="qty-label">units</div>
+                    </div>
+                    <div class="qty-item">
+                        <div class="qty-label">Confirmed</div>
+                        <div class="qty-value qty-confirmed">30</div>
+                        <div class="qty-label">units ✓</div>
+                    </div>
+                </div>
+
+                <!-- Confirmation Details -->
+                <div style="background: #f9fafb; padding: 12px; border-radius: 8px; font-size: 13px;">
+                    <strong>Confirmed by:</strong> Mike Rodriguez (Store Manager)<br>
+                    <strong>Confirmed:</strong> Nov 9, 2025 8:45 AM<br>
+                    <strong>Notes:</strong> "Items packed and ready in section B. Sent 30 units (5 extra to help with demand)."
+                </div>
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+                    <button class="btn btn-primary">
+                        Mark as Shipped →
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Page 4: Full Inventory -->
+        <div id="page4" class="page">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        📋 Complete Inventory View
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <input type="text" placeholder="🔍 Search stores, products..." 
+                           style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px;">
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Store</th>
+                            <th>City</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Reorder</th>
+                            <th>Safety</th>
+                            <th>Days</th>
+                            <th>Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="critical">
+                            <td>11/09/25</td>
+                            <td>LA Flagship</td>
+                            <td>Los Angeles</td>
+                            <td>Sony WH-1000XM5</td>
+                            <td>2</td>
+                            <td>28</td>
+                            <td>10</td>
+                            <td style="color: #dc2626; font-weight: 600;">2.9</td>
+                            <td><span class="badge badge-critical">Critical</span></td>
+                        </tr>
+                        <tr class="critical">
+                            <td>11/09/25</td>
+                            <td>Norwalk Flagship</td>
+                            <td>Norwalk</td>
+                            <td>Apple AirPods Pro</td>
+                            <td>5</td>
+                            <td>22</td>
+                            <td>5</td>
+                            <td style="color: #dc2626; font-weight: 600;">2.4</td>
+                            <td><span class="badge badge-critical">Critical</span></td>
+                        </tr>
+                        <tr>
+                            <td>11/09/25</td>
+                            <td>Pacoima Premium</td>
+                            <td>Pacoima</td>
+                            <td>Sony WH-1000XM5</td>
+                            <td>120</td>
+                            <td>12</td>
+                            <td>3</td>
+                            <td style="color: #3b82f6;">857</td>
+                            <td><span class="badge" style="background: #3b82f6; color: white;">Overstocked</span></td>
+                        </tr>
+                        <tr>
+                            <td colspan="9" style="text-align: center; color: #6b7280; padding: 20px;">
+                                ... 5.2 million total rows (showing filtered view) ...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile View -->
+    <div id="mobile-view" class="container" style="display: none;">
+        <div class="mobile-container">
+            <!-- Screen 1: Notification -->
+            <div id="mobile-screen1" class="mobile-screen">
+                <div class="mobile-header">
+                    📱 Big Buys Mobile
+                </div>
+                
+                <div class="mobile-content">
+                    <div class="notification-badge">
+                        🔔 New Transfer Request
+                    </div>
+
+                    <div class="mobile-card">
+                        <div style="font-weight: 600; margin-bottom: 12px;">TRANSFER REQUEST</div>
+                        <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">
+                            ID: TR-20251109-001<br>
+                            Status: <strong style="color: #f59e0b;">Pending</strong>
+                        </div>
+                    </div>
+
+                    <div class="mobile-label">Product</div>
+                    <div class="mobile-value">
+                        Sony WH-1000XM5<br>
+                        Headphones
+                    </div>
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 16px;">
+                        SKU: AU-SO-0000000608
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">From Your Store</div>
+                    <div class="mobile-value">
+                        Big Buys Pacoima #100019<br>
+                        <span style="font-size: 13px; color: #6b7280;">Pacoima, CA</span>
+                    </div>
+
+                    <div class="mobile-label">To</div>
+                    <div class="mobile-value">
+                        Big Buys Flagship LA<br>
+                        <span style="font-size: 13px; color: #6b7280;">Los Angeles, CA</span>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">Requested Quantity</div>
+                    <div class="mobile-value" style="font-size: 24px; color: #3b82f6;">50 units</div>
+
+                    <div class="mobile-label">System Inventory</div>
+                    <div class="mobile-value">120 units available</div>
+                    <div style="font-size: 12px; color: #6b7280;">(857 days supply)</div>
+
+                    <button class="mobile-btn mobile-btn-primary" onclick="showMobileScreen(2)">
+                        Verify Inventory
+                    </button>
+                    
+                    <button class="mobile-btn mobile-btn-secondary">
+                        Decline Request
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 2: Verification Form -->
+            <div id="mobile-screen2" class="mobile-screen" style="display: none;">
+                <div class="mobile-header">
+                    📦 Verify Physical Count
+                </div>
+                
+                <div class="mobile-content">
+                    <div class="mobile-label">Product</div>
+                    <div class="mobile-value">
+                        Sony WH-1000XM5<br>
+                        <span style="font-size: 13px; color: #6b7280;">SKU: AU-SO-0000000608</span>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">System Count</div>
+                    <div class="mobile-value">120 units</div>
+
+                    <div class="mobile-label">Physical Count</div>
+                    <input type="number" id="physical-count" placeholder="Enter your count" 
+                           value="118" style="font-size: 20px; font-weight: 600;">
+                    <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                        👆 Enter your actual warehouse count
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">Available to Transfer</div>
+                    <input type="number" id="transfer-qty" placeholder="Enter quantity" 
+                           value="65" style="font-size: 20px; font-weight: 600; color: #10b981;">
+                    <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                        Max: 118 units (based on your count)
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">Notes (Optional)</div>
+                    <textarea rows="3" placeholder="e.g., Items in warehouse section B"></textarea>
+
+                    <div style="display: flex; gap: 12px; margin-top: 24px;">
+                        <button class="mobile-btn mobile-btn-secondary" onclick="showMobileScreen(1)" style="flex: 1;">
+                            ◀ Back
+                        </button>
+                        <button class="mobile-btn mobile-btn-primary" onclick="showMobileScreen(3)" style="flex: 2;">
+                            Confirm →
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Screen 3: Confirmation -->
+            <div id="mobile-screen3" class="mobile-screen" style="display: none;">
+                <div class="mobile-header">
+                    ✅ Transfer Confirmed
+                </div>
+                
+                <div class="mobile-content">
+                    <div style="background: #d1fae5; border-left: 4px solid #10b981; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+                        <strong style="color: #047857;">Transfer successfully confirmed</strong>
+                    </div>
+
+                    <div class="mobile-label">Transfer Details</div>
+                    
+                    <div class="mobile-card">
+                        <strong>Product</strong><br>
+                        Sony WH-1000XM5 Headphones
+                    </div>
+
+                    <div class="mobile-card">
+                        <strong>From</strong><br>
+                        Pacoima #100019
+                    </div>
+
+                    <div class="mobile-card">
+                        <strong>To</strong><br>
+                        LA Flagship #100010
+                    </div>
+
+                    <div class="mobile-card">
+                        <strong>Quantity</strong><br>
+                        <span style="font-size: 24px; color: #10b981; font-weight: 700;">65 units</span><br>
+                        <span style="font-size: 12px; color: #6b7280;">
+                            (System: 120, Counted: 118)
+                        </span>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+                    <div class="mobile-label">Next Steps</div>
+                    <div style="font-size: 14px; line-height: 1.6;">
+                        ✓ Notification sent to inventory planner<br>
+                        ✓ Pack items for shipment<br>
+                        ✓ Expected arrival: 2 days
+                    </div>
+
+                    <button class="mobile-btn mobile-btn-primary" style="margin-top: 24px;">
+                        Submit Transfer
+                    </button>
+
+                    <button class="mobile-btn mobile-btn-secondary" onclick="showMobileScreen(1)">
+                        ◀ Back to Dashboard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showPage(pageNum) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            // Show selected page
+            document.getElementById('page' + pageNum).classList.add('active');
+            
+            // Update tab styling (now 4 tabs)
+            const tabMapping = [1, 2, 3, 4];
+            document.querySelectorAll('.tab').forEach((tab, index) => {
+                if (tabMapping[index] === pageNum) {
+                    tab.classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                }
+            });
+        }
+
+        function showView(view) {
+            const desktopView = document.getElementById('desktop-view');
+            const mobileView = document.getElementById('mobile-view');
+            const toggleBtns = document.querySelectorAll('.toggle-btn');
+
+            if (view === 'desktop') {
+                desktopView.style.display = 'block';
+                mobileView.style.display = 'none';
+                toggleBtns[0].classList.add('active');
+                toggleBtns[1].classList.remove('active');
+            } else {
+                desktopView.style.display = 'none';
+                mobileView.style.display = 'block';
+                toggleBtns[0].classList.remove('active');
+                toggleBtns[1].classList.add('active');
+            }
+        }
+
+        function showMobileScreen(screenNum) {
+            document.querySelectorAll('.mobile-screen').forEach(s => s.style.display = 'none');
+            document.getElementById('mobile-screen' + screenNum).style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+
