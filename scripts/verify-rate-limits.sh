@@ -55,7 +55,28 @@ QUOTA_1="N/A"  # Quotas not set via method settings
 if [ "$BURST_1" = "null" ] || [ "$RATE_1" = "null" ]; then
     echo -e "${RED}⚠ WARNING: Rate limits not fully configured${NC}"
 else
-    echo -e "${GREEN}✓ Rate limits are configured${NC}"
+    echo -e "${GREEN}✓ General rate limits are configured${NC}"
+fi
+
+echo ""
+echo "Checking short URL endpoint limits..."
+# Get all method settings to check short URL endpoints
+ALL_METHODS=$(aws_cmd apigateway get-stage \
+    --rest-api-id qx7x0uioo1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings' \
+    --output json 2>/dev/null)
+
+# Check if any short URL methods are configured
+SHORT_URL_METHODS=$(echo "$ALL_METHODS" | jq 'to_entries | map(select(.key | contains("s/{shortId}"))) | from_entries')
+
+if [ -n "$SHORT_URL_METHODS" ] && [ "$SHORT_URL_METHODS" != "{}" ]; then
+    echo -e "${GREEN}✓ Short URL endpoints have strict limits configured${NC}"
+    echo "$SHORT_URL_METHODS" | jq -r 'to_entries[] | "  /\(.key): Rate=\(.value.throttlingRateLimit) req/sec, Burst=\(.value.throttlingBurstLimit)"'
+else
+    echo -e "${YELLOW}⚠ Short URL endpoints using default/general limits${NC}"
+    echo "  (Consider running set-api-gateway-rate-limits.sh to add strict limits)"
 fi
 
 echo ""
