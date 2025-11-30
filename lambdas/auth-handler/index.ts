@@ -103,6 +103,26 @@ export const handler = async (event: any) => {
       // Handle /s/{shortId} (API Gateway strips /v1/ prefix in AWS_PROXY mode when accessed via CloudFront)
       const shortId = path.replace('/s/', '');
       if (shortId) {
+        // Check if this is a resolve request (for app to get fullUrl as JSON)
+        const queryParams = event.queryStringParameters || {};
+        if (queryParams.resolve === 'true') {
+          return await handleShortUrlResolve(shortId, event);
+        }
+        return await handleShortUrlRedirect(shortId, event);
+      } else {
+        return createResponse(400, { error: 'Short ID is required' });
+      }
+    } else if (path.startsWith('/v1/s/') && method === 'GET') {
+      // Handle /v1/s/{shortId}/resolve for resolve endpoint
+      const pathParts = path.replace('/v1/s/', '').split('/');
+      const shortId = pathParts[0];
+      if (pathParts[1] === 'resolve' && shortId) {
+        return await handleShortUrlResolve(shortId, event);
+      } else if (shortId) {
+        const queryParams = event.queryStringParameters || {};
+        if (queryParams.resolve === 'true') {
+          return await handleShortUrlResolve(shortId, event);
+        }
         return await handleShortUrlRedirect(shortId, event);
       } else {
         return createResponse(400, { error: 'Short ID is required' });
@@ -1444,6 +1464,63 @@ async function createShortUrl(fullUrl: string, tokenId: string): Promise<string>
 }
 
 /**
+ * Handle short URL resolve (returns JSON with fullUrl)
+ * Used by the app to resolve short URLs when received via universal links
+ */
+async function handleShortUrlResolve(shortId: string, event: any) {
+  console.log(`[handleShortUrlResolve] Looking up shortId: ${shortId}`);
+  
+  try {
+    const result = await docClient.send(new GetCommand({
+      TableName: SHORT_URLS_TABLE,
+      Key: { shortId }
+    }));
+    
+    if (!result.Item) {
+      console.log(`[handleShortUrlResolve] Short ID not found: ${shortId}`);
+      return createResponse(404, { 
+        error: 'Link not found',
+        message: 'This link may have expired or is invalid. Please request a new sign-in link.'
+      });
+    }
+    
+    const { fullUrl, expiresAt } = result.Item;
+    
+    // Check if expired (though TTL should handle this, we check for safety)
+    const now = Math.floor(Date.now() / 1000);
+    if (expiresAt && now > expiresAt) {
+      console.log(`[handleShortUrlResolve] Short ID expired: ${shortId}`);
+      return createResponse(404, { 
+        error: 'Link expired',
+        message: 'This link has expired. Please request a new sign-in link.'
+      });
+    }
+    
+    console.log(`[handleShortUrlResolve] Resolved ${shortId} to: ${fullUrl.substring(0, 100)}...`);
+    
+    // Return JSON with fullUrl
+    return createResponse(200, {
+      success: true,
+      fullUrl
+    });
+  } catch (error: any) {
+    console.error(`[handleShortUrlResolve] Error looking up shortId ${shortId}:`, error);
+    
+    if (error.name === 'ResourceNotFoundException') {
+      return createResponse(500, { 
+        error: 'Service configuration error',
+        message: 'Short URL service is not properly configured. Please contact support.'
+      });
+    }
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to resolve short URL. Please try again.'
+    });
+  }
+}
+
+/**
  * Handle short URL redirect
  * Looks up shortId in DynamoDB and redirects to fullUrl
  */
@@ -1478,7 +1555,10 @@ async function handleShortUrlRedirect(shortId: string, event: any) {
     
     console.log(`[handleShortUrlRedirect] Redirecting ${shortId} to: ${fullUrl.substring(0, 100)}...`);
     
-    // Return HTTP 302 redirect
+    // Use simple 302 redirect to the fullUrl
+    // If fullUrl is a universal link (/auth/verify?token=...), iOS will handle it properly
+    // This matches the original pre-shortening flow where SMS links went directly to /auth/verify
+    // The key is that /auth/verify is configured as a universal link in apple-app-site-association
     return {
       statusCode: 302,
       headers: {

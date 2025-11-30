@@ -109,7 +109,55 @@ export default function RootLayout() {
         // Universal link: https://mobile.bigbuys.io/auth/verify?token=xxx
         // Path might be "auth/verify" or "/auth/verify" - both are valid
         const path = parsed.path || '';
-        // Check if this is an auth verify path OR just check for token in queryParams
+        
+        // Handle short URLs: /s/{shortId}
+        if (path.startsWith('/s/') || path.startsWith('s/')) {
+          const shortId = path.replace(/^\/?s\//, '');
+          if (shortId) {
+            console.log('🔗 Short URL detected, resolving:', shortId);
+            try {
+              // Resolve short URL by calling Lambda API
+              const resolveUrl = `https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/s/${shortId}?resolve=true`;
+              console.log('📡 Resolving short URL:', resolveUrl);
+              
+              const resolveResponse = await fetch(resolveUrl, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              });
+              
+              if (!resolveResponse.ok) {
+                const errorData = await resolveResponse.json().catch(() => ({}));
+                throw new Error(errorData.message || errorData.error || 'Failed to resolve short URL');
+              }
+              
+              const resolveData = await resolveResponse.json();
+              const fullUrl = resolveData.fullUrl;
+              
+              if (!fullUrl) {
+                throw new Error('Invalid response from short URL resolver');
+              }
+              
+              console.log('✅ Short URL resolved to:', fullUrl.substring(0, 100));
+              
+              // Recursively handle the resolved URL
+              return handleDeepLink(fullUrl);
+            } catch (error) {
+              console.error('❌ Failed to resolve short URL:', error);
+              // Show error screen
+              setExpiredLinkParams({
+                errorType: 'invalid',
+                email: undefined,
+              });
+              setInitialRoute('ExpiredLink');
+              setIsVerifyingMagicLink(false);
+              return;
+            }
+          }
+        }
+        
+        // Handle /auth/verify paths (existing logic)
         if (path.includes('auth/verify') || path === '' || parsed.queryParams?.token) {
           token = parsed.queryParams?.token as string;
           console.log('✅ Parsed universal link token:', token ? 'found' : 'missing', { path });
