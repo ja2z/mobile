@@ -421,27 +421,57 @@ export const handler = async (event: any) => {
         }
         
         // Start building query parameters
-        const queryParams = new URLSearchParams();
-        queryParams.append(':jwt', jwtToken);
-        queryParams.append(':embed', 'true');
-        queryParams.append(':menu_position', 'none');
-        console.log('🔧 Base query params:', queryParams.toString());
+        // Flag to toggle URL encoding - set to false to disable encoding
+        const ENABLE_URL_ENCODING = false;
         
-        // Add variables as query parameters if provided
-        if (variables && typeof variables === 'object') {
-            console.log('🔧 Adding variables to query params:');
-            for (const [key, value] of Object.entries(variables)) {
-                if (key && value !== null && value !== undefined) {
-                    queryParams.append(key, String(value));
-                    console.log(`🔧   Added: ${key} = ${String(value)}`);
+        let embeddingUrl: string;
+        
+        if (ENABLE_URL_ENCODING) {
+            // Use URLSearchParams for automatic encoding
+            const queryParams = new URLSearchParams();
+            queryParams.append(':jwt', jwtToken);
+            queryParams.append(':embed', 'true');
+            queryParams.append(':menu_position', 'none');
+            console.log('🔧 Base query params:', queryParams.toString());
+            
+            // Add variables as query parameters if provided
+            if (variables && typeof variables === 'object') {
+                console.log('🔧 Adding variables to query params:');
+                for (const [key, value] of Object.entries(variables)) {
+                    if (key && value !== null && value !== undefined) {
+                        queryParams.append(key, String(value));
+                        console.log(`🔧   Added: ${key} = ${String(value)}`);
+                    }
                 }
+            } else {
+                console.log('🔧 No variables provided or variables is not an object');
             }
+            
+            embeddingUrl = `${baseUrl}?${queryParams.toString()}`;
         } else {
-            console.log('🔧 No variables provided or variables is not an object');
+            // Build query string manually without encoding
+            const queryParts: string[] = [];
+            queryParts.push(`:jwt=${jwtToken}`);
+            queryParts.push(`:embed=true`);
+            queryParts.push(`:menu_position=none`);
+            console.log('🔧 Base query params (unencoded):', queryParts.join('&'));
+            
+            // Add variables as query parameters if provided
+            if (variables && typeof variables === 'object') {
+                console.log('🔧 Adding variables to query params (unencoded):');
+                for (const [key, value] of Object.entries(variables)) {
+                    if (key && value !== null && value !== undefined) {
+                        queryParts.push(`${key}=${String(value)}`);
+                        console.log(`🔧   Added (unencoded): ${key} = ${String(value)}`);
+                    }
+                }
+            } else {
+                console.log('🔧 No variables provided or variables is not an object');
+            }
+            
+            embeddingUrl = `${baseUrl}?${queryParts.join('&')}`;
         }
         
-        // Construct the full embedding URL
-        const embeddingUrl = `${baseUrl}?${queryParams.toString()}`;
         console.log('🔧 Final embedding URL:', embeddingUrl);
         console.log('🔧 ===== END CONSTRUCTING EMBED URL =====');
         
