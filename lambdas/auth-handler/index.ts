@@ -31,6 +31,7 @@ const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
 const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
+const SHORT_URLS_TABLE = process.env.SHORT_URLS_TABLE || 'mobile-short-urls';
 
 // Cache for secrets (reduces Secrets Manager calls)
 let jwtSecret: string | null = null;
@@ -98,6 +99,22 @@ export const handler = async (event: any) => {
       return await handleRefreshToken(body, event);
     } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
       return await handleAuthenticateBackdoor(body, event);
+    } else if (path.startsWith('/s/') && method === 'GET') {
+      // Handle /s/{shortId} (API Gateway strips /v1/ prefix in AWS_PROXY mode when accessed via CloudFront)
+      const shortId = path.replace('/s/', '');
+      if (shortId) {
+        return await handleShortUrlRedirect(shortId, event);
+      } else {
+        return createResponse(400, { error: 'Short ID is required' });
+      }
+    } else if (path.startsWith('/v1/auth/s/') && method === 'GET') {
+      // Legacy support for /v1/auth/s/{shortId} (if accessed directly via API Gateway)
+      const shortId = path.replace('/v1/auth/s/', '');
+      if (shortId) {
+        return await handleShortUrlRedirect(shortId, event);
+      } else {
+        return createResponse(400, { error: 'Short ID is required' });
+      }
     } else {
       console.log(`No route matched. Path: ${path}, Method: ${method}`);
       return createResponse(404, { error: 'Not found', debug: { receivedPath: path, method } });
@@ -486,9 +503,20 @@ async function handleSendToMobile(body: any, event: any) {
   }));
 
   // Build magic link based on linkType
-  const magicLink = linkType === 'direct' 
+  const fullMagicLink = linkType === 'direct' 
     ? buildDirectSchemeUrl(tokenId, app, pageId, variables)
     : buildRedirectUrl(tokenId, app, pageId, variables);
+  
+  // Create short URL for SMS (cleaner appearance in SMS)
+  let magicLink: string;
+  try {
+    magicLink = await createShortUrl(fullMagicLink, tokenId);
+    console.log(`[handleSendToMobile] Created short URL for SMS: ${magicLink} (full URL: ${fullMagicLink.substring(0, 100)}...)`);
+  } catch (error: any) {
+    console.error(`[handleSendToMobile] Failed to create short URL, using full URL:`, error);
+    // Fallback to full URL if short URL creation fails
+    magicLink = fullMagicLink;
+  }
   
   // Log magic link for debugging
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
@@ -1329,6 +1357,151 @@ function buildRedirectUrl(tokenId: string, app: string | null, pageId?: string, 
     url += `&variables=${encodeURIComponent(JSON.stringify(variables))}`;
   }
   return url;
+}
+
+/**
+ * Generate a short ID (6 characters) using base62 encoding
+ * Uses alphanumeric characters (0-9, a-z, A-Z) for URL-safe IDs
+ */
+function generateShortId(): string {
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  // Generate 6 random bytes and convert to base62
+  const bytes = randomBytes(6);
+  let result = '';
+  
+  // Convert each byte to base62
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    result += chars[byte % 62];
+  }
+  
+  return result;
+}
+
+/**
+ * Create a short URL mapping in DynamoDB
+ * Returns the short URL (e.g., https://mobile.bigbuys.io/s/abc123)
+ */
+async function createShortUrl(fullUrl: string, tokenId: string): Promise<string> {
+  const maxRetries = 5;
+  let shortId: string = '';
+  let retries = 0;
+  
+  // Generate short ID and check for collisions
+  while (retries < maxRetries) {
+    shortId = generateShortId();
+    
+    try {
+      // Check if shortId already exists
+      const existing = await docClient.send(new GetCommand({
+        TableName: SHORT_URLS_TABLE,
+        Key: { shortId }
+      }));
+      
+      if (!existing.Item) {
+        // Short ID is available, use it
+        break;
+      }
+      
+      // Collision detected, retry
+      retries++;
+      console.log(`[createShortUrl] Collision detected for shortId: ${shortId}, retrying... (${retries}/${maxRetries})`);
+      
+      if (retries >= maxRetries) {
+        throw new Error('Failed to generate unique short ID after maximum retries');
+      }
+    } catch (error: any) {
+      // If error is not a collision (e.g., table doesn't exist), throw it
+      if (error.name === 'ResourceNotFoundException') {
+        throw new Error(`DynamoDB table ${SHORT_URLS_TABLE} does not exist. Please run setup-short-urls-table.sh first.`);
+      }
+      throw error;
+    }
+  }
+  
+  // Ensure shortId was assigned (TypeScript safety check)
+  if (!shortId) {
+    throw new Error('Failed to generate short ID');
+  }
+  
+  // Store mapping in DynamoDB with 15-minute TTL
+  const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
+  await docClient.send(new PutCommand({
+    TableName: SHORT_URLS_TABLE,
+    Item: {
+      shortId,
+      fullUrl,
+      tokenId,
+      createdAt: Math.floor(Date.now() / 1000),
+      expiresAt
+    }
+  }));
+  
+  const shortUrl = `${REDIRECT_BASE_URL}/s/${shortId}`;
+  console.log(`[createShortUrl] Created short URL mapping: ${shortUrl} -> ${fullUrl.substring(0, 100)}...`);
+  
+  return shortUrl;
+}
+
+/**
+ * Handle short URL redirect
+ * Looks up shortId in DynamoDB and redirects to fullUrl
+ */
+async function handleShortUrlRedirect(shortId: string, event: any) {
+  console.log(`[handleShortUrlRedirect] Looking up shortId: ${shortId}`);
+  
+  try {
+    const result = await docClient.send(new GetCommand({
+      TableName: SHORT_URLS_TABLE,
+      Key: { shortId }
+    }));
+    
+    if (!result.Item) {
+      console.log(`[handleShortUrlRedirect] Short ID not found: ${shortId}`);
+      return createResponse(404, { 
+        error: 'Link not found',
+        message: 'This link may have expired or is invalid. Please request a new sign-in link.'
+      });
+    }
+    
+    const { fullUrl, expiresAt } = result.Item;
+    
+    // Check if expired (though TTL should handle this, we check for safety)
+    const now = Math.floor(Date.now() / 1000);
+    if (expiresAt && now > expiresAt) {
+      console.log(`[handleShortUrlRedirect] Short ID expired: ${shortId}`);
+      return createResponse(404, { 
+        error: 'Link expired',
+        message: 'This link has expired. Please request a new sign-in link.'
+      });
+    }
+    
+    console.log(`[handleShortUrlRedirect] Redirecting ${shortId} to: ${fullUrl.substring(0, 100)}...`);
+    
+    // Return HTTP 302 redirect
+    return {
+      statusCode: 302,
+      headers: {
+        'Location': fullUrl,
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      },
+      body: ''
+    };
+  } catch (error: any) {
+    console.error(`[handleShortUrlRedirect] Error looking up shortId ${shortId}:`, error);
+    
+    if (error.name === 'ResourceNotFoundException') {
+      return createResponse(500, { 
+        error: 'Service configuration error',
+        message: 'Short URL service is not properly configured. Please contact support.'
+      });
+    }
+    
+    return createResponse(500, { 
+      error: 'Internal server error',
+      message: 'Failed to process redirect. Please try again.'
+    });
+  }
 }
 
 /**
