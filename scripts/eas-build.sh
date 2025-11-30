@@ -96,6 +96,42 @@ find_ipa_file() {
     return 1
 }
 
+# Function to rename IPA file to include build type
+rename_ipa_with_build_type() {
+    local ipa_path=$1
+    local build_type=$2
+    local project_root=$3
+    
+    if [ -z "$ipa_path" ] || [ ! -f "$ipa_path" ]; then
+        return 1
+    fi
+    
+    local ipa_dir=$(dirname "$ipa_path")
+    local ipa_filename=$(basename "$ipa_path")
+    local ipa_name="${ipa_filename%.ipa}"
+    local ipa_ext=".ipa"
+    
+    # Create new filename with build type
+    # If filename already contains build type, don't rename again
+    if [[ "$ipa_name" == *"-${build_type}" ]]; then
+        return 0
+    fi
+    
+    # Insert build type before the extension
+    local new_ipa_name="${ipa_name}-${build_type}${ipa_ext}"
+    local new_ipa_path="$ipa_dir/$new_ipa_name"
+    
+    # Rename the file
+    if mv "$ipa_path" "$new_ipa_path" 2>/dev/null; then
+        echo "$new_ipa_path"
+        return 0
+    else
+        # If rename fails, return original path
+        echo "$ipa_path"
+        return 1
+    fi
+}
+
 # Function to submit IPA to TestFlight
 submit_ipa() {
     local ipa_path=$1
@@ -307,6 +343,14 @@ if [ "$BUILD_TYPE" == "production" ]; then
     
     log "Found IPA: $IPA_PATH"
     echo -e "${BLUE}Found IPA: $(basename "$IPA_PATH")${NC}"
+    
+    # Rename IPA to include build type
+    RENAMED_IPA_PATH=$(rename_ipa_with_build_type "$IPA_PATH" "$BUILD_TYPE" "$PROJECT_ROOT")
+    if [ "$RENAMED_IPA_PATH" != "$IPA_PATH" ]; then
+        IPA_PATH="$RENAMED_IPA_PATH"
+        log "Renamed IPA to: $IPA_PATH"
+        echo -e "${BLUE}Renamed to: $(basename "$IPA_PATH")${NC}"
+    fi
     echo ""
     
     # Submit to TestFlight
@@ -337,6 +381,28 @@ else
     
     log "Build completed successfully!"
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
+    
+    # Find the IPA file
+    IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
+    
+    if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
+        log "ERROR: Could not find IPA file"
+        echo -e "${RED}Could not find IPA file in project root: $PROJECT_ROOT${NC}"
+        echo -e "${YELLOW}Searching for IPA files...${NC}"
+        find "$PROJECT_ROOT" -name "*.ipa" -type f 2>/dev/null | head -5
+        exit 1
+    fi
+    
+    log "Found IPA: $IPA_PATH"
+    echo -e "${BLUE}Found IPA: $(basename "$IPA_PATH")${NC}"
+    
+    # Rename IPA to include build type
+    RENAMED_IPA_PATH=$(rename_ipa_with_build_type "$IPA_PATH" "$BUILD_TYPE" "$PROJECT_ROOT")
+    if [ "$RENAMED_IPA_PATH" != "$IPA_PATH" ]; then
+        IPA_PATH="$RENAMED_IPA_PATH"
+        log "Renamed IPA to: $IPA_PATH"
+        echo -e "${BLUE}Renamed to: $(basename "$IPA_PATH")${NC}"
+    fi
 fi
 
 # Calculate total time
