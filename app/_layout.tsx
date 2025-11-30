@@ -44,6 +44,13 @@ export type RootStackParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 
+// Extract screen names that support pageId and variables from RootStackParamList
+type DeepLinkableScreen = {
+  [K in keyof RootStackParamList]: RootStackParamList[K] extends { pageId?: string; variables?: Record<string, string> }
+    ? K
+    : never;
+}[keyof RootStackParamList];
+
 /**
  * Root Layout Component
  * Sets up the main navigation structure for the app
@@ -55,7 +62,7 @@ export default function RootLayout() {
   const [isVerifyingMagicLink, setIsVerifyingMagicLink] = useState(false);
   const [expiredLinkParams, setExpiredLinkParams] = useState<{ email?: string; errorType?: 'expired' | 'invalid' | 'used' } | null>(null);
   const [pendingDeepLinkNav, setPendingDeepLinkNav] = useState<{ 
-    screen: 'Dashboard' | 'AINewsletter' | 'ConversationalAI'; 
+    screen: DeepLinkableScreen; 
     params: { pageId?: string; variables?: Record<string, string> } 
   } | null>(null);
   const navigationRef = useRef<any>(null);
@@ -151,7 +158,7 @@ export default function RootLayout() {
           // Map app name to screen name
           // Valid app names: "dashboard", "ainewsletter", "conversationalai" (case-insensitive)
           // Default to "Home" if no app specified or invalid app name
-          let targetScreen: 'Home' | 'Dashboard' | 'AINewsletter' | 'ConversationalAI' = 'Home';
+          let targetScreen: 'Home' | DeepLinkableScreen = 'Home';
           if (app) {
             const appLower = app.toLowerCase();
             if (appLower === 'dashboard') {
@@ -170,7 +177,7 @@ export default function RootLayout() {
           setIsCheckingAuth(false);
           
           // Store deep link params for navigation once container is ready
-          if (targetScreen === 'Dashboard' || targetScreen === 'AINewsletter' || targetScreen === 'ConversationalAI') {
+          if (targetScreen !== 'Home') {
             const screenParams: { pageId?: string; variables?: Record<string, string> } = {};
             if (pageId) {
               screenParams.pageId = pageId;
