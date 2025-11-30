@@ -1,17 +1,16 @@
-import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
-import { spacing, colors } from '../../constants/Theme';
+import { useAppletHeader } from '../../hooks/useAppletHeader';
 
 type DashboardRouteProp = RouteProp<RootStackParamList, 'Dashboard'>;
 type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Dashboard'>;
@@ -77,39 +76,8 @@ export default function Dashboard() {
     }
   }, [navigation]);
 
-  /**
-   * Set up navigation header with Home button
-   * Use useLayoutEffect to set header options synchronously before render
-   */
-  /**
-   * Set up navigation header with Home button
-   */
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerLeft: () => (
-        <TouchableOpacity
-          onPress={handleHomePress}
-          style={styles.headerButton}
-          activeOpacity={0.7}
-          accessibilityLabel="Go to Home"
-          accessibilityRole="button"
-        >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      ),
-      headerStyle: {
-        backgroundColor: colors.primary,
-        elevation: 0,
-        shadowOpacity: 0,
-        borderBottomWidth: 0,
-      },
-      headerTintColor: '#FFFFFF',
-      headerTitleStyle: {
-        fontWeight: 'bold',
-      },
-      headerTransparent: false,
-    });
-  }, [navigation, handleHomePress]);
+  // Set up navigation header with Home button and consistent styling
+  useAppletHeader(navigation, handleHomePress);
 
   /**
    * Handle page selection from navigation bar
@@ -198,9 +166,5 @@ const styles = StyleSheet.create({
     flex: 1,
     margin: 0,
     padding: 0,
-  },
-  headerButton: {
-    padding: spacing.sm,
-    marginLeft: spacing.sm,
   },
 });
