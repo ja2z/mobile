@@ -22,7 +22,7 @@ type AINewsletterScreenNavigationProp = StackNavigationProp<RootStackParamList, 
 export default function AINewsletter() {
   const route = useRoute<AINewsletterRouteProp>();
   const navigation = useNavigation<AINewsletterScreenNavigationProp>();
-  const { appletId, appletName } = route.params || {};
+  const { appletId, appletName, pageId, variables } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
   
   // Use custom hook for embed URL info modal and header button
@@ -68,6 +68,8 @@ export default function AINewsletter() {
           workbookId={Config.WORKBOOKS.AI_NEWSLETTER}
           appletId={appletId}
           appletName={appletName}
+          initialPageId={pageId}
+          initialVariables={variables}
         />
       </View>
       <EmbedUrlInfoModal

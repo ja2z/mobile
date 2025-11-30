@@ -23,11 +23,23 @@ type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Da
 export default function Dashboard() {
   const route = useRoute<DashboardRouteProp>();
   const navigation = useNavigation<DashboardScreenNavigationProp>();
-  const { appletId, appletName } = route.params || {};
+  const { appletId, appletName, pageId, variables } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
-  const [selectedPage, setSelectedPage] = useState('nVSaruy7Wf'); // Default to 'Dash'
-  const [isFilterActive, setIsFilterActive] = useState(false);
-  const [previousPage, setPreviousPage] = useState('nVSaruy7Wf');
+  
+  // Log route params for debugging
+  useEffect(() => {
+    console.log('📱 ===== DASHBOARD SCREEN =====');
+    console.log('📱 Route params:', JSON.stringify(route.params, null, 2));
+    console.log('📱 Extracted values:');
+    console.log('📱   appletId:', appletId);
+    console.log('📱   appletName:', appletName);
+    console.log('📱   pageId:', pageId);
+    console.log('📱   variables:', JSON.stringify(variables, null, 2));
+    console.log('📱 Passing to DashboardView:');
+    console.log('📱   initialPageId:', pageId);
+    console.log('📱   initialVariables:', JSON.stringify(variables, null, 2));
+    console.log('📱 ===== END DASHBOARD SCREEN =====');
+  }, [route.params, appletId, appletName, pageId, variables]);
   
   // Define pages for navigation bar
   const pages = [
@@ -36,6 +48,18 @@ export default function Dashboard() {
     { id: 'ADyAhWunig', name: 'Line', icon: 'trending-up-outline' as const },
     { id: 'lYEajzgMLj', name: 'Card', icon: 'card-outline' as const },
   ];
+  
+  // Determine initial selected page: use pageId from deep link if it exists in pages array, otherwise default
+  const getInitialSelectedPage = () => {
+    if (pageId && pages.some(p => p.id === pageId)) {
+      return pageId;
+    }
+    return 'nVSaruy7Wf'; // Default to 'Dash'
+  };
+  
+  const [selectedPage, setSelectedPage] = useState(getInitialSelectedPage());
+  const [isFilterActive, setIsFilterActive] = useState(false);
+  const [previousPage, setPreviousPage] = useState(getInitialSelectedPage());
   
   // Use custom hook for embed URL info modal and header button
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
@@ -129,6 +153,8 @@ export default function Dashboard() {
           workbookId={Config.WORKBOOKS.AOP_EXEC_DASHBOARD}
           appletId={appletId}
           appletName={appletName}
+          initialPageId={pageId}
+          initialVariables={variables}
         />
       </View>
       <NavigationBar

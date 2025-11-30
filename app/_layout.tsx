@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, CommonActions } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
@@ -29,9 +29,9 @@ export type RootStackParamList = {
   Login: undefined;
   ExpiredLink: { email?: string; errorType?: 'expired' | 'invalid' | 'used' };
   Home: undefined;
-  Dashboard: { appletId?: string; appletName?: string };
-  AINewsletter: { appletId?: string; appletName?: string };
-  ConversationalAI: { appletId?: string; appletName?: string };
+  Dashboard: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  AINewsletter: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  ConversationalAI: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
@@ -54,6 +54,10 @@ export default function RootLayout() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isVerifyingMagicLink, setIsVerifyingMagicLink] = useState(false);
   const [expiredLinkParams, setExpiredLinkParams] = useState<{ email?: string; errorType?: 'expired' | 'invalid' | 'used' } | null>(null);
+  const [pendingDeepLinkNav, setPendingDeepLinkNav] = useState<{ 
+    screen: 'Dashboard' | 'AINewsletter' | 'ConversationalAI'; 
+    params: { pageId?: string; variables?: Record<string, string> } 
+  } | null>(null);
   const navigationRef = useRef<any>(null);
 
   useEffect(() => {
@@ -109,20 +113,53 @@ export default function RootLayout() {
         console.log('🔐 Verifying magic link token...');
         setIsVerifyingMagicLink(true);
         try {
+          console.log('🔗 ===== DEEP LINK PARSING =====');
+          console.log('🔗 Full parsed object:', JSON.stringify(parsed, null, 2));
+          console.log('🔗 Query params object:', JSON.stringify(parsed.queryParams, null, 2));
+          
           const app = parsed.queryParams?.app as string | undefined;
+          const pageId = parsed.queryParams?.pageId as string | undefined;
+          const variablesStr = parsed.queryParams?.variables as string | undefined;
+          
+          console.log('🔗 Extracted from query params:');
+          console.log('🔗   app:', app);
+          console.log('🔗   pageId:', pageId);
+          console.log('🔗   variablesStr (raw):', variablesStr);
+          console.log('🔗   variablesStr type:', typeof variablesStr);
+          console.log('🔗   variablesStr length:', variablesStr?.length);
+          
+          // Parse variables JSON string if provided
+          let variables: Record<string, string> | undefined;
+          if (variablesStr) {
+            try {
+              const decoded = decodeURIComponent(variablesStr);
+              console.log('🔗   variablesStr (decoded):', decoded);
+              variables = JSON.parse(decoded);
+              console.log('🔗   variables (parsed):', JSON.stringify(variables, null, 2));
+            } catch (parseError) {
+              console.error('⚠️ Failed to parse variables JSON:', parseError);
+              console.error('⚠️   variablesStr that failed:', variablesStr);
+            }
+          } else {
+            console.log('🔗   No variablesStr provided');
+          }
+          console.log('🔗 ===== END DEEP LINK PARSING =====');
+          
           const session = await AuthService.verifyMagicLink(token);
           console.log('✅ Authentication successful!', { email: session.user.email });
           
           // Map app name to screen name
-          // Valid app names: "dashboard", "ainewsletter" (case-insensitive)
+          // Valid app names: "dashboard", "ainewsletter", "conversationalai" (case-insensitive)
           // Default to "Home" if no app specified or invalid app name
-          let targetScreen: 'Home' | 'Dashboard' | 'AINewsletter' = 'Home';
+          let targetScreen: 'Home' | 'Dashboard' | 'AINewsletter' | 'ConversationalAI' = 'Home';
           if (app) {
             const appLower = app.toLowerCase();
             if (appLower === 'dashboard') {
               targetScreen = 'Dashboard';
             } else if (appLower === 'ainewsletter' || appLower === 'ai-newsletter') {
               targetScreen = 'AINewsletter';
+            } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
+              targetScreen = 'ConversationalAI';
             } else {
               console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
             }
@@ -132,61 +169,29 @@ export default function RootLayout() {
           setInitialRoute(targetScreen);
           setIsCheckingAuth(false);
           
+          // Store deep link params for navigation once container is ready
+          if (targetScreen === 'Dashboard' || targetScreen === 'AINewsletter' || targetScreen === 'ConversationalAI') {
+            const screenParams: { pageId?: string; variables?: Record<string, string> } = {};
+            if (pageId) {
+              screenParams.pageId = pageId;
+            }
+            if (variables) {
+              screenParams.variables = variables;
+            }
+            setPendingDeepLinkNav({
+              screen: targetScreen,
+              params: screenParams,
+            });
+            console.log('🔗 Stored pending navigation:', { screen: targetScreen, params: screenParams });
+          }
+          
           // Log app launch (from deep link)
           await ActivityService.logActivity('app_launch', {
             source: 'deep_link',
             app: app || null,
           });
           
-          // Navigate to target screen after successful auth
-          // Use a retry mechanism since navigation might not be ready immediately
-          let retryCount = 0;
-          const maxRetries = 10;
-          
-          const navigateToScreen = () => {
-            if (navigationRef.current) {
-              try {
-                // If navigating to a specific app, we need to navigate to Home first, then to the app
-                if (targetScreen === 'Dashboard' || targetScreen === 'AINewsletter') {
-                  navigationRef.current.reset({
-                    index: 1,
-                    routes: [
-                      { name: 'Home' },
-                      { name: targetScreen }
-                    ],
-                  });
-                } else {
-                  navigationRef.current.reset({
-                    index: 0,
-                    routes: [{ name: 'Home' }],
-                  });
-                }
-                console.log(`✅ Navigated to ${targetScreen}`);
-                // Hide loading indicator after navigation completes
-                setIsVerifyingMagicLink(false);
-              } catch (error) {
-                console.warn('Navigation error (will retry):', error);
-                if (retryCount < maxRetries) {
-                  retryCount++;
-                  setTimeout(navigateToScreen, 200);
-                } else {
-                  setIsVerifyingMagicLink(false);
-                }
-              }
-            } else {
-              // Navigation ref not ready yet, retry
-              if (retryCount < maxRetries) {
-                retryCount++;
-                setTimeout(navigateToScreen, 200);
-              } else {
-                console.warn('⚠️ Navigation ref not ready after max retries');
-                setIsVerifyingMagicLink(false);
-              }
-            }
-          };
-          
-          // Start navigation attempt after a brief delay to ensure navigation is initialized
-          setTimeout(navigateToScreen, 300);
+          setIsVerifyingMagicLink(false);
         } catch (error: any) {
           // Only log as error if it's not a token expiration (which is expected)
           if (!error.isTokenExpired) {
@@ -339,7 +344,33 @@ export default function RootLayout() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer 
+      ref={navigationRef}
+      onReady={() => {
+        // Once navigation is ready, navigate with params if we have pending deep link navigation
+        if (pendingDeepLinkNav) {
+          const nav = navigationRef.current;
+          if (nav) {
+            console.log('🔗 Navigation container ready, executing pending navigation:', pendingDeepLinkNav);
+            const resetAction = CommonActions.reset({
+              index: 1,
+              routes: [
+                { name: 'Home' },
+                { 
+                  name: pendingDeepLinkNav.screen,
+                  params: pendingDeepLinkNav.params,
+                }
+              ],
+            });
+            nav.dispatch(resetAction);
+            console.log(`✅ Navigated to ${pendingDeepLinkNav.screen} with params via onReady`);
+            console.log('🔗 Params passed:', JSON.stringify(pendingDeepLinkNav.params, null, 2));
+            // Clear pending navigation
+            setPendingDeepLinkNav(null);
+          }
+        }
+      }}
+    >
       <StatusBar style="auto" />
       <Stack.Navigator
         initialRouteName={initialRoute}

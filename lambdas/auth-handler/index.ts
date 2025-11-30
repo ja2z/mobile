@@ -375,7 +375,7 @@ async function handleRequestMagicLink(body: any, event?: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, app, linkType = 'universal', emailhash } = body;
+  const { email, phoneNumber, app, linkType = 'universal', emailhash, pageId, variables } = body;
 
   // Get API key from header (API Gateway may lowercase headers)
   const headers = event.headers || {};
@@ -453,6 +453,14 @@ async function handleSendToMobile(body: any, event: any) {
   const tempUserId = await getUserIdForEmail(emailLower);
   const expiresAt = Math.floor(Date.now() / 1000) + 900; // 15 minutes
 
+  // Validate that pageId and variables are only used when app is specified
+  if ((pageId || variables) && !app) {
+    return createResponse(400, { 
+      error: 'Invalid request',
+      message: 'pageId and variables can only be used when app is specified'
+    });
+  }
+
   // Store token in DynamoDB
   await docClient.send(new PutCommand({
     TableName: TOKENS_TABLE,
@@ -470,15 +478,17 @@ async function handleSendToMobile(body: any, event: any) {
       sessionJWT: null,
       metadata: {
         sourceFlow: 'sms',
-        app: app || null
+        app: app || null,
+        pageId: (app && pageId) ? pageId : null,
+        variables: (app && variables) ? variables : null
       }
     }
   }));
 
   // Build magic link based on linkType
   const magicLink = linkType === 'direct' 
-    ? buildDirectSchemeUrl(tokenId, app)
-    : buildRedirectUrl(tokenId, app);
+    ? buildDirectSchemeUrl(tokenId, app, pageId, variables)
+    : buildRedirectUrl(tokenId, app, pageId, variables);
   
   // Log magic link for debugging
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
@@ -1286,12 +1296,18 @@ async function getUserIdForEmail(email: string): Promise<string> {
 
 /**
  * Build direct custom scheme URL (for Expo Go / development)
- * Format: bigbuys://auth?token=xxx&app=dashboard
+ * Format: bigbuys://auth?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
  */
-function buildDirectSchemeUrl(tokenId: string, app: string | null): string {
+function buildDirectSchemeUrl(tokenId: string, app: string | null, pageId?: string, variables?: Record<string, string>): string {
   let url = `${APP_DEEP_LINK_SCHEME}://auth?token=${encodeURIComponent(tokenId)}`;
   if (app) {
     url += `&app=${encodeURIComponent(app)}`;
+  }
+  if (app && pageId) {
+    url += `&pageId=${encodeURIComponent(pageId)}`;
+  }
+  if (app && variables) {
+    url += `&variables=${encodeURIComponent(JSON.stringify(variables))}`;
   }
   return url;
 }
@@ -1299,12 +1315,18 @@ function buildDirectSchemeUrl(tokenId: string, app: string | null): string {
 /**
  * Build HTTPS redirect URL that will redirect to deep link
  * This works better in email clients than direct deep links
- * Format: https://mobile.bigbuys.io/auth/verify?token=xxx&app=dashboard
+ * Format: https://mobile.bigbuys.io/auth/verify?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
  */
-function buildRedirectUrl(tokenId: string, app: string | null): string {
+function buildRedirectUrl(tokenId: string, app: string | null, pageId?: string, variables?: Record<string, string>): string {
   let url = `${REDIRECT_BASE_URL}/auth/verify?token=${encodeURIComponent(tokenId)}`;
   if (app) {
     url += `&app=${encodeURIComponent(app)}`;
+  }
+  if (app && pageId) {
+    url += `&pageId=${encodeURIComponent(pageId)}`;
+  }
+  if (app && variables) {
+    url += `&variables=${encodeURIComponent(JSON.stringify(variables))}`;
   }
   return url;
 }

@@ -12,6 +12,8 @@ interface DashboardViewProps {
   appletName?: string; // Optional applet name for activity logging
   initialUrl?: string; // Optional: if provided, use this URL directly instead of fetching
   initialJwt?: string; // Optional: JWT token if using initialUrl
+  initialPageId?: string; // Optional: page ID for deep linking to specific page
+  initialVariables?: Record<string, string>; // Optional: variables/controls for pre-populating filters
 }
 
 export interface DashboardViewRef {
@@ -81,7 +83,7 @@ const SkeletonPlaceholder: React.FC = () => {
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt }, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +92,20 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const [fetchingUrl, setFetchingUrl] = useState(true);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webViewRef = useRef<WebView>(null);
+  
+  // Log props received by DashboardView
+  useEffect(() => {
+    console.log('📊 ===== DASHBOARD VIEW PROPS =====');
+    console.log('📊 Received props:');
+    console.log('📊   workbookId:', workbookId);
+    console.log('📊   appletId:', appletId);
+    console.log('📊   appletName:', appletName);
+    console.log('📊   initialUrl:', initialUrl);
+    console.log('📊   initialJwt:', initialJwt ? 'present' : 'missing');
+    console.log('📊   initialPageId:', initialPageId);
+    console.log('📊   initialVariables:', JSON.stringify(initialVariables, null, 2));
+    console.log('📊 ===== END DASHBOARD VIEW PROPS =====');
+  }, [workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables]);
   
   // Chat-related callback refs
   const chatOpenCallbackRef = useRef<((sessionId: string) => void) | null>(null);
@@ -232,8 +248,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         // Continue without email - lambda will use default
       }
       
-      // Build params object with workbook_id, user_email, and applet info
-      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string } = {};
+      // Build params object with workbook_id, user_email, applet info, page_id, and variables
+      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string; page_id?: string; variables?: Record<string, string> } = {};
       if (workbookId) {
         params.workbook_id = workbookId;
       }
@@ -246,8 +262,22 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       if (appletName) {
         params.applet_name = appletName;
       }
+      if (initialPageId) {
+        params.page_id = initialPageId;
+        console.log('📊 Added page_id to params:', initialPageId);
+      } else {
+        console.log('📊 No initialPageId provided');
+      }
+      if (initialVariables) {
+        params.variables = initialVariables;
+        console.log('📊 Added variables to params:', JSON.stringify(initialVariables, null, 2));
+      } else {
+        console.log('📊 No initialVariables provided');
+      }
       
-      console.log('📤 Calling embed URL API with params:', JSON.stringify(params));
+      console.log('📤 ===== CALLING EMBED URL API =====');
+      console.log('📤 Full params object:', JSON.stringify(params, null, 2));
+      console.log('📤 ===== END CALLING EMBED URL API =====');
       const response = await EmbedUrlService.fetchEmbedUrl(params);
       console.log('🌐 Setting new dashboard URL:', response.url);
       console.log('📚 Workbook ID:', workbookId || 'default');

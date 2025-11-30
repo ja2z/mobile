@@ -25,14 +25,9 @@ type ConversationalAIScreenNavigationProp = StackNavigationProp<RootStackParamLi
 export default function ConversationalAI() {
   const route = useRoute<ConversationalAIRouteProp>();
   const navigation = useNavigation<ConversationalAIScreenNavigationProp>();
-  const { appletId, appletName } = route.params || {};
+  const { appletId, appletName, pageId, variables } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
   const chatModalRef = useRef<ChatModalRef>(null);
-  
-  // Navigation state
-  const [selectedPage, setSelectedPage] = useState('yCrP3yCLoa'); // Default to 'Chat'
-  const [isFilterActive, setIsFilterActive] = useState(false);
-  const [previousPage, setPreviousPage] = useState('yCrP3yCLoa');
   
   // Define pages for navigation bar
   const pages = [
@@ -41,6 +36,19 @@ export default function ConversationalAI() {
     { id: 'efRWfolUlX', name: 'Compare', icon: 'git-compare-outline' as const },
     { id: 'ekPedGdc26', name: 'History', icon: 'time-outline' as const },
   ];
+  
+  // Determine initial selected page: use pageId from deep link if it exists in pages array, otherwise default
+  const getInitialSelectedPage = () => {
+    if (pageId && pages.some(p => p.id === pageId)) {
+      return pageId;
+    }
+    return 'yCrP3yCLoa'; // Default to 'Chat'
+  };
+  
+  // Navigation state
+  const [selectedPage, setSelectedPage] = useState(getInitialSelectedPage());
+  const [isFilterActive, setIsFilterActive] = useState(false);
+  const [previousPage, setPreviousPage] = useState(getInitialSelectedPage());
   
   // Chat modal state
   const [chatModalVisible, setChatModalVisible] = useState(false);
@@ -218,6 +226,8 @@ export default function ConversationalAI() {
           workbookId={Config.WORKBOOKS.CONVERSATIONAL_AI}
           appletId={appletId}
           appletName={appletName}
+          initialPageId={pageId}
+          initialVariables={variables}
         />
       </View>
       <NavigationBar
