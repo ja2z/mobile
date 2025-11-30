@@ -359,17 +359,22 @@ export default function RootLayout() {
           const nav = navigationRef.current;
           if (nav) {
             console.log('🔗 Navigation container ready, executing pending navigation:', pendingDeepLinkNav);
-            const resetAction = CommonActions.reset({
-              index: 1,
-              routes: [
-                { name: 'Home' },
-                { 
-                  name: pendingDeepLinkNav.screen,
-                  params: pendingDeepLinkNav.params,
-                }
-              ],
-            });
-            nav.dispatch(resetAction);
+            // Use navigate instead of reset to avoid header styling issues
+            // First navigate to Home, then to the target screen
+            nav.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: 'Home' }],
+              })
+            );
+            
+            // Then navigate to the target screen after a brief delay
+            // This ensures the header style is applied correctly
+            setTimeout(() => {
+              if (nav) {
+                nav.navigate(pendingDeepLinkNav.screen as never, pendingDeepLinkNav.params as never);
+              }
+            }, 100);
             console.log(`✅ Navigated to ${pendingDeepLinkNav.screen} with params via onReady`);
             console.log('🔗 Params passed:', JSON.stringify(pendingDeepLinkNav.params, null, 2));
             // Clear pending navigation
@@ -378,17 +383,22 @@ export default function RootLayout() {
         }
       }}
     >
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{
           headerStyle: {
             backgroundColor: colors.primary,
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 0,
+            opacity: 1,
           },
           headerTintColor: '#FFFFFF',
           headerTitleStyle: {
             fontWeight: 'bold',
           },
+          headerTransparent: false,
         }}
       >
         <Stack.Screen 
@@ -422,6 +432,17 @@ export default function RootLayout() {
           options={{
             title: 'Dashboard',
             headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
         <Stack.Screen 
@@ -430,6 +451,17 @@ export default function RootLayout() {
           options={{
             title: 'AI Newsletter',
             headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
         <Stack.Screen 
@@ -438,6 +470,17 @@ export default function RootLayout() {
           options={{
             title: 'Conversational AI',
             headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
         <Stack.Screen 

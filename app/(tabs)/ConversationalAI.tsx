@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -13,7 +13,7 @@ import { NavigationBar } from '../../components/NavigationBar';
 import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { ChatMessage } from '../../types/chat.types';
-import { spacing } from '../../constants/Theme';
+import { spacing, colors } from '../../constants/Theme';
 
 type ConversationalAIRouteProp = RouteProp<RootStackParamList, 'ConversationalAI'>;
 type ConversationalAIScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ConversationalAI'>;
@@ -72,8 +72,9 @@ export default function ConversationalAI() {
 
   /**
    * Set up navigation header with Home button
+   * Use useLayoutEffect to set header options synchronously before render
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
         <TouchableOpacity
@@ -86,6 +87,17 @@ export default function ConversationalAI() {
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ),
+      headerStyle: {
+        backgroundColor: colors.primary,
+        elevation: 0,
+        shadowOpacity: 0,
+        borderBottomWidth: 0,
+      },
+      headerTintColor: '#FFFFFF',
+      headerTitleStyle: {
+        fontWeight: 'bold',
+      },
+      headerTransparent: false,
     });
   }, [navigation, handleHomePress]);
 
