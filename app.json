@@ -23,7 +23,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "This app needs access to your microphone to enable voice-to-text messaging.",
-        "NSSpeechRecognitionUsageDescription": "This app needs speech recognition to convert your voice to text."
+        "NSSpeechRecognitionUsageDescription": "This app needs speech recognition to convert your voice to text.",
+        "NSPhotoLibraryUsageDescription": "This permission is required by app dependencies but is not actively used."
       }
     },
     "android": {
