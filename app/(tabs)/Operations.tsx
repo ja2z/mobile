@@ -32,6 +32,7 @@ export default function Operations() {
   const [selectedPage, setSelectedPage] = useState('JjchtrDl1w'); // Default to 'Analytics'
   const [isFilterActive, setIsFilterActive] = useState(false);
   const [previousPage, setPreviousPage] = useState('JjchtrDl1w');
+  const [workbookLoaded, setWorkbookLoaded] = useState(false);
   
   // Inventory verification modal state
   const [verificationModalVisible, setVerificationModalVisible] = useState(false);
@@ -184,6 +185,10 @@ export default function Operations() {
   useEffect(() => {
     if (dashboardRef.current) {
       dashboardRef.current.onInventoryVerification(handleInventoryVerification);
+      dashboardRef.current.onWorkbookLoaded(() => {
+        console.log('📊 Operations: Workbook loaded, showing navigation bar');
+        setWorkbookLoaded(true);
+      });
     }
   }, [handleInventoryVerification]);
 
@@ -195,12 +200,14 @@ export default function Operations() {
           workbookId={Config.WORKBOOKS.OPERATIONS}
         />
       </View>
-      <OperationsNavigationBar
-        selectedPage={selectedPage}
-        onPageSelect={handlePageSelect}
-        onFilterPress={handleFilterPress}
-        isFilterActive={isFilterActive}
-      />
+      {workbookLoaded && (
+        <OperationsNavigationBar
+          selectedPage={selectedPage}
+          onPageSelect={handlePageSelect}
+          onFilterPress={handleFilterPress}
+          isFilterActive={isFilterActive}
+        />
+      )}
       <EmbedUrlInfoModal
         visible={infoModalVisible}
         onClose={() => setInfoModalVisible(false)}

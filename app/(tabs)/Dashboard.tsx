@@ -59,6 +59,7 @@ export default function Dashboard() {
   const [selectedPage, setSelectedPage] = useState(getInitialSelectedPage());
   const [isFilterActive, setIsFilterActive] = useState(false);
   const [previousPage, setPreviousPage] = useState(getInitialSelectedPage());
+  const [workbookLoaded, setWorkbookLoaded] = useState(false);
   
   // Use custom hook for embed URL info modal and header button
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
@@ -128,6 +129,18 @@ export default function Dashboard() {
     }
   };
 
+  /**
+   * Register callback for when workbook loads
+   */
+  useEffect(() => {
+    if (dashboardRef.current) {
+      dashboardRef.current.onWorkbookLoaded(() => {
+        console.log('📊 Dashboard: Workbook loaded, showing navigation bar');
+        setWorkbookLoaded(true);
+      });
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
@@ -140,13 +153,15 @@ export default function Dashboard() {
           initialVariables={variables}
         />
       </View>
-      <NavigationBar
-        pages={pages}
-        selectedPage={selectedPage}
-        onPageSelect={handlePageSelect}
-        onFilterPress={handleFilterPress}
-        isFilterActive={isFilterActive}
-      />
+      {workbookLoaded && (
+        <NavigationBar
+          pages={pages}
+          selectedPage={selectedPage}
+          onPageSelect={handlePageSelect}
+          onFilterPress={handleFilterPress}
+          isFilterActive={isFilterActive}
+        />
+      )}
       <EmbedUrlInfoModal
         visible={infoModalVisible}
         onClose={() => setInfoModalVisible(false)}

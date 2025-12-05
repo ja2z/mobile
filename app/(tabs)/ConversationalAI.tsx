@@ -48,6 +48,7 @@ export default function ConversationalAI() {
   const [selectedPage, setSelectedPage] = useState(getInitialSelectedPage());
   const [isFilterActive, setIsFilterActive] = useState(false);
   const [previousPage, setPreviousPage] = useState(getInitialSelectedPage());
+  const [workbookLoaded, setWorkbookLoaded] = useState(false);
   
   // Chat modal state
   const [chatModalVisible, setChatModalVisible] = useState(false);
@@ -198,6 +199,10 @@ export default function ConversationalAI() {
     if (dashboardRef.current) {
       dashboardRef.current.onChatOpen(handleChatOpen);
       dashboardRef.current.onChatResponse(handleChatResponse);
+      dashboardRef.current.onWorkbookLoaded(() => {
+        console.log('📊 ConversationalAI: Workbook loaded, showing navigation bar');
+        setWorkbookLoaded(true);
+      });
     }
   }, [handleChatOpen, handleChatResponse]);
 
@@ -213,13 +218,15 @@ export default function ConversationalAI() {
           initialVariables={variables}
         />
       </View>
-      <NavigationBar
-        pages={pages}
-        selectedPage={selectedPage}
-        onPageSelect={handlePageSelect}
-        onFilterPress={handleFilterPress}
-        isFilterActive={isFilterActive}
-      />
+      {workbookLoaded && (
+        <NavigationBar
+          pages={pages}
+          selectedPage={selectedPage}
+          onPageSelect={handlePageSelect}
+          onFilterPress={handleFilterPress}
+          isFilterActive={isFilterActive}
+        />
+      )}
       <EmbedUrlInfoModal
         visible={infoModalVisible}
         onClose={() => setInfoModalVisible(false)}

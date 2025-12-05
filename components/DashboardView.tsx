@@ -24,6 +24,7 @@ export interface DashboardViewRef {
   onChatOpen: (callback: (sessionId: string) => void) => void;
   onChatResponse: (callback: (response: any) => void) => void;
   onInventoryVerification: (callback: (data: any) => void) => void;
+  onWorkbookLoaded: (callback: () => void) => void;
   queryWorkbookVariables?: () => void;
 }
 
@@ -115,6 +116,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   
   // Inventory verification callback ref
   const inventoryVerificationCallbackRef = useRef<((data: any) => void) | null>(null);
+  
+  // Workbook loaded callback ref
+  const workbookLoadedCallbackRef = useRef<(() => void) | null>(null);
 
   /**
    * Send a message to the embedded iframe
@@ -236,6 +240,13 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     });
   };
 
+  /**
+   * Register callback for when workbook loads
+   */
+  const onWorkbookLoaded = (callback: () => void) => {
+    workbookLoadedCallbackRef.current = callback;
+  };
+
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     sendMessage,
@@ -245,6 +256,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     onChatOpen,
     onChatResponse,
     onInventoryVerification,
+    onWorkbookLoaded,
     queryWorkbookVariables,
   }));
 
@@ -432,6 +444,12 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         }
         setWorkbookLoaded(true);
         setLoading(false);
+        
+        // Notify parent component that workbook has loaded
+        if (workbookLoadedCallbackRef.current) {
+          console.log('📊 Triggering workbook loaded callback');
+          workbookLoadedCallbackRef.current();
+        }
       } else if (data.type === 'workbook:variables:current') {
         console.log('🔍 ===== WORKBOOK VARIABLES LIST RESPONSE =====');
         console.log('📋 Full response data:', JSON.stringify(data, null, 2));
