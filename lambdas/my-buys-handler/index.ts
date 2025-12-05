@@ -190,8 +190,8 @@ async function decryptSecret(encryptedSecret: string): Promise<string> {
  */
 function extractSecretNameFromUrl(url: string): string | null {
     try {
-        // Extract the name from URL pattern: https://app.sigmacomputing.com/{name}/workbook/...
-        const match = url.match(/app\.sigmacomputing\.com\/([^\/]+)\//);
+        // Accept app or staging hosts: https://{host}/{name}/workbook/...
+        const match = url.match(/(?:app\.sigmacomputing\.com|staging\.sigmacomputing\.io)\/([^\/]+)\//);
         if (match && match[1]) {
             return match[1];
         }
@@ -207,9 +207,15 @@ function extractSecretNameFromUrl(url: string): string | null {
  */
 function parseEmbedUrl(url: string): { baseUrl: string, jwt: string, params: Record<string, string> } {
     try {
-        // Validate URL format
-        if (!url.includes('app.sigmacomputing.com')) {
-            throw new Error('Embed URL must be from app.sigmacomputing.com');
+        console.log('[parseEmbedUrl] Parsing URL:', url);
+        const urlObj = new URL(url);
+        console.log('[parseEmbedUrl] Extracted hostname:', urlObj.hostname);
+        const allowedHosts = ['app.sigmacomputing.com', 'staging.sigmacomputing.io'];
+        console.log('[parseEmbedUrl] Allowed hosts:', allowedHosts);
+        console.log('[parseEmbedUrl] Hostname in allowed hosts?', allowedHosts.includes(urlObj.hostname));
+        if (!allowedHosts.includes(urlObj.hostname)) {
+            console.error('[parseEmbedUrl] Hostname validation failed. Hostname:', urlObj.hostname, 'Allowed:', allowedHosts);
+            throw new Error('Embed URL must be from app.sigmacomputing.com or staging.sigmacomputing.io');
         }
         
         // Extract JWT from URL
@@ -225,7 +231,6 @@ function parseEmbedUrl(url: string): { baseUrl: string, jwt: string, params: Rec
         
         // Extract other parameters
         const params: Record<string, string> = {};
-        const urlObj = new URL(url);
         urlObj.searchParams.forEach((value, key) => {
             params[key] = value;
         });
@@ -923,6 +928,9 @@ async function handleTestConfiguration(event: any, userId: string, email: string
     const body = JSON.parse(event.body || '{}');
     const { embedUrl, embedClientId, embedSecretKey } = body;
     
+    console.log('[handleTestConfiguration] Received embedUrl:', embedUrl);
+    console.log('[handleTestConfiguration] URL hostname check:', embedUrl ? new URL(embedUrl).hostname : 'N/A');
+    
     if (!embedUrl || !embedClientId || !embedSecretKey) {
         return createResponse(400, {
             success: false,
@@ -936,6 +944,7 @@ async function handleTestConfiguration(event: any, userId: string, email: string
     try {
         parsedUrl = parseEmbedUrl(embedUrl);
     } catch (error: any) {
+        console.error('[handleTestConfiguration] Error parsing embed URL:', error.message);
         return createResponse(400, {
             success: false,
             error: 'Invalid embed URL',

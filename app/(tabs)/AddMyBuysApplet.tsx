@@ -124,6 +124,9 @@ export default function AddMyBuysApplet() {
       setTesting(true);
       setTestResult(null);
 
+      // Log the embed URL being tested for debugging in Expo console
+      console.log('[AddMyBuysApplet] Testing configuration with embedUrl:', embedUrl);
+
       // Test the configuration without creating an applet
       const result = await MyBuysService.testConfiguration({
         embedUrl,

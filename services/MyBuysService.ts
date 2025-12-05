@@ -400,7 +400,7 @@ export class MyBuysService {
    */
   static extractSecretNameFromUrl(url: string): string | null {
     try {
-      const match = url.match(/app\.sigmacomputing\.com\/([^\/]+)\//);
+      const match = url.match(/(?:app\.sigmacomputing\.com|staging\.sigmacomputing\.io)\/([^\/]+)\//);
       if (match && match[1]) {
         return match[1];
       }
