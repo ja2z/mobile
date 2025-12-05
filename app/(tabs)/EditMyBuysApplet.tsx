@@ -41,7 +41,6 @@ export default function EditMyBuysApplet() {
   const [embedUrl, setEmbedUrl] = useState('');
   const [embedClientId, setEmbedClientId] = useState('');
   const [embedSecretKey, setEmbedSecretKey] = useState('');
-  const [showSecretKey, setShowSecretKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -479,33 +478,20 @@ export default function EditMyBuysApplet() {
               <Ionicons name="information-circle-outline" size={20} color={colors.info} />
             </TouchableOpacity>
           </View>
-          <View style={styles.secretInputContainer}>
-            <TextInput
-              ref={embedSecretKeyInputRef}
-              style={[styles.input, styles.secretInput]}
-              placeholder="Enter your embed secret key"
-              placeholderTextColor={colors.textSecondary}
-              value={embedSecretKey}
-              onChangeText={setEmbedSecretKey}
-              secureTextEntry={!showSecretKey}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onFocus={() => scrollToInput(true)}
-            />
-            <TouchableOpacity
-              onPress={() => setShowSecretKey(!showSecretKey)}
-              style={styles.eyeButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={showSecretKey ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            ref={embedSecretKeyInputRef}
+            style={styles.input}
+            placeholder="Enter your embed secret key"
+            placeholderTextColor={colors.textSecondary}
+            value={embedSecretKey}
+            onChangeText={setEmbedSecretKey}
+            secureTextEntry={true}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onFocus={() => scrollToInput(true)}
+          />
         </View>
 
         {/* Test Result */}

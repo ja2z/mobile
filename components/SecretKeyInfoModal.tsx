@@ -85,7 +85,7 @@ export function SecretKeyInfoModal({ visible, onClose }: SecretKeyInfoModalProps
             <View style={styles.warningSection}>
               <Ionicons name="warning-outline" size={20} color={colors.warning} />
               <Text style={styles.warningText}>
-                Your secret key is encrypted and stored securely. You'll need to re-enter it when editing an applet.
+                Your secret key is encrypted and stored securely.
               </Text>
             </View>
 
