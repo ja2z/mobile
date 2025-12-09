@@ -12,6 +12,7 @@ import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
 import Operations from './(tabs)/Operations';
+import GTM from './(tabs)/GTM';
 import Admin from './(tabs)/Admin';
 import ActivityLog from './(tabs)/ActivityLog';
 import EditUser from './(tabs)/EditUser';
@@ -34,6 +35,7 @@ export type RootStackParamList = {
   AINewsletter: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   ConversationalAI: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   Operations: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  GTM: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
@@ -539,6 +541,25 @@ export default function RootLayout() {
           options={{
             title: 'Operations',
             headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="GTM" 
+          component={GTM}
+          options={{
+            title: 'GTM',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
         <Stack.Screen 

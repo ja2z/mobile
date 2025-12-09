@@ -75,6 +75,13 @@ export default function Home() {
     } as never);
   };
 
+  const handleNavigateToGTM = () => {
+    navigation.navigate('GTM' as never, { 
+      appletId: '8', 
+      appletName: 'GTM' 
+    } as never);
+  };
+
   const appTiles: AppTile[] = [
     // Active tiles first
     { 
@@ -127,6 +134,16 @@ export default function Home() {
       isActive: true,
       onPress: handleNavigateToOperations,
     },
+    { 
+      id: '8', 
+      title: 'GTM', 
+      subtitle: 'Operations', 
+      description: 'Go-to-market operations dashboard for tracking and managing business metrics.',
+      color: colors.tileColors.orange2,
+      iconName: 'trending-up-outline',
+      isActive: true,
+      onPress: handleNavigateToGTM,
+    },
     // Inactive tiles at bottom
     { 
       id: '1', 
@@ -156,7 +173,7 @@ export default function Home() {
       isActive: false,
     },
     { 
-      id: '8', 
+      id: '10', 
       title: 'Settings', 
       subtitle: 'Configure', 
       description: 'Customize your app experience and manage your preferences from this central settings hub.',

@@ -14,6 +14,7 @@ interface DashboardViewProps {
   initialJwt?: string; // Optional: JWT token if using initialUrl
   initialPageId?: string; // Optional: page ID for deep linking to specific page
   initialVariables?: Record<string, string>; // Optional: variables/controls for pre-populating filters
+  embedPath?: string; // Optional: embed path for constructing the URL (e.g., "sigma-on-sigma/workbook")
 }
 
 export interface DashboardViewRef {
@@ -86,7 +87,7 @@ const SkeletonPlaceholder: React.FC = () => {
  * Handles loading external dashboard content with proper error handling
  * and automatic URL refresh before token expiry
  */
-export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables }, ref) => {
+export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables, embedPath }, ref) => {
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,8 +108,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     console.log('📊   initialJwt:', initialJwt ? 'present' : 'missing');
     console.log('📊   initialPageId:', initialPageId);
     console.log('📊   initialVariables:', JSON.stringify(initialVariables, null, 2));
+    console.log('📊   embedPath:', embedPath);
     console.log('📊 ===== END DASHBOARD VIEW PROPS =====');
-  }, [workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables]);
+  }, [workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables, embedPath]);
   
   // Chat-related callback refs
   const chatOpenCallbackRef = useRef<((sessionId: string) => void) | null>(null);
@@ -284,8 +286,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         // Continue without email - lambda will use default
       }
       
-      // Build params object with workbook_id, user_email, applet info, page_id, and variables
-      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string; page_id?: string; variables?: Record<string, string> } = {};
+      // Build params object with workbook_id, user_email, applet info, page_id, variables, and embed_path
+      const params: { workbook_id?: string; user_email?: string; applet_id?: string; applet_name?: string; page_id?: string; variables?: Record<string, string>; embed_path?: string } = {};
       if (workbookId) {
         params.workbook_id = workbookId;
       }
@@ -309,6 +311,12 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         console.log('📊 Added variables to params:', JSON.stringify(initialVariables, null, 2));
       } else {
         console.log('📊 No initialVariables provided');
+      }
+      if (embedPath) {
+        params.embed_path = embedPath;
+        console.log('📊 Added embed_path to params:', embedPath);
+      } else {
+        console.log('📊 No embedPath provided');
       }
       
       console.log('📤 ===== CALLING EMBED URL API =====');

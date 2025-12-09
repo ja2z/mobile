@@ -21,6 +21,7 @@ export const Config = {
     AI_NEWSLETTER: '70xl8hMTdNeqN75p4i4dSG',
     CONVERSATIONAL_AI: '5vuwQqluzlA5gmq9A82vt7',
     OPERATIONS: '285cUkL2a6T21lfRQk4brT',
+    GTM_OPERATIONS: 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB',
   },
   
   // Navigation configuration
