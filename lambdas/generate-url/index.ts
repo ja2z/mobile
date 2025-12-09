@@ -12,8 +12,53 @@ const secretsManager = new SecretsManagerClient({ region: AWS_REGION });
 
 // Cache the secrets to avoid repeated calls
 let cachedSessionSecret: string | null = null;
-let cachedEmbedSecret: string | null = null;
-let cachedSOSEmbedSecret: string | null = null;
+// Cache for embed secrets by secret name
+const cachedEmbedSecrets: Record<string, string> = {};
+
+/**
+ * Sigma Org Configuration
+ * Maps (domain, slug) combinations to their client_id and secret name
+ * 
+ * Format: embedPath is "{slug}/workbook" (e.g., "papercrane-embedding-gcp/workbook")
+ * Domain is determined by the embedPath or can be explicitly set
+ */
+interface SigmaOrgConfig {
+    clientId: string;      // Used as both 'kid' in header and 'iss' in payload
+    secretName: string;    // AWS Secrets Manager secret name
+    domain: string;         // Base domain URL (e.g., "https://app.sigmacomputing.com")
+    addEmbedSuffix: boolean; // Whether to add +embed to email
+}
+
+/**
+ * Sigma Org Registry
+ * Add new orgs here as needed
+ * Key format: "{domain}:{slug}"
+ */
+const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
+    // Production: papercrane-embedding-gcp
+    'app.sigmacomputing.com:papercrane-embedding-gcp': {
+        clientId: 'ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355',
+        secretName: 'sigma/jwt-secret',
+        domain: 'https://app.sigmacomputing.com',
+        addEmbedSuffix: true,
+    },
+    
+    // Staging: sigma-on-sigma
+    'staging.sigmacomputing.io:sigma-on-sigma': {
+        clientId: '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863',
+        secretName: 'mobile-app/jwt-secret-sos',
+        domain: 'https://staging.sigmacomputing.io',
+        addEmbedSuffix: false,
+    },
+    
+    // Add more orgs here as needed:
+    // 'app.sigmacomputing.com:another-slug': {
+    //     clientId: '...',
+    //     secretName: 'sigma/jwt-secret-another',
+    //     domain: 'https://app.sigmacomputing.com',
+    //     addEmbedSuffix: true,
+    // },
+};
 
 /**
  * Get IP address from event
@@ -59,79 +104,91 @@ async function getSessionSecret(): Promise<string> {
 }
 
 /**
- * Get embed JWT secret (for signing Sigma embed JWTs)
- * Uses sigma/jwt-secret, stored as JSON with JWT_SECRET field
+ * Get embed secret from Secrets Manager by secret name
+ * Handles both JSON format (with JWT_SECRET field) and plain string format
+ * Implements per-secret-name caching
  */
-async function getEmbedSecret(): Promise<string> {
-    if (cachedEmbedSecret) {
-        console.log('Using cached embed secret');
-        return cachedEmbedSecret;
+async function getEmbedSecretByName(secretName: string): Promise<string> {
+    // Check cache first
+    if (cachedEmbedSecrets[secretName]) {
+        console.log(`Using cached embed secret for "${secretName}"`);
+        return cachedEmbedSecrets[secretName];
     }
     
     try {
-        console.log(`Fetching embed secret from Secrets Manager in region: ${AWS_REGION}`);
+        console.log(`Fetching embed secret "${secretName}" from Secrets Manager in region: ${AWS_REGION}`);
         const command = new GetSecretValueCommand({
-            SecretId: "sigma/jwt-secret"
+            SecretId: secretName
         });
         
         const response = await secretsManager.send(command);
-        console.log('Embed secret retrieved successfully');
+        console.log(`Secret "${secretName}" retrieved successfully`);
         
-        // Parse JSON and extract JWT_SECRET field (original format)
-        const secret = JSON.parse(response.SecretString || '{}');
-        const jwtSecret = secret.JWT_SECRET;
-        
-        if (!jwtSecret) {
-            throw new Error('JWT_SECRET not found in secrets manager response');
+        // Handle different secret formats
+        // Some are JSON with JWT_SECRET field, others are plain strings
+        let jwtSecret: string;
+        try {
+            const parsed = JSON.parse(response.SecretString || '{}');
+            jwtSecret = parsed.JWT_SECRET || response.SecretString || '';
+        } catch {
+            // Not JSON, use as plain string
+            jwtSecret = response.SecretString || '';
         }
         
-        cachedEmbedSecret = jwtSecret;
+        if (!jwtSecret) {
+            throw new Error(`JWT secret not found in secret "${secretName}"`);
+        }
+        
+        // Cache the secret
+        cachedEmbedSecrets[secretName] = jwtSecret;
         return jwtSecret;
     } catch (error: any) {
-        console.error('Error fetching embed secret from Secrets Manager:', error);
-        throw new Error(`Failed to fetch embed JWT secret: ${error.message}`);
+        console.error(`Error fetching secret "${secretName}" from Secrets Manager:`, error);
+        throw new Error(`Failed to fetch embed JWT secret "${secretName}": ${error.message}`);
     }
 }
 
 /**
- * Get SOS (Sigma-on-Sigma) embed JWT secret (for signing staging embed JWTs)
- * Uses mobile-app/jwt-secret-sos, stored as plain string
+ * Extract slug from embedPath
+ * embedPath format: "{slug}/workbook" or just "{slug}"
  */
-async function getSOSEmbedSecret(): Promise<string> {
-    if (cachedSOSEmbedSecret) {
-        console.log('Using cached SOS embed secret');
-        return cachedSOSEmbedSecret;
-    }
-    
-    try {
-        console.log(`Fetching SOS embed secret from Secrets Manager in region: ${AWS_REGION}`);
-        const command = new GetSecretValueCommand({
-            SecretId: "mobile-app/jwt-secret-sos"
-        });
-        
-        const response = await secretsManager.send(command);
-        console.log('SOS embed secret retrieved successfully');
-        
-        // Read SecretString directly as plain string
-        const jwtSecret = response.SecretString || '';
-        
-        if (!jwtSecret) {
-            throw new Error('SOS JWT secret not found in secrets manager response');
-        }
-        
-        cachedSOSEmbedSecret = jwtSecret;
-        return jwtSecret;
-    } catch (error: any) {
-        console.error('Error fetching SOS embed secret from Secrets Manager:', error);
-        throw new Error(`Failed to fetch SOS embed JWT secret: ${error.message}`);
-    }
+function extractSlug(embedPath: string): string {
+    // Remove trailing "/workbook" if present
+    const slug = embedPath.replace(/\/workbook$/, '').trim();
+    return slug || 'papercrane-embedding-gcp'; // Default fallback
 }
 
 /**
- * Check if this is a staging/sigma-on-sigma URL request
+ * Determine domain from embedPath
+ * Returns the domain string (without https://)
  */
-function isStagingURL(embedPath: string): boolean {
-    return embedPath.includes('sigma-on-sigma');
+function determineDomain(embedPath: string): string {
+    // Check if embedPath explicitly indicates staging
+    if (embedPath.includes('sigma-on-sigma')) {
+        return 'staging.sigmacomputing.io';
+    }
+    // Default to production
+    return 'app.sigmacomputing.com';
+}
+
+/**
+ * Get Sigma org configuration for a given embedPath
+ */
+function getSigmaOrgConfig(embedPath: string): SigmaOrgConfig {
+    const slug = extractSlug(embedPath);
+    const domain = determineDomain(embedPath);
+    const configKey = `${domain}:${slug}`;
+    
+    const config = SIGMA_ORG_CONFIG[configKey];
+    
+    if (!config) {
+        // Fallback to production default if not found
+        console.warn(`⚠️ No config found for ${configKey}, using production default`);
+        return SIGMA_ORG_CONFIG['app.sigmacomputing.com:papercrane-embedding-gcp'];
+    }
+    
+    console.log(`🔧 Using Sigma org config: ${configKey}`);
+    return config;
 }
 
 function base64UrlEncode(str: string): string {
@@ -197,12 +254,12 @@ function verifyJWT(token: string, secret: string): any {
     return payload;
 }
 
-function createJWT(payload: any, secret: string): string {
-    // Header
+function createJWT(payload: any, secret: string, kid: string): string {
+    // Header with specified kid
     const header = {
         alg: "HS256",
         typ: "JWT",
-        kid: "ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355"
+        kid: kid
     };
     
     // Encode header and payload
@@ -392,20 +449,25 @@ export const handler = async (event: any) => {
         const pageId = body.page_id;
         const variables = body.variables; // Should be Record<string, string>
         
-        // Check if this is a staging/sigma-on-sigma URL request
-        const isStaging = isStagingURL(embedPath);
-        console.log('🔧 Detected staging URL:', isStaging);
+        // Get Sigma org configuration
+        const orgConfig = getSigmaOrgConfig(embedPath);
+        console.log('🔧 Sigma org config:', {
+            clientId: orgConfig.clientId,
+            secretName: orgConfig.secretName,
+            domain: orgConfig.domain,
+            addEmbedSuffix: orgConfig.addEmbedSuffix,
+        });
         
         // Use email from verified JWT (ignore user_email from body for security)
-        // For staging URLs, don't add +embed suffix
-        const userEmailForEmbed = isStaging ? userEmail : addEmbedToEmail(userEmail);
+        const userEmailForEmbed = orgConfig.addEmbedSuffix 
+            ? addEmbedToEmail(userEmail) 
+            : userEmail;
         
         console.log('🔧 Extracted parameters:');
         console.log('🔧   merchantId:', merchantId);
         console.log('🔧   userEmail:', userEmailForEmbed);
         console.log('🔧   workbookId:', workbookId);
         console.log('🔧   embedPath:', embedPath);
-        console.log('🔧   isStaging:', isStaging);
         console.log('🔧   teams:', teams);
         console.log('🔧   appletId:', appletId);
         console.log('🔧   appletName:', appletName);
@@ -419,26 +481,28 @@ export const handler = async (event: any) => {
             userEmail: userEmailForEmbed,
             workbookId,
             embedPath,
-            isStaging,
             teams,
             appletId,
             appletName,
             pageId,
             variables,
-            authenticatedUser: userEmail
+            authenticatedUser: userEmail,
+            orgConfig: {
+                clientId: orgConfig.clientId,
+                secretName: orgConfig.secretName,
+                domain: orgConfig.domain,
+                addEmbedSuffix: orgConfig.addEmbedSuffix,
+            }
         });
         
-        // Get embed secret from Secrets Manager (for signing embed JWT)
-        // Use different secret for staging URLs
-        console.log(`Fetching ${isStaging ? 'SOS' : 'standard'} embed secret from Secrets Manager...`);
-        const embedSecret = isStaging ? await getSOSEmbedSecret() : await getEmbedSecret();
-        console.log(`${isStaging ? 'SOS' : 'Standard'} embed secret retrieved successfully`);
+        // Get embed secret from Secrets Manager using the configured secret name
+        const embedSecret = await getEmbedSecretByName(orgConfig.secretName);
+        console.log(`Embed secret "${orgConfig.secretName}" retrieved successfully`);
         
         // Current timestamp
         const now = Math.floor(Date.now() / 1000);
         
         // Create JWT payload
-        // For staging URLs, exclude teams, user_attributes, and account_type
         const payload: any = {
             sub: userEmailForEmbed,
             aud: "sigmacomputing",
@@ -446,32 +510,29 @@ export const handler = async (event: any) => {
             jti: generateUUID(), // Unique nonce for each request
             iat: now,
             exp: now + 3600, // Token expires in 1 hour
+            iss: orgConfig.clientId, // Use clientId from config
         };
         
-        // Add fields only for non-staging URLs
-        if (!isStaging) {
+        // Add fields only if configured to add embed suffix (when true, always include teams/user_attributes/account_type)
+        if (orgConfig.addEmbedSuffix) {
             payload.user_attributes = {
                 merchant_id: merchantId
             };
             payload.account_type = "Creator";
             payload.teams = teams;
-            payload.iss = "ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355";
-        } else {
-            // For staging URLs, use different client_id (iss)
-            payload.iss = "227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863";
         }
         
         console.log('Creating embed JWT...');
         console.log('JWT payload:', JSON.stringify(payload, null, 2));
-        // Generate JWT using embed secret (this is synchronous, no need to await)
-        const jwtToken = createJWT(payload, embedSecret);
+        // Generate JWT using embed secret and clientId as kid
+        const jwtToken = createJWT(payload, embedSecret, orgConfig.clientId);
         console.log('Embed JWT created successfully');
         
         // Construct the base embedding URL
         // If pageId is provided, add /page/{pageId} to the path
         console.log('🔧 ===== CONSTRUCTING EMBED URL =====');
-        // Use staging URL for sigma-on-sigma paths
-        const baseDomain = isStaging ? 'https://staging.sigmacomputing.io' : 'https://app.sigmacomputing.com';
+        // Use domain from config
+        const baseDomain = orgConfig.domain;
         let baseUrl = `${baseDomain}/${embedPath}/${workbookId}`;
         console.log('🔧 Base URL (before pageId):', baseUrl);
         if (pageId) {
