@@ -276,6 +276,192 @@ echo ""
 # Your script commands here...
 ```
 
+## Granting Secrets Manager Permissions to Lambda Functions
+
+When a Lambda function needs to read a secret from AWS Secrets Manager, you need to grant IAM permissions to the Lambda's execution role.
+
+### Reusable Script
+
+Use the reusable script at `lambdas/generate-url/grant-secret-permissions.sh`:
+
+```bash
+# Grant permission for a specific Lambda and secret
+./lambdas/generate-url/grant-secret-permissions.sh \
+    generateSigmaEmbedURL \
+    "arn:aws:secretsmanager:us-west-2:*:secret:mobile-app/jwt-secret-papercranestaging-*" \
+    us-west-2
+
+# Or use defaults (generateSigmaEmbedURL, papercranestaging secret, us-west-2)
+./lambdas/generate-url/grant-secret-permissions.sh
+```
+
+### Manual Process
+
+If you need to grant permissions manually or understand the process:
+
+1. **Find the Lambda's IAM role:**
+```bash
+ROLE_ARN=$(aws lambda get-function-configuration \
+    --function-name generateSigmaEmbedURL \
+    --region us-west-2 \
+    --no-verify-ssl \
+    --query 'Role' \
+    --output text)
+
+# Extract role name from ARN
+ROLE_NAME=$(echo "$ROLE_ARN" | sed 's/.*\///')
+```
+
+2. **Find the IAM policy name:**
+```bash
+# List inline policies
+aws iam list-role-policies \
+    --role-name "$ROLE_NAME" \
+    --no-verify-ssl \
+    --output json
+
+# Look for policies with "secret" in the name, or use the only policy if there's just one
+```
+
+3. **Get current policy document:**
+```bash
+aws iam get-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-name "SecretsManagerAccess" \
+    --no-verify-ssl \
+    --output json | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(json.dumps(data['PolicyDocument']))
+"
+```
+
+4. **Update policy to add secret ARN:**
+   - Parse the JSON policy document
+   - Find the `secretsmanager:GetSecretValue` statement
+   - Add the new secret ARN to the `Resource` array
+   - Update the policy using `aws iam put-role-policy`
+
+### Important Learnings
+
+#### 1. Heredoc Stdin Issue
+
+**Problem:** When piping data to a Python script using heredoc, the heredoc takes precedence over stdin, causing `sys.stdin` to be empty.
+
+**Solution:** Pass data via environment variables instead:
+
+```bash
+# ❌ This doesn't work - heredoc takes precedence over pipe
+UPDATED_POLICY=$(echo "$POLICY_DOC" | python3 << 'PYTHON_SCRIPT'
+import sys, json
+policy = json.load(sys.stdin)  # This will be empty!
+PYTHON_SCRIPT
+)
+
+# ✅ This works - use environment variable
+UPDATED_POLICY=$(POLICY_DOC_JSON="$POLICY_DOC" python3 << 'PYTHON_SCRIPT'
+import os, json
+policy_json = os.environ.get('POLICY_DOC_JSON', '{}')
+policy = json.loads(policy_json)  # This works!
+PYTHON_SCRIPT
+)
+```
+
+#### 2. Finding Lambda Roles Dynamically
+
+Lambda roles can have different naming patterns. Always find the role dynamically:
+
+```bash
+# Get role ARN from Lambda configuration
+ROLE_ARN=$(aws lambda get-function-configuration \
+    --function-name "$FUNCTION_NAME" \
+    --region "$REGION" \
+    --query 'Role' \
+    --output text)
+
+# Extract role name (everything after the last /)
+ROLE_NAME=$(echo "$ROLE_ARN" | sed 's/.*\///')
+```
+
+#### 3. Policy Name Discovery
+
+IAM policies may have different names. Use a fallback strategy:
+
+1. Look for policies with "secret" in the name
+2. If only one inline policy exists, use that
+3. Otherwise, list all policies and let user choose
+
+#### 4. Secret ARN Format
+
+Always use the wildcard suffix pattern for secret ARNs:
+- ✅ `arn:aws:secretsmanager:us-west-2:*:secret:mobile-app/jwt-secret-papercranestaging-*`
+- ❌ `arn:aws:secretsmanager:us-west-2:*:secret:mobile-app/jwt-secret-papercranestaging`
+
+The `-*` suffix accounts for AWS automatically appending random characters to secret names.
+
+### Example: Complete Permission Grant Script
+
+```bash
+#!/bin/bash
+set -e
+
+export AWS_PROFILE=saml
+export AWS_CA_BUNDLE=""
+export PYTHONHTTPSVERIFY=0
+
+FUNCTION_NAME="${1:-generateSigmaEmbedURL}"
+SECRET_ARN="${2:-arn:aws:secretsmanager:us-west-2:*:secret:mobile-app/jwt-secret-papercranestaging-*}"
+
+# Find Lambda role
+ROLE_ARN=$(aws lambda get-function-configuration \
+    --function-name "$FUNCTION_NAME" \
+    --region us-west-2 \
+    --no-verify-ssl \
+    --query 'Role' \
+    --output text)
+ROLE_NAME=$(echo "$ROLE_ARN" | sed 's/.*\///')
+
+# Get policy document
+POLICY_DOC=$(aws iam get-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-name "SecretsManagerAccess" \
+    --no-verify-ssl \
+    --output json 2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(json.dumps(data['PolicyDocument']))
+")
+
+# Update policy (add secret ARN to resources)
+UPDATED_POLICY=$(POLICY_DOC_JSON="$POLICY_DOC" SECRET_ARN="$SECRET_ARN" python3 << 'PYTHON_SCRIPT'
+import json, os, sys
+policy = json.loads(os.environ['POLICY_DOC_JSON'])
+secret_arn = os.environ['SECRET_ARN']
+
+for statement in policy['Statement']:
+    if 'secretsmanager:GetSecretValue' in statement.get('Action', []):
+        resources = statement.get('Resource', [])
+        if isinstance(resources, str):
+            resources = [resources]
+        if secret_arn not in resources:
+            resources.append(secret_arn)
+            statement['Resource'] = resources
+        break
+
+print(json.dumps(policy))
+PYTHON_SCRIPT
+)
+
+# Apply updated policy
+aws iam put-role-policy \
+    --role-name "$ROLE_NAME" \
+    --policy-name "SecretsManagerAccess" \
+    --policy-document "$UPDATED_POLICY" \
+    --no-verify-ssl
+
+echo "✅ Permission granted!"
+```
+
 ## Notes
 
 - **Authentication expires after 1 hour** - Always check before running commands
@@ -283,3 +469,5 @@ echo ""
 - **All scripts should verify auth** before making AWS API calls
 - **Use read-only commands** to test authentication first
 - **Filter SSL warnings** to keep output clean
+- **When using heredoc with pipes**, pass data via environment variables instead of stdin
+- **Secret ARNs should use wildcard suffix** (`-*`) to account for AWS auto-appended characters

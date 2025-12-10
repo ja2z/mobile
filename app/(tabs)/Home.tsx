@@ -46,7 +46,7 @@ export default function Home() {
   const handleNavigateToDashboard = () => {
     navigation.navigate('Dashboard' as never, { 
       appletId: '2', 
-      appletName: 'AOP Exec Dashboard' 
+      appletName: 'Art of the Possible' 
     } as never);
   };
 
@@ -60,7 +60,7 @@ export default function Home() {
   const handleNavigateToConversationalAI = () => {
     navigation.navigate('ConversationalAI' as never, { 
       appletId: '5', 
-      appletName: 'Conversational AI' 
+      appletName: 'AI Query' 
     } as never);
   };
 
@@ -82,6 +82,13 @@ export default function Home() {
     } as never);
   };
 
+  const handleNavigateToAIChat = () => {
+    navigation.navigate('AIChat' as never, { 
+      appletId: '6', 
+      appletName: 'AI Chat' 
+    } as never);
+  };
+
   const appTiles: AppTile[] = [
     // Active tiles first
     { 
@@ -96,8 +103,8 @@ export default function Home() {
     },
     { 
       id: '2', 
-      title: 'AOP Exec Dashboard', 
-      subtitle: 'Executive View', 
+      title: 'Art of the Possible', 
+      subtitle: 'Executive Dashboard', 
       description: 'Beautiful dashboard for executives to gain quick insights on the go. Stay informed with real-time data.',
       color: colors.tileColors.orange2,
       iconName: 'briefcase-outline',
@@ -105,18 +112,18 @@ export default function Home() {
       onPress: handleNavigateToDashboard,
     },
     { 
-      id: '3', 
-      title: 'AI Newsletter', 
-      subtitle: 'Content', 
-      description: 'Stay updated with AI-generated content and insights. Get the latest news curated just for you.',
-      color: colors.tileColors.orange3,
-      iconName: 'sparkles-outline',
+      id: '6', 
+      title: 'AI Chat', 
+      subtitle: 'AI Assistant', 
+      description: 'Chat with AI to get instant answers and insights. Powered by advanced AI technology.',
+      color: colors.tileColors.orange1,
+      iconName: 'chatbubbles-outline',
       isActive: true,
-      onPress: handleNavigateToAINewsletter,
+      onPress: handleNavigateToAIChat,
     },
     { 
       id: '5', 
-      title: 'Conversational AI', 
+      title: 'AI Query', 
       subtitle: 'AI Assistant', 
       description: 'Interact with your data using natural language. Ask questions and get instant insights powered by AI.',
       color: colors.tileColors.orange1,
@@ -144,6 +151,16 @@ export default function Home() {
       isActive: true,
       onPress: handleNavigateToGTM,
     },
+    { 
+      id: '3', 
+      title: 'AI Newsletter', 
+      subtitle: 'Content', 
+      description: 'Stay updated with AI-generated content and insights. Get the latest news curated just for you.',
+      color: colors.tileColors.orange3,
+      iconName: 'sparkles-outline',
+      isActive: true,
+      onPress: handleNavigateToAINewsletter,
+    },
     // Inactive tiles at bottom
     { 
       id: '1', 
@@ -164,7 +181,7 @@ export default function Home() {
       isActive: false,
     },
     { 
-      id: '6', 
+      id: '11', 
       title: 'Finance Hub', 
       subtitle: 'Budget', 
       description: 'Manage budgets, track expenses, and get financial insights all in one convenient location.',

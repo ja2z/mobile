@@ -11,6 +11,7 @@ import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
 import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
+import AIChat from './(tabs)/AIChat';
 import Operations from './(tabs)/Operations';
 import GTM from './(tabs)/GTM';
 import Admin from './(tabs)/Admin';
@@ -34,6 +35,7 @@ export type RootStackParamList = {
   Dashboard: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   AINewsletter: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   ConversationalAI: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  AIChat: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   Operations: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   GTM: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
@@ -520,7 +522,26 @@ export default function RootLayout() {
           name="ConversationalAI" 
           component={ConversationalAI}
           options={{
-            title: 'Conversational AI',
+            title: 'AI Query',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="AIChat" 
+          component={AIChat}
+          options={{
+            title: 'AI Chat',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,

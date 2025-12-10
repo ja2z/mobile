@@ -51,6 +51,14 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
         addEmbedSuffix: false,
     },
     
+    // Staging: papercranestaging
+    'staging.sigmacomputing.io:papercranestaging': {
+        clientId: '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e',
+        secretName: 'mobile-app/jwt-secret-papercranestaging',
+        domain: 'https://staging.sigmacomputing.io',
+        addEmbedSuffix: true,
+    },
+    
     // Add more orgs here as needed:
     // 'app.sigmacomputing.com:another-slug': {
     //     clientId: '...',
@@ -164,7 +172,7 @@ function extractSlug(embedPath: string): string {
  */
 function determineDomain(embedPath: string): string {
     // Check if embedPath explicitly indicates staging
-    if (embedPath.includes('sigma-on-sigma')) {
+    if (embedPath.includes('sigma-on-sigma') || embedPath.includes('papercranestaging')) {
         return 'staging.sigmacomputing.io';
     }
     // Default to production
