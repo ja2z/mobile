@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # AWS CLI Usage Guide
 
 ## Overview
@@ -149,6 +153,40 @@ fi
 ## Common Commands
 
 ### Lambda Operations
+
+#### Building and Deploying Lambdas
+
+Each Lambda function directory contains build and deploy scripts:
+
+- **Build script**: `build-lambda.sh` - Compiles TypeScript, packages dependencies, and creates a zip file
+- **Deploy script**: `deploy-lambda-s3.sh` - Uploads the zip to S3 and updates the Lambda function code
+
+**Example workflow:**
+```bash
+# Navigate to the lambda directory
+cd lambdas/generate-url
+
+# Build the lambda (compiles TypeScript, creates zip)
+./build-lambda.sh
+
+# Deploy the lambda (uploads to S3, updates function)
+./deploy-lambda-s3.sh
+```
+
+**Available Lambda directories:**
+- `lambdas/admin-handler/` - Admin operations Lambda
+- `lambdas/auth-handler/` - Authentication Lambda
+- `lambdas/generate-url/` - Sigma embed URL generation Lambda
+- `lambdas/my-buys-handler/` - My Buys applet CRUD operations Lambda
+
+All build and deploy scripts follow the same pattern and handle:
+- TypeScript compilation
+- Dependency packaging
+- Shared module inclusion
+- S3-based deployment (faster for large files)
+- Automatic authentication checks
+
+#### Lambda Management Commands
 
 ```bash
 # Get Lambda configuration

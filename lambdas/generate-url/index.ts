@@ -16,17 +16,38 @@ let cachedSessionSecret: string | null = null;
 const cachedEmbedSecrets: Record<string, string> = {};
 
 /**
+ * JWT Payload Configuration
+ * Defines what teams, user_attributes, and account_type to include in JWT
+ */
+interface JWTPayloadConfig {
+    teams?: string[];                    // Teams to include (undefined = don't include)
+    user_attributes?: Record<string, any> | null; // User attributes (null = explicitly exclude, undefined = don't include)
+    account_type?: string;               // Account type (undefined = don't include)
+}
+
+/**
+ * Applet JWT Override Configuration
+ * Can override teams, user_attributes, and account_type from org config
+ */
+interface AppletJWTConfig {
+    teams?: string[] | null;                    // Override teams (null = explicitly exclude)
+    user_attributes?: Record<string, any> | null; // Override user_attributes (null = explicitly exclude)
+    account_type?: string | null;               // Override account_type (null = explicitly exclude)
+}
+
+/**
  * Sigma Org Configuration
- * Maps (domain, slug) combinations to their client_id and secret name
+ * Maps (domain, slug) combinations to their client_id, secret name, and JWT payload config
  * 
  * Format: embedPath is "{slug}/workbook" (e.g., "papercrane-embedding-gcp/workbook")
  * Domain is determined by the embedPath or can be explicitly set
  */
 interface SigmaOrgConfig {
-    clientId: string;      // Used as both 'kid' in header and 'iss' in payload
-    secretName: string;    // AWS Secrets Manager secret name
-    domain: string;         // Base domain URL (e.g., "https://app.sigmacomputing.com")
-    addEmbedSuffix: boolean; // Whether to add +embed to email
+    clientId: string;                    // Used as both 'kid' in header and 'iss' in payload
+    secretName: string;                  // AWS Secrets Manager secret name
+    domain: string;                      // Base domain URL (e.g., "https://app.sigmacomputing.com")
+    addEmbedSuffix: boolean;             // Whether to add +embed to email
+    jwtConfig: JWTPayloadConfig;        // Explicit JWT payload configuration
 }
 
 /**
@@ -41,6 +62,13 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
         secretName: 'sigma/jwt-secret',
         domain: 'https://app.sigmacomputing.com',
         addEmbedSuffix: true,
+        jwtConfig: {
+            teams: ["all_clients_team", "acme_team"],
+            user_attributes: {
+                merchant_id: "{{merchant_id}}"
+            },
+            account_type: "Creator"
+        }
     },
     
     // Staging: sigma-on-sigma
@@ -49,6 +77,9 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
         secretName: 'mobile-app/jwt-secret-sos',
         domain: 'https://staging.sigmacomputing.io',
         addEmbedSuffix: false,
+        jwtConfig: {
+            // No teams, user_attributes, or account_type for this org
+        }
     },
     
     // Staging: papercranestaging
@@ -57,6 +88,11 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
         secretName: 'mobile-app/jwt-secret-papercranestaging',
         domain: 'https://staging.sigmacomputing.io',
         addEmbedSuffix: true,
+        jwtConfig: {
+            teams: ["all_clients_team"],
+            // No user_attributes by default
+            account_type: "Creator"
+        }
     },
     
     // Add more orgs here as needed:
@@ -65,6 +101,40 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
     //     secretName: 'sigma/jwt-secret-another',
     //     domain: 'https://app.sigmacomputing.com',
     //     addEmbedSuffix: true,
+    //     jwtConfig: {
+    //         teams: [...],
+    //         user_attributes: {...},
+    //         account_type: "..."
+    //     }
+    // },
+};
+
+/**
+ * Applet Registry
+ * Maps appletId or appletName to JWT configuration overrides
+ * Key can be appletId (e.g., "6") or appletName (e.g., "AI Chat")
+ * appletId takes precedence if both exist
+ */
+const SIGMA_APPLET_CONFIG: Record<string, AppletJWTConfig> = {
+    // AI Chat applet - only needs all_clients_team, no user_attributes
+    '6': {  // appletId
+        teams: ["all_clients_team"],
+        user_attributes: null,  // Explicitly exclude
+        account_type: "Creator"  // Keep from org config
+    },
+    'AI Chat': {  // appletName (fallback if appletId not found)
+        teams: ["all_clients_team"],
+        user_attributes: null,
+        account_type: "Creator"
+    },
+    
+    // Future example: Another applet that needs different teams
+    // '7': {
+    //     teams: ["special_team"],
+    //     user_attributes: {
+    //         merchant_id: "{{merchant_id}}",
+    //         custom_field: "value"
+    //     }
     // },
 };
 
@@ -196,6 +266,82 @@ function getSigmaOrgConfig(embedPath: string): SigmaOrgConfig {
     }
     
     console.log(`🔧 Using Sigma org config: ${configKey}`);
+    return config;
+}
+
+/**
+ * Replace template variables in an object recursively
+ * Currently supports {{merchant_id}} replacement
+ */
+function replaceTemplateVariables(obj: any, merchantId: string): any {
+    if (obj === null || obj === undefined) {
+        return obj;
+    }
+    
+    if (typeof obj === 'string') {
+        return obj.replace(/\{\{merchant_id\}\}/g, merchantId);
+    }
+    
+    if (Array.isArray(obj)) {
+        return obj.map(item => replaceTemplateVariables(item, merchantId));
+    }
+    
+    if (typeof obj === 'object') {
+        const result: Record<string, any> = {};
+        for (const [key, value] of Object.entries(obj)) {
+            result[key] = replaceTemplateVariables(value, merchantId);
+        }
+        return result;
+    }
+    
+    return obj;
+}
+
+/**
+ * Get JWT payload configuration for a specific applet
+ * Merges org-level defaults with applet-specific overrides
+ */
+function getJWTConfig(
+    orgConfig: SigmaOrgConfig, 
+    appletId?: string, 
+    appletName?: string
+): JWTPayloadConfig {
+    // Start with org-level defaults
+    const config: JWTPayloadConfig = {
+        teams: orgConfig.jwtConfig.teams,
+        user_attributes: orgConfig.jwtConfig.user_attributes,
+        account_type: orgConfig.jwtConfig.account_type
+    };
+    
+    // Apply applet-specific overrides (appletId takes precedence)
+    let appletOverride: AppletJWTConfig | undefined;
+    if (appletId && SIGMA_APPLET_CONFIG[appletId]) {
+        appletOverride = SIGMA_APPLET_CONFIG[appletId];
+    } else if (appletName && SIGMA_APPLET_CONFIG[appletName]) {
+        appletOverride = SIGMA_APPLET_CONFIG[appletName];
+    }
+    
+    if (appletOverride) {
+        // Override teams if specified (null means exclude)
+        if (appletOverride.teams !== undefined) {
+            config.teams = appletOverride.teams === null ? undefined : appletOverride.teams;
+        }
+        
+        // Override user_attributes if specified (null means exclude)
+        if (appletOverride.user_attributes !== undefined) {
+            config.user_attributes = appletOverride.user_attributes === null 
+                ? undefined 
+                : appletOverride.user_attributes;
+        }
+        
+        // Override account_type if specified (null means exclude)
+        if (appletOverride.account_type !== undefined) {
+            config.account_type = appletOverride.account_type === null 
+                ? undefined 
+                : appletOverride.account_type;
+        }
+    }
+    
     return config;
 }
 
@@ -510,6 +656,10 @@ export const handler = async (event: any) => {
         // Current timestamp
         const now = Math.floor(Date.now() / 1000);
         
+        // Get JWT configuration (org defaults + applet overrides)
+        const jwtConfig = getJWTConfig(orgConfig, appletId, appletName);
+        console.log('🔧 JWT config:', JSON.stringify(jwtConfig, null, 2));
+        
         // Create JWT payload
         const payload: any = {
             sub: userEmailForEmbed,
@@ -521,13 +671,19 @@ export const handler = async (event: any) => {
             iss: orgConfig.clientId, // Use clientId from config
         };
         
-        // Add fields only if configured to add embed suffix (when true, always include teams/user_attributes/account_type)
-        if (orgConfig.addEmbedSuffix) {
-            payload.user_attributes = {
-                merchant_id: merchantId
-            };
-            payload.account_type = "Creator";
-            payload.teams = teams;
+        // Add teams if configured
+        if (jwtConfig.teams !== undefined) {
+            payload.teams = jwtConfig.teams;
+        }
+        
+        // Add user_attributes if configured (replace template variables)
+        if (jwtConfig.user_attributes !== undefined) {
+            payload.user_attributes = replaceTemplateVariables(jwtConfig.user_attributes, merchantId);
+        }
+        
+        // Add account_type if configured
+        if (jwtConfig.account_type !== undefined) {
+            payload.account_type = jwtConfig.account_type;
         }
         
         console.log('Creating embed JWT...');
