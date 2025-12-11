@@ -90,7 +90,6 @@ export default function Home() {
   };
 
   const appTiles: AppTile[] = [
-    // Active tiles first
     { 
       id: '9', 
       title: 'My Buys', 
@@ -106,7 +105,7 @@ export default function Home() {
       title: 'Art of the Possible', 
       subtitle: 'Executive Dashboard', 
       description: 'Beautiful dashboard for executives to gain quick insights on the go. Stay informed with real-time data.',
-      color: colors.tileColors.orange2,
+      color: colors.tileColors.orange1,
       iconName: 'briefcase-outline',
       isActive: true,
       onPress: handleNavigateToDashboard,
@@ -136,7 +135,7 @@ export default function Home() {
       title: 'Operations', 
       subtitle: 'Workflow', 
       description: 'Streamline your operations workflow with powerful automation and monitoring capabilities.',
-      color: colors.tileColors.orange3,
+      color: colors.tileColors.orange1,
       iconName: 'git-network-outline',
       isActive: true,
       onPress: handleNavigateToOperations,
@@ -146,7 +145,7 @@ export default function Home() {
       title: 'GTM', 
       subtitle: 'Operations', 
       description: 'Go-to-market operations dashboard for tracking and managing business metrics.',
-      color: colors.tileColors.orange2,
+      color: colors.tileColors.orange1,
       iconName: 'trending-up-outline',
       isActive: true,
       onPress: handleNavigateToGTM,
@@ -156,47 +155,10 @@ export default function Home() {
       title: 'AI Newsletter', 
       subtitle: 'Content', 
       description: 'Stay updated with AI-generated content and insights. Get the latest news curated just for you.',
-      color: colors.tileColors.orange3,
+      color: colors.tileColors.orange1,
       iconName: 'sparkles-outline',
       isActive: true,
       onPress: handleNavigateToAINewsletter,
-    },
-    // Inactive tiles at bottom
-    { 
-      id: '1', 
-      title: 'Data Dashboard', 
-      subtitle: 'Analytics', 
-      description: 'Comprehensive analytics and data visualization tools to help you understand your metrics at a glance.',
-      color: colors.tileColors.orange1,
-      iconName: 'bar-chart-outline',
-      isActive: false,
-    },
-    { 
-      id: '4', 
-      title: 'Report Builder', 
-      subtitle: 'Reports', 
-      description: 'Create custom reports and export data with our powerful report building tools. Coming soon.',
-      color: colors.tileColors.orange4,
-      iconName: 'document-text-outline',
-      isActive: false,
-    },
-    { 
-      id: '11', 
-      title: 'Finance Hub', 
-      subtitle: 'Budget', 
-      description: 'Manage budgets, track expenses, and get financial insights all in one convenient location.',
-      color: colors.tileColors.orange2,
-      iconName: 'cash-outline',
-      isActive: false,
-    },
-    { 
-      id: '10', 
-      title: 'Settings', 
-      subtitle: 'Configure', 
-      description: 'Customize your app experience and manage your preferences from this central settings hub.',
-      color: colors.tileColors.orange4,
-      iconName: 'settings-outline',
-      isActive: false,
     },
   ];
 
