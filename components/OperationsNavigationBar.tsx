@@ -20,11 +20,20 @@ export const OperationsNavigationBar: React.FC<OperationsNavigationBarProps> = (
   onFilterPress,
   isFilterActive,
 }) => {
+  // Page node IDs from Sigma workbook
+  // Analytics: qxcXRVDVVX (default landing page)
+  // Transfer: Jc8Oqr9HNj
+  // Filters: hkCtcLBQ0N
   const pages = [
-    { id: 'JjchtrDl1w', name: 'Analytics', icon: 'analytics-outline' as const },
+    { id: 'qxcXRVDVVX', name: 'Analytics', icon: 'analytics-outline' as const },
     { id: 'Jc8Oqr9HNj', name: 'Transfer', icon: 'swap-horizontal-outline' as const },
     { id: 'hkCtcLBQ0N', name: 'Filters', icon: 'options-outline' as const },
   ];
+
+  const handlePagePress = (page: typeof pages[0]) => {
+    console.log(`🔘 OperationsNavigationBar: Button pressed for ${page.name} (${page.id})`);
+    onPageSelect(page.id, page.name);
+  };
 
   return (
     <View style={styles.container}>
@@ -36,7 +45,7 @@ export const OperationsNavigationBar: React.FC<OperationsNavigationBarProps> = (
             <TouchableOpacity
               key={page.id}
               style={styles.button}
-              onPress={() => onPageSelect(page.id, page.name)}
+              onPress={() => handlePagePress(page)}
             >
               <Ionicons 
                 name={page.icon} 

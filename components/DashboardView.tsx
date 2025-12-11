@@ -138,56 +138,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     const messageStr = JSON.stringify(message);
     const escapedMessageStr = messageStr.replace(/'/g, "\\'");
     
-    const js = `
-      (function() {
-        try {
-          console.log('🔧 Injected JS: Starting...');
-          const iframe = document.getElementById('sigma-embed');
-          
-          if (!iframe) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'debug',
-              message: 'ERROR: iframe not found'
-            }));
-            return;
-          }
-          
-          console.log('🔧 Injected JS: iframe found');
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'debug',
-            message: 'iframe found, attempting to send message'
-          }));
-          
-          if (!iframe.contentWindow) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'debug',
-              message: 'ERROR: iframe.contentWindow is null'
-            }));
-            return;
-          }
-          
-          const messageToSend = ${messageStr};
-          console.log('🔧 Injected JS: Sending message to iframe:', messageToSend);
-          
-          iframe.contentWindow.postMessage(messageToSend, 'https://app.sigmacomputing.com');
-          
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'debug',
-            message: 'Message sent successfully to iframe',
-            sentMessage: messageToSend
-          }));
-          
-          console.log('🔧 Injected JS: Message sent successfully');
-        } catch (error) {
-          console.error('🔧 Injected JS ERROR:', error);
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'debug',
-            message: 'ERROR: ' + error.message
-          }));
-        }
-      })();
-      true;
-    `;
+    // Note: iOS WKWebView requires the injected script to return a primitive value
+    // Using void(0) ensures we return undefined which is a valid primitive
+    const js = `(function(){try{var iframe=document.getElementById('sigma-embed');if(iframe&&iframe.contentWindow){iframe.contentWindow.postMessage(${messageStr},'https://app.sigmacomputing.com');}}catch(e){}})();void(0);`;
     
     console.log('📝 Injecting JavaScript...');
     webViewRef.current.injectJavaScript(js);

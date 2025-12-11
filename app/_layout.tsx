@@ -210,7 +210,7 @@ export default function RootLayout() {
           console.log('✅ Authentication successful!', { email: session.user.email });
           
           // Map app name to screen name
-          // Valid app names: "dashboard", "ainewsletter", "conversationalai" (case-insensitive)
+          // Valid app names: "dashboard", "ainewsletter", "conversationalai", "operations" (case-insensitive)
           // Default to "Home" if no app specified or invalid app name
           let targetScreen: 'Home' | DeepLinkableScreen = 'Home';
           if (app) {
@@ -221,6 +221,8 @@ export default function RootLayout() {
               targetScreen = 'AINewsletter';
             } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
               targetScreen = 'ConversationalAI';
+            } else if (appLower === 'operations') {
+              targetScreen = 'Operations';
             } else {
               console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
             }

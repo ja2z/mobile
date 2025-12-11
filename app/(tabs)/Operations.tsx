@@ -29,9 +29,9 @@ export default function Operations() {
   const dashboardRef = useRef<DashboardViewRef>(null);
   
   // Navigation state
-  const [selectedPage, setSelectedPage] = useState('JjchtrDl1w'); // Default to 'Analytics'
+  const [selectedPage, setSelectedPage] = useState('qxcXRVDVVX'); // Default to 'Analytics' (new page ID)
   const [isFilterActive, setIsFilterActive] = useState(false);
-  const [previousPage, setPreviousPage] = useState('JjchtrDl1w');
+  const [previousPage, setPreviousPage] = useState('qxcXRVDVVX');
   const [workbookLoaded, setWorkbookLoaded] = useState(false);
   
   // Inventory verification modal state
@@ -77,16 +77,29 @@ export default function Operations() {
    * Handle page selection from navigation bar
    */
   const handlePageSelect = (pageId: string, pageName: string) => {
+    console.log(`📱 ===== PAGE NAVIGATION =====`);
     console.log(`📱 Navigating to page: ${pageName} (${pageId})`);
+    console.log(`📱 dashboardRef.current exists: ${!!dashboardRef.current}`);
+    console.log(`📱 workbookLoaded: ${workbookLoaded}`);
     setSelectedPage(pageId);
     setIsFilterActive(false);
     
     // Send postMessage to iframe to change page
-    dashboardRef.current?.sendMessage({
+    // Try the standard Sigma embed API format
+    const message = {
       type: 'workbook:selectednodeid:update',
       selectedNodeId: pageId,
       nodeType: 'page',
-    });
+    };
+    console.log(`📱 Sending message:`, JSON.stringify(message, null, 2));
+    
+    if (dashboardRef.current) {
+      dashboardRef.current.sendMessage(message);
+      console.log(`📱 Message sent successfully`);
+    } else {
+      console.error(`📱 ERROR: dashboardRef.current is null, cannot send message`);
+    }
+    console.log(`📱 ===== END PAGE NAVIGATION =====`);
   };
 
   /**
@@ -198,6 +211,7 @@ export default function Operations() {
         <DashboardView 
           ref={dashboardRef}
           workbookId={Config.WORKBOOKS.OPERATIONS}
+          initialPageId="qxcXRVDVVX"
         />
       </View>
       {workbookLoaded && (
