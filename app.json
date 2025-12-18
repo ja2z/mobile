@@ -76,7 +76,8 @@
           "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",
           "speechRecognitionPermission": "Allow Big Buys to use speech recognition to convert your voice to text."
         }
-      ]
+      ],
+      "expo-clipboard"
     ],
     "extra": {
       "eas": {
