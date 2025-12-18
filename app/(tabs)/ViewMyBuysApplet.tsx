@@ -200,6 +200,7 @@ export default function ViewMyBuysApplet() {
         onClose={() => setInfoModalVisible(false)}
         embedUrl={getEmbedUrl()}
         jwt={getJWT()}
+        appletId={appletId}
       />
     </SafeAreaView>
   );

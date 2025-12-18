@@ -8,9 +8,13 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import Toast from 'react-native-toast-message';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
+import { MyBuysService } from '../services/MyBuysService';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -19,6 +23,7 @@ interface EmbedUrlInfoModalProps {
   onClose: () => void;
   embedUrl: string | null;
   jwt?: string | null;
+  appletId?: string;
 }
 
 /**
@@ -125,9 +130,10 @@ function extractJWTFromUrl(url: string): string | null {
  * Embed URL Info Modal Component
  * Displays the embed URL and decoded JWT payload
  */
-export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt }: EmbedUrlInfoModalProps) {
+export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }: EmbedUrlInfoModalProps) {
   const [decodedJWT, setDecodedJWT] = useState<any | null>(null);
   const [jwtString, setJwtString] = useState<string | null>(null);
+  const [isGeneratingUsableUrl, setIsGeneratingUsableUrl] = useState(false);
 
   useEffect(() => {
     if (visible && embedUrl) {
@@ -244,6 +250,74 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt }: EmbedUrlI
     return <Text style={styles.urlText}>{embedUrl}</Text>;
   };
 
+  /**
+   * Handle copying the current embed URL to clipboard
+   */
+  const handleCopyUrl = async () => {
+    if (!embedUrl) {
+      Toast.show({
+        type: 'error',
+        text1: 'No URL available',
+        text2: 'There is no URL to copy.',
+      });
+      return;
+    }
+
+    try {
+      await Clipboard.setStringAsync(embedUrl);
+      Toast.show({
+        type: 'success',
+        text1: 'Copied to clipboard',
+        text2: 'Embed URL has been copied.',
+      });
+    } catch (error) {
+      console.error('Error copying to clipboard:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Copy failed',
+        text2: 'Failed to copy URL to clipboard.',
+      });
+    }
+  };
+
+  /**
+   * Handle generating a new usable URL and copying it to clipboard
+   */
+  const handleGenerateUsableUrl = async () => {
+    if (!appletId) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Applet ID is required.',
+      });
+      return;
+    }
+
+    setIsGeneratingUsableUrl(true);
+    try {
+      const result = await MyBuysService.getRegeneratedUrl(appletId);
+      if (result.url) {
+        await Clipboard.setStringAsync(result.url);
+        Toast.show({
+          type: 'success',
+          text1: 'Usable URL copied',
+          text2: 'A new embed URL has been generated and copied to clipboard.',
+        });
+      } else {
+        throw new Error('No URL returned from API');
+      }
+    } catch (error: any) {
+      console.error('Error generating usable URL:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Generation failed',
+        text2: error.message || 'Failed to generate usable URL.',
+      });
+    } finally {
+      setIsGeneratingUsableUrl(false);
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -322,6 +396,37 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt }: EmbedUrlI
                     </View>
                   )}
               </ScrollView>
+
+              {/* Action Buttons - Only show for My Buys applets */}
+              {appletId && (
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity
+                    style={styles.copyButton}
+                    onPress={handleCopyUrl}
+                    disabled={!embedUrl}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="copy-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Copy</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.usableUrlButton, isGeneratingUsableUrl && styles.buttonDisabled]}
+                    onPress={handleGenerateUsableUrl}
+                    disabled={isGeneratingUsableUrl}
+                    activeOpacity={0.7}
+                  >
+                    {isGeneratingUsableUrl ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
+                    )}
+                    <Text style={styles.buttonText}>
+                      {isGeneratingUsableUrl ? 'Generating...' : 'Usable URL'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
         </View>
       </View>
     </Modal>
@@ -467,6 +572,44 @@ const styles = StyleSheet.create({
   errorText: {
     ...typography.bodySmall,
     color: colors.error,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    padding: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.md,
+    flexShrink: 0,
+  },
+  copyButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  usableUrlButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
