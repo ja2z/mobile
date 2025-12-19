@@ -6,7 +6,7 @@ import type { StackNavigationProp, RouteProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { MyBuysService } from '../../services/MyBuysService';
 import { AuthService } from '../../services/AuthService';
-import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
+import { DashboardView, DashboardViewRef, SkeletonPlaceholder } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { colors, spacing, typography } from '../../constants/Theme';
@@ -129,10 +129,8 @@ export default function ViewMyBuysApplet() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading applet...</Text>
-        </View>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <SkeletonPlaceholder />
       </SafeAreaView>
     );
   }
@@ -190,9 +188,7 @@ export default function ViewMyBuysApplet() {
             appletName={appletName}
           />
         ) : (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading applet...</Text>
-          </View>
+          <SkeletonPlaceholder />
         )}
       </View>
       <EmbedUrlInfoModal
@@ -220,11 +216,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  loadingText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
   },
   errorContainer: {
     flex: 1,

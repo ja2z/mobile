@@ -33,7 +33,7 @@ export interface DashboardViewRef {
  * Skeleton Placeholder Component
  * Shows animated skeleton while dashboard loads
  */
-const SkeletonPlaceholder: React.FC = () => {
+export const SkeletonPlaceholder: React.FC = () => {
   const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -94,8 +94,21 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const [workbookLoaded, setWorkbookLoaded] = useState(false); // Track workbook:loaded event
   const [error, setError] = useState<string | null>(null);
   const [fetchingUrl, setFetchingUrl] = useState(true);
+  const [isAskUrl, setIsAskUrl] = useState(false); // Track if URL is an "ask" URL that doesn't send workbook:loaded
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webViewRef = useRef<WebView>(null);
+  
+  /**
+   * Check if a URL is an "ask" URL that doesn't send workbook:loaded events
+   * Examples:
+   * - https://app.sigmacomputing.com/papercrane-embedding-gcp/ask?:jwt=xxx
+   * - https://staging.sigmacomputing.io/papercrane-embedding-gcp/ask?:jwt=xxx
+   */
+  const checkIfAskUrl = (urlToCheck: string | null): boolean => {
+    if (!urlToCheck) return false;
+    // Check if URL contains "/ask" or "/ask?" in the path
+    return /\/ask(\?|$)/.test(urlToCheck);
+  };
   
   // Log props received by DashboardView
   useEffect(() => {
@@ -278,6 +291,11 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       const response = await EmbedUrlService.fetchEmbedUrl(params);
       console.log('🌐 Setting new dashboard URL:', response.url);
       console.log('📚 Workbook ID:', workbookId || 'default');
+      const askUrl = checkIfAskUrl(response.url);
+      setIsAskUrl(askUrl);
+      if (askUrl) {
+        console.log('📱 Detected "ask" URL - will not wait for workbook:loaded event');
+      }
       setUrl(response.url);
       setJwt(response.jwt || null);
       
@@ -333,10 +351,15 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     if (initialUrl) {
       // Use provided URL directly
       console.log('📱 Using initialUrl:', initialUrl);
+      const askUrl = checkIfAskUrl(initialUrl);
+      setIsAskUrl(askUrl);
+      if (askUrl) {
+        console.log('📱 Detected "ask" URL - will not wait for workbook:loaded event');
+      }
       setUrl(initialUrl);
       setJwt(initialJwt || null);
       setFetchingUrl(false);
-      setLoading(true); // Will be set to false when workbook:loaded is received
+      setLoading(true); // Will be set to false when workbook:loaded is received (or onLoadEnd for ask URLs)
     } else {
       // Fetch URL from API
       fetchUrl();
@@ -361,6 +384,23 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     console.log('📱 WebView started loading...');
     setLoading(true);
     setError(null);
+  };
+
+  const handleLoadEnd = () => {
+    console.log('📱 WebView finished loading...');
+    // For "ask" URLs, don't wait for workbook:loaded event - hide loading immediately
+    if (isAskUrl) {
+      console.log('📱 "ask" URL detected - hiding loading overlay without waiting for workbook:loaded');
+      setLoading(false);
+      setWorkbookLoaded(true); // Set to true so parent components know content is ready
+      
+      // Notify parent component that content has loaded (even though it's not a workbook)
+      if (workbookLoadedCallbackRef.current) {
+        console.log('📊 Triggering workbook loaded callback for ask URL');
+        workbookLoadedCallbackRef.current();
+      }
+    }
+    // For regular URLs, we still wait for workbook:loaded event in handleMessage
   };
 
   const handleError = (syntheticEvent: any) => {
@@ -589,6 +629,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         source={{ html: htmlContent, baseUrl: 'https://app.sigmacomputing.com' }}
         style={styles.webview}
         onLoadStart={handleLoadStart}
+        onLoadEnd={handleLoadEnd}
         onMessage={handleMessage}
         onError={handleError}
         onHttpError={handleHttpError}
