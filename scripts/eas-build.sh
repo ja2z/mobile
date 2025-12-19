@@ -246,18 +246,12 @@ if [ "$BUILD_TYPE" == "deploy" ]; then
     
     cd "$PROJECT_ROOT"
     
-    # Load nvm and use Node.js 20 if available
+    # Load nvm if available (use default Node.js version)
     if [ -s "$HOME/.nvm/nvm.sh" ]; then
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-        # Use Node.js 20 if installed, otherwise use default
-        nvm use 20 2>/dev/null || nvm use default 2>/dev/null || true
-        # Ensure Node.js 20 is in PATH for all child processes
-        if [ -n "$NVM_BIN" ]; then
-            export PATH="$NVM_BIN:$PATH"
-        elif [ -d "$NVM_DIR/versions/node/v20" ]; then
-            export PATH="$NVM_DIR/versions/node/v20/bin:$PATH"
-        fi
+        # Use default Node.js version
+        nvm use default 2>/dev/null || true
     fi
     
     # Create logs directory if it doesn't exist
@@ -331,21 +325,12 @@ fi
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Load nvm and use Node.js 20 if available
+# Load nvm if available (use default Node.js version)
 if [ -s "$HOME/.nvm/nvm.sh" ]; then
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-    # Use Node.js 20 if installed, otherwise use default
-    nvm use 20 2>/dev/null || nvm use default 2>/dev/null || true
-    # Ensure Node.js 20 is in PATH for all child processes
-    if [ -n "$NVM_BIN" ]; then
-        export PATH="$NVM_BIN:$PATH"
-    elif [ -d "$NVM_DIR/versions/node/v20" ]; then
-        export PATH="$NVM_DIR/versions/node/v20/bin:$PATH"
-    fi
-    # Verify Node.js version
-    NODE_VERSION=$(node --version 2>/dev/null || echo 'unknown')
-    echo "[$(timestamp)] Using Node.js version: $NODE_VERSION" | tee -a "$LOG_FILE" 2>/dev/null || echo "Using Node.js version: $NODE_VERSION"
+    # Use default Node.js version
+    nvm use default 2>/dev/null || true
 fi
 
 # Create logs directory if it doesn't exist
