@@ -267,8 +267,8 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
       await Clipboard.setStringAsync(embedUrl);
       Toast.show({
         type: 'success',
-        text1: 'Copied to clipboard',
-        text2: 'Embed URL has been copied.',
+        text1: 'URL copied',
+        text2: 'URL has been copied to clipboard.',
       });
     } catch (error) {
       console.error('Error copying to clipboard:', error);
@@ -300,8 +300,8 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
         await Clipboard.setStringAsync(result.url);
         Toast.show({
           type: 'success',
-          text1: 'Usable URL copied',
-          text2: 'A new embed URL has been generated and copied to clipboard.',
+          text1: 'URL copied',
+          text2: 'URL has been copied to clipboard.',
         });
       } else {
         throw new Error('No URL returned from API');
@@ -422,12 +422,15 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
                       <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
                     )}
                     <Text style={styles.buttonText}>
-                      {isGeneratingUsableUrl ? 'Generating...' : 'Usable URL'}
+                      Usable URL
                     </Text>
                   </TouchableOpacity>
                 </View>
               )}
         </View>
+      </View>
+      <View style={styles.toastContainer}>
+        <Toast />
       </View>
     </Modal>
   );
@@ -610,6 +613,15 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 9999,
+    pointerEvents: 'box-none',
   },
 });
 

@@ -23,6 +23,7 @@ import AddMyBuysApplet from './(tabs)/AddMyBuysApplet';
 import EditMyBuysApplet from './(tabs)/EditMyBuysApplet';
 import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
 import { Alert } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
@@ -650,6 +651,7 @@ export default function RootLayout() {
           }}
         />
       </Stack.Navigator>
+      <Toast />
     </NavigationContainer>
   );
 }
