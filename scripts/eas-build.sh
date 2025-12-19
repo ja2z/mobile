@@ -33,17 +33,57 @@ timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
-# Function to show progress while waiting
+# Function to check for fatal errors in log file
+check_for_errors() {
+    local log_file=$1
+    if [ ! -f "$log_file" ]; then
+        return 0
+    fi
+    
+    # Check for fatal error patterns (but ignore non-fatal warnings)
+    # expo-doctor failures are warnings, not fatal errors
+    # Build command failures and config errors are fatal
+    if grep -qi "Error: build command failed\|build command failed\|Failed to read the app config" "$log_file" 2>/dev/null; then
+        # Make sure it's not just an expo-doctor warning
+        if ! grep -qi "expo-doctor\|Command \"expo doctor\" failed" "$log_file" 2>/dev/null; then
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# Function to show progress while waiting and check for errors
 show_progress() {
     local pid=$1
     local message=$2
+    local log_file=$3
     local elapsed=0
     
     while kill -0 $pid 2>/dev/null; do
-        sleep 60
-        elapsed=$((elapsed + 1))
-        echo -e "${BLUE}[$(timestamp)]${NC} Still working... (${elapsed} minute(s) elapsed) - ${message}"
+        sleep 5
+        elapsed=$((elapsed + 5))
+        
+        # Check for fatal errors every 5 seconds
+        if ! check_for_errors "$log_file"; then
+            # Fatal error detected, kill the process and exit
+            kill $pid 2>/dev/null || true
+            return 1
+        fi
+        
+        # Print progress message every 60 seconds
+        if [ $((elapsed % 60)) -eq 0 ]; then
+            local minutes=$((elapsed / 60))
+            echo -e "${BLUE}[$(timestamp)]${NC} Still working... (${minutes} minute(s) elapsed) - ${message}"
+        fi
     done
+    
+    # Final check for errors after process ends
+    if ! check_for_errors "$log_file"; then
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to find IPA file
@@ -206,6 +246,20 @@ if [ "$BUILD_TYPE" == "deploy" ]; then
     
     cd "$PROJECT_ROOT"
     
+    # Load nvm and use Node.js 20 if available
+    if [ -s "$HOME/.nvm/nvm.sh" ]; then
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        # Use Node.js 20 if installed, otherwise use default
+        nvm use 20 2>/dev/null || nvm use default 2>/dev/null || true
+        # Ensure Node.js 20 is in PATH for all child processes
+        if [ -n "$NVM_BIN" ]; then
+            export PATH="$NVM_BIN:$PATH"
+        elif [ -d "$NVM_DIR/versions/node/v20" ]; then
+            export PATH="$NVM_DIR/versions/node/v20/bin:$PATH"
+        fi
+    fi
+    
     # Create logs directory if it doesn't exist
     LOGS_DIR="$PROJECT_ROOT/scripts/logs"
     mkdir -p "$LOGS_DIR"
@@ -277,6 +331,23 @@ fi
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# Load nvm and use Node.js 20 if available
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    # Use Node.js 20 if installed, otherwise use default
+    nvm use 20 2>/dev/null || nvm use default 2>/dev/null || true
+    # Ensure Node.js 20 is in PATH for all child processes
+    if [ -n "$NVM_BIN" ]; then
+        export PATH="$NVM_BIN:$PATH"
+    elif [ -d "$NVM_DIR/versions/node/v20" ]; then
+        export PATH="$NVM_DIR/versions/node/v20/bin:$PATH"
+    fi
+    # Verify Node.js version
+    NODE_VERSION=$(node --version 2>/dev/null || echo 'unknown')
+    echo "[$(timestamp)] Using Node.js version: $NODE_VERSION" | tee -a "$LOG_FILE" 2>/dev/null || echo "Using Node.js version: $NODE_VERSION"
+fi
+
 # Create logs directory if it doesn't exist
 LOGS_DIR="$PROJECT_ROOT/scripts/logs"
 mkdir -p "$LOGS_DIR"
@@ -314,8 +385,24 @@ if [ "$BUILD_TYPE" == "production" ]; then
     eas build --profile production --platform ios --local --non-interactive >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
-    # Show progress
-    show_progress $BUILD_PID "Building production IPA"
+    # Show progress and monitor for errors
+    if ! show_progress $BUILD_PID "Building production IPA" "$LOG_FILE"; then
+        # Error detected during build
+        wait $BUILD_PID 2>/dev/null || true
+        BUILD_EXIT_CODE=$?
+        log "ERROR: Build failed - fatal error detected in log"
+        echo ""
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${RED}FATAL ERROR: Build Failed${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${YELLOW}Error detected in build log. Last 30 lines:${NC}"
+        echo ""
+        tail -30 "$LOG_FILE" | grep -A 30 -i "error\|failed\|fatal" || tail -30 "$LOG_FILE"
+        echo ""
+        echo -e "${RED}Full log file: ${LOG_FILE}${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        exit 1
+    fi
     
     # Wait for build to complete
     wait $BUILD_PID
@@ -323,7 +410,17 @@ if [ "$BUILD_TYPE" == "production" ]; then
     
     if [ $BUILD_EXIT_CODE -ne 0 ]; then
         log "ERROR: Build failed with exit code $BUILD_EXIT_CODE"
-        echo -e "${RED}Build failed! Check log file: ${LOG_FILE}${NC}"
+        echo ""
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${RED}FATAL ERROR: Build Failed${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${YELLOW}Exit code: ${BUILD_EXIT_CODE}${NC}"
+        echo -e "${YELLOW}Last 30 lines of log:${NC}"
+        echo ""
+        tail -30 "$LOG_FILE"
+        echo ""
+        echo -e "${RED}Full log file: ${LOG_FILE}${NC}"
+        echo -e "${RED}===========================================================${NC}"
         exit $BUILD_EXIT_CODE
     fi
     
@@ -366,8 +463,24 @@ else
     eas build --profile development --platform ios --local --non-interactive >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
-    # Show progress
-    show_progress $BUILD_PID "Building development IPA"
+    # Show progress and monitor for errors
+    if ! show_progress $BUILD_PID "Building development IPA" "$LOG_FILE"; then
+        # Error detected during build
+        wait $BUILD_PID 2>/dev/null || true
+        BUILD_EXIT_CODE=$?
+        log "ERROR: Build failed - fatal error detected in log"
+        echo ""
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${RED}FATAL ERROR: Build Failed${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${YELLOW}Error detected in build log. Last 30 lines:${NC}"
+        echo ""
+        tail -30 "$LOG_FILE" | grep -A 30 -i "error\|failed\|fatal" || tail -30 "$LOG_FILE"
+        echo ""
+        echo -e "${RED}Full log file: ${LOG_FILE}${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        exit 1
+    fi
     
     # Wait for build to complete
     wait $BUILD_PID
@@ -375,7 +488,17 @@ else
     
     if [ $BUILD_EXIT_CODE -ne 0 ]; then
         log "ERROR: Build failed with exit code $BUILD_EXIT_CODE"
-        echo -e "${RED}Build failed! Check log file: ${LOG_FILE}${NC}"
+        echo ""
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${RED}FATAL ERROR: Build Failed${NC}"
+        echo -e "${RED}===========================================================${NC}"
+        echo -e "${YELLOW}Exit code: ${BUILD_EXIT_CODE}${NC}"
+        echo -e "${YELLOW}Last 30 lines of log:${NC}"
+        echo ""
+        tail -30 "$LOG_FILE"
+        echo ""
+        echo -e "${RED}Full log file: ${LOG_FILE}${NC}"
+        echo -e "${RED}===========================================================${NC}"
         exit $BUILD_EXIT_CODE
     fi
     
