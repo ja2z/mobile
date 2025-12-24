@@ -37,30 +37,44 @@ interface AppletJWTConfig {
 
 /**
  * Sigma Org Configuration
- * Maps (domain, slug) combinations to their client_id, secret name, and JWT payload config
+ * Maps slug to org configuration (domain, client_id, secret name, and JWT payload config)
  * 
- * Format: embedPath is "{slug}/workbook" (e.g., "papercrane-embedding-gcp/workbook")
- * Domain is determined by the embedPath or can be explicitly set
+ * Format: embedPath is "{slug}/workbook" or "{slug}/ask" (e.g., "sigma-on-sigma/workbook")
+ * Slug identifies the org/environment; domain is stored in the config (no inference needed)
+ * 
+ * Single entry per slug - shared JWT config for all paths (workbook, ask, etc.)
  */
 interface SigmaOrgConfig {
+    domain: string;                      // Base domain URL (e.g., "https://app.sigmacomputing.com")
     clientId: string;                    // Used as both 'kid' in header and 'iss' in payload
     secretName: string;                  // AWS Secrets Manager secret name
-    domain: string;                      // Base domain URL (e.g., "https://app.sigmacomputing.com")
     addEmbedSuffix: boolean;             // Whether to add +embed to email
-    jwtConfig: JWTPayloadConfig;        // Explicit JWT payload configuration
+    jwtConfig: JWTPayloadConfig;        // JWT payload configuration (shared for all paths)
 }
 
 /**
  * Sigma Org Registry
  * Add new orgs here as needed
- * Key format: "{domain}:{slug}"
+ * Key format: slug only (e.g., "sigma-on-sigma", "papercrane-embedding-gcp")
  */
 const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
+    // Staging: sigma-on-sigma
+    // Used by: GTM (workbook), Ask J.A.K.E. (ask)
+    'sigma-on-sigma': {
+        domain: 'https://staging.sigmacomputing.io',
+        clientId: '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863',
+        secretName: 'mobile-app/jwt-secret-sos',
+        addEmbedSuffix: false,
+        jwtConfig: {
+            // Empty = no teams, no user_attributes, no account_type
+        }
+    },
+    
     // Production: papercrane-embedding-gcp
-    'app.sigmacomputing.com:papercrane-embedding-gcp': {
+    'papercrane-embedding-gcp': {
+        domain: 'https://app.sigmacomputing.com',
         clientId: 'ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355',
         secretName: 'sigma/jwt-secret',
-        domain: 'https://app.sigmacomputing.com',
         addEmbedSuffix: true,
         jwtConfig: {
             teams: ["all_clients_team", "acme_team"],
@@ -71,22 +85,11 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
         }
     },
     
-    // Staging: sigma-on-sigma
-    'staging.sigmacomputing.io:sigma-on-sigma': {
-        clientId: '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863',
-        secretName: 'mobile-app/jwt-secret-sos',
-        domain: 'https://staging.sigmacomputing.io',
-        addEmbedSuffix: false,
-        jwtConfig: {
-            // No teams, user_attributes, or account_type for this org
-        }
-    },
-    
     // Staging: papercranestaging
-    'staging.sigmacomputing.io:papercranestaging': {
+    'papercranestaging': {
+        domain: 'https://staging.sigmacomputing.io',
         clientId: '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e',
         secretName: 'mobile-app/jwt-secret-papercranestaging',
-        domain: 'https://staging.sigmacomputing.io',
         addEmbedSuffix: true,
         jwtConfig: {
             teams: ["all_clients_team"],
@@ -96,10 +99,10 @@ const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
     },
     
     // Add more orgs here as needed:
-    // 'app.sigmacomputing.com:another-slug': {
+    // 'another-slug': {
+    //     domain: 'https://app.sigmacomputing.com',
     //     clientId: '...',
     //     secretName: 'sigma/jwt-secret-another',
-    //     domain: 'https://app.sigmacomputing.com',
     //     addEmbedSuffix: true,
     //     jwtConfig: {
     //         teams: [...],
@@ -249,45 +252,27 @@ function extractSlug(embedPath: string): string {
 }
 
 /**
- * Determine domain from embedPath
- * Returns the domain string (without https://)
- */
-function determineDomain(embedPath: string): string {
-    // Check if embedPath explicitly indicates staging
-    if (embedPath.includes('sigma-on-sigma') || embedPath.includes('papercranestaging')) {
-        return 'staging.sigmacomputing.io';
-    }
-    // Default to production
-    return 'app.sigmacomputing.com';
-}
-
-/**
  * Get Sigma org configuration for a given embedPath
+ * Simplified: Extract slug and lookup directly (no domain inference needed)
  */
 function getSigmaOrgConfig(embedPath: string): SigmaOrgConfig {
     const slug = extractSlug(embedPath);
-    const domain = determineDomain(embedPath);
-    const configKey = `${domain}:${slug}`;
     
     console.log('🔧 getSigmaOrgConfig - Input embedPath:', embedPath);
     console.log('🔧 getSigmaOrgConfig - Extracted slug:', slug);
-    console.log('🔧 getSigmaOrgConfig - Determined domain:', domain);
-    console.log('🔧 getSigmaOrgConfig - Config key:', configKey);
-    console.log('🔧 getSigmaOrgConfig - Available config keys:', Object.keys(SIGMA_ORG_CONFIG));
+    console.log('🔧 getSigmaOrgConfig - Available slugs:', Object.keys(SIGMA_ORG_CONFIG));
     
-    const config = SIGMA_ORG_CONFIG[configKey];
+    const config = SIGMA_ORG_CONFIG[slug];
     
     if (!config) {
-        // Fallback to production default if not found
-        console.warn(`⚠️ No config found for ${configKey}, using production default`);
-        console.warn(`⚠️ This means the org config lookup failed - check embedPath format`);
-        return SIGMA_ORG_CONFIG['app.sigmacomputing.com:papercrane-embedding-gcp'];
+        console.warn(`⚠️ No config found for slug "${slug}", using production default`);
+        return SIGMA_ORG_CONFIG['papercrane-embedding-gcp'];
     }
     
     console.log('🔧 getSigmaOrgConfig - Found config:', {
+        domain: config.domain,
         clientId: config.clientId.substring(0, 16) + '...',
         secretName: config.secretName,
-        domain: config.domain,
         addEmbedSuffix: config.addEmbedSuffix
     });
     
