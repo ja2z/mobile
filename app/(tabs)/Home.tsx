@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -283,7 +283,15 @@ export default function Home() {
 
           {/* Icon header */}
           <View style={[styles.detailIconContainer, { backgroundColor: selectedTile.color }]}>
-            <Ionicons name={selectedTile.iconName} size={64} color="#FFFFFF" />
+            {selectedTile.id === 'sigmanauts' ? (
+              <Image
+                source={require('../../assets/sigma-logo-symbol-black.png')}
+                style={styles.sigmaLogoDetail}
+                resizeMode="contain"
+              />
+            ) : (
+              <Ionicons name={selectedTile.iconName} size={64} color="#FFFFFF" />
+            )}
           </View>
 
           {/* Title */}
@@ -377,7 +385,15 @@ export default function Home() {
                   <View style={styles.tileContent}>
                     {/* Icon */}
                     <View style={[styles.iconContainer, { backgroundColor: tile.color + '20' }]}>
-                      <Ionicons name={tile.iconName} size={24} color={tile.color} />
+                      {tile.id === 'sigmanauts' ? (
+                        <Image
+                          source={require('../../assets/sigma-logo-symbol-black.png')}
+                          style={styles.sigmaLogo}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Ionicons name={tile.iconName} size={24} color={tile.color} />
+                      )}
                     </View>
 
                     {/* Text content */}
@@ -609,5 +625,16 @@ const styles = StyleSheet.create({
   },
   launchIcon: {
     marginLeft: spacing.sm,
+  },
+  sigmaLogo: {
+    width: 24,
+    height: 24,
+    // Remove tintColor - display logo in original black color
+    backgroundColor: 'transparent',
+  },
+  sigmaLogoDetail: {
+    width: 64,
+    height: 64,
+    // Remove tintColor - display logo in original black color
   },
 });
