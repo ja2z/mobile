@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -34,6 +34,7 @@ type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 export default function Home() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
+  const [isSigmaEmployee, setIsSigmaEmployee] = useState(false);
   
   // State for selected tile
   const [selectedTile, setSelectedTile] = useState<AppTile | null>(null);
@@ -42,6 +43,26 @@ export default function Home() {
   const detailViewOpacity = useRef(new Animated.Value(0)).current;
   const detailViewScale = useRef(new Animated.Value(0.8)).current;
   const gridOpacity = useRef(new Animated.Value(1)).current;
+
+  /**
+   * Check if user is a Sigma employee based on email domain
+   */
+  useEffect(() => {
+    const checkEmailDomain = async () => {
+      try {
+        const session = await AuthService.getSession();
+        if (session?.user?.email) {
+          const isSigma = session.user.email.toLowerCase().endsWith('@sigmacomputing.com');
+          setIsSigmaEmployee(isSigma);
+        }
+      } catch (error) {
+        console.error('Error checking email domain:', error);
+        setIsSigmaEmployee(false);
+      }
+    };
+
+    checkEmailDomain();
+  }, []);
 
   const handleNavigateToDashboard = () => {
     navigation.navigate('Dashboard' as never, { 
@@ -86,6 +107,16 @@ export default function Home() {
     navigation.navigate('AIChat' as never, { 
       appletId: '6', 
       appletName: 'AI Chat' 
+    } as never);
+  };
+
+  const handleNavigateToSigmanauts = () => {
+    navigation.navigate('Sigmanauts' as never);
+  };
+
+  const handleNavigateToAskBigBuys = () => {
+    navigation.navigate('AskBigBuys' as never, { 
+      appletName: 'Ask Big Buys' 
     } as never);
   };
 
@@ -141,14 +172,24 @@ export default function Home() {
       onPress: handleNavigateToOperations,
     },
     { 
-      id: '8', 
-      title: 'GTM', 
-      subtitle: 'Operations', 
-      description: 'Go-to-market operations dashboard for tracking and managing business metrics.',
+      id: 'sigmanauts', 
+      title: 'Sigmanauts', 
+      subtitle: 'Sigma Tools', 
+      description: 'Access Sigma employee tools and resources. Available only for @sigmacomputing.com email addresses.',
       color: colors.tileColors.orange1,
-      iconName: 'trending-up-outline',
+      iconName: 'people-outline',
+      isActive: isSigmaEmployee,
+      onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
+    },
+    { 
+      id: 'ask-big-buys', 
+      title: 'Ask Big Buys', 
+      subtitle: 'AI Assistant', 
+      description: 'Get instant answers and insights from the AI assistant. Ask questions about your data and get intelligent responses.',
+      color: colors.tileColors.orange1,
+      iconName: 'chatbubbles-outline',
       isActive: true,
-      onPress: handleNavigateToGTM,
+      onPress: handleNavigateToAskBigBuys,
     },
     { 
       id: '3', 

@@ -22,6 +22,9 @@ import MyBuys from './(tabs)/MyBuys';
 import AddMyBuysApplet from './(tabs)/AddMyBuysApplet';
 import EditMyBuysApplet from './(tabs)/EditMyBuysApplet';
 import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
+import Sigmanauts from './(tabs)/Sigmanauts';
+import AskJAKE from './(tabs)/AskJAKE';
+import AskBigBuys from './(tabs)/AskBigBuys';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
@@ -47,6 +50,9 @@ export type RootStackParamList = {
   AddMyBuysApplet: undefined;
   EditMyBuysApplet: { appletId: string };
   ViewMyBuysApplet: { appletId: string };
+  Sigmanauts: undefined;
+  AskJAKE: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  AskBigBuys: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -648,6 +654,63 @@ export default function RootLayout() {
           options={{
             title: '', // Title will be set by component once applet name loads
             headerShown: true,
+          }}
+        />
+        <Stack.Screen 
+          name="Sigmanauts" 
+          component={Sigmanauts}
+          options={{
+            title: 'Sigmanauts',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="AskJAKE" 
+          component={AskJAKE}
+          options={{
+            title: 'Ask J.A.K.E.',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="AskBigBuys" 
+          component={AskBigBuys}
+          options={{
+            title: 'Ask Big Buys',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
       </Stack.Navigator>

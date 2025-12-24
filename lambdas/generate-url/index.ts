@@ -128,6 +128,18 @@ const SIGMA_APPLET_CONFIG: Record<string, AppletJWTConfig> = {
         account_type: "Creator"
     },
     
+    // Ask Big Buys applet - uses papercrane-embedding-gcp org config with applet-specific overrides
+    'Ask Big Buys': {  // appletName
+        teams: ["acme_team", "all_clients_team"],
+        user_attributes: {
+            merchant_id: "{{merchant_id}}"
+        },
+        account_type: "Creator"
+    },
+    
+    // Note: Ask J.A.K.E. and GTM both use sigma-on-sigma org config with no applet-specific overrides
+    // They follow the exact same pattern - no explicit config entry needed (uses org defaults)
+    
     // Future example: Another applet that needs different teams
     // '7': {
     //     teams: ["special_team"],
@@ -228,11 +240,11 @@ async function getEmbedSecretByName(secretName: string): Promise<string> {
 
 /**
  * Extract slug from embedPath
- * embedPath format: "{slug}/workbook" or just "{slug}"
+ * embedPath format: "{slug}/workbook", "{slug}/ask", or just "{slug}"
  */
 function extractSlug(embedPath: string): string {
-    // Remove trailing "/workbook" if present
-    const slug = embedPath.replace(/\/workbook$/, '').trim();
+    // Remove trailing "/workbook" or "/ask" if present
+    const slug = embedPath.replace(/\/workbook$/, '').replace(/\/ask$/, '').trim();
     return slug || 'papercrane-embedding-gcp'; // Default fallback
 }
 
@@ -257,15 +269,28 @@ function getSigmaOrgConfig(embedPath: string): SigmaOrgConfig {
     const domain = determineDomain(embedPath);
     const configKey = `${domain}:${slug}`;
     
+    console.log('🔧 getSigmaOrgConfig - Input embedPath:', embedPath);
+    console.log('🔧 getSigmaOrgConfig - Extracted slug:', slug);
+    console.log('🔧 getSigmaOrgConfig - Determined domain:', domain);
+    console.log('🔧 getSigmaOrgConfig - Config key:', configKey);
+    console.log('🔧 getSigmaOrgConfig - Available config keys:', Object.keys(SIGMA_ORG_CONFIG));
+    
     const config = SIGMA_ORG_CONFIG[configKey];
     
     if (!config) {
         // Fallback to production default if not found
         console.warn(`⚠️ No config found for ${configKey}, using production default`);
+        console.warn(`⚠️ This means the org config lookup failed - check embedPath format`);
         return SIGMA_ORG_CONFIG['app.sigmacomputing.com:papercrane-embedding-gcp'];
     }
     
-    console.log(`🔧 Using Sigma org config: ${configKey}`);
+    console.log('🔧 getSigmaOrgConfig - Found config:', {
+        clientId: config.clientId.substring(0, 16) + '...',
+        secretName: config.secretName,
+        domain: config.domain,
+        addEmbedSuffix: config.addEmbedSuffix
+    });
+    
     return config;
 }
 
@@ -613,9 +638,12 @@ export const handler = async (event: any) => {
         });
         
         // Use email from verified JWT (ignore user_email from body for security)
+        console.log('🔧 Email processing - Original userEmail:', userEmail);
+        console.log('🔧 Email processing - orgConfig.addEmbedSuffix:', orgConfig.addEmbedSuffix);
         const userEmailForEmbed = orgConfig.addEmbedSuffix 
             ? addEmbedToEmail(userEmail) 
             : userEmail;
+        console.log('🔧 Email processing - Final userEmailForEmbed:', userEmailForEmbed);
         
         console.log('🔧 Extracted parameters:');
         console.log('🔧   merchantId:', merchantId);
@@ -657,8 +685,9 @@ export const handler = async (event: any) => {
         const now = Math.floor(Date.now() / 1000);
         
         // Get JWT configuration (org defaults + applet overrides)
+        console.log('🔧 Getting JWT config - appletId:', appletId, 'appletName:', appletName);
         const jwtConfig = getJWTConfig(orgConfig, appletId, appletName);
-        console.log('🔧 JWT config:', JSON.stringify(jwtConfig, null, 2));
+        console.log('🔧 JWT config result:', JSON.stringify(jwtConfig, null, 2));
         
         // Create JWT payload
         const payload: any = {
@@ -697,7 +726,14 @@ export const handler = async (event: any) => {
         console.log('🔧 ===== CONSTRUCTING EMBED URL =====');
         // Use domain from config
         const baseDomain = orgConfig.domain;
-        let baseUrl = `${baseDomain}/${embedPath}/${workbookId}`;
+        // Build base URL - workbookId is optional (for "ask" endpoints)
+        let baseUrl: string;
+        if (workbookId) {
+            baseUrl = `${baseDomain}/${embedPath}/${workbookId}`;
+        } else {
+            // For endpoints like "ask" that don't require workbookId
+            baseUrl = `${baseDomain}/${embedPath}`;
+        }
         console.log('🔧 Base URL (before pageId):', baseUrl);
         if (pageId) {
             baseUrl += `/page/${encodeURIComponent(pageId)}`;
