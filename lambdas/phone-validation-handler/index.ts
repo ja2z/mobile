@@ -143,6 +143,45 @@ async function handleValidatePhone(body: any, event: any) {
 
   const emailLower = email.toLowerCase();
 
+  // Invalidate any existing verification codes for this phone/email combination
+  // This ensures only the latest code is valid
+  try {
+    const existingCodes = await docClient.send(new QueryCommand({
+      TableName: VERIFICATIONS_TABLE,
+      IndexName: 'phone-email-index',
+      KeyConditionExpression: 'phoneNumber = :phone AND email = :email',
+      ExpressionAttributeValues: {
+        ':phone': phoneNumber,
+        ':email': emailLower
+      }
+    }));
+
+    // Mark all existing codes as used (invalidated)
+    if (existingCodes.Items && existingCodes.Items.length > 0) {
+      console.log(`[handleValidatePhone] Found ${existingCodes.Items.length} existing verification code(s), invalidating...`);
+      const now = Math.floor(Date.now() / 1000);
+      
+      // Update all existing codes to mark as used
+      const updatePromises = existingCodes.Items.map(item => 
+        docClient.send(new UpdateCommand({
+          TableName: VERIFICATIONS_TABLE,
+          Key: { verificationId: item.verificationId },
+          UpdateExpression: 'SET used = :used, invalidatedAt = :now',
+          ExpressionAttributeValues: {
+            ':used': true,
+            ':now': now
+          }
+        }))
+      );
+      
+      await Promise.all(updatePromises);
+      console.log(`[handleValidatePhone] Invalidated ${existingCodes.Items.length} previous verification code(s)`);
+    }
+  } catch (error) {
+    console.error('[handleValidatePhone] Error invalidating previous codes:', error);
+    // Continue anyway - don't fail the request if we can't invalidate old codes
+  }
+
   // Generate 5-digit verification code
   const verificationCode = generateVerificationCode();
   const verificationId = `ver_${randomBytes(16).toString('hex')}`;
@@ -260,41 +299,64 @@ async function handleVerifyPhoneCode(body: any, event: any) {
 
   // Look up verification code
   try {
+    // Query without FilterExpression first to get all codes, then filter in code
+    // This avoids FilterExpression issues with boolean values
+    // No limit - query all codes for this phone/email combo to ensure we don't miss the correct code
     const result = await docClient.send(new QueryCommand({
       TableName: VERIFICATIONS_TABLE,
       IndexName: 'phone-email-index',
       KeyConditionExpression: 'phoneNumber = :phone AND email = :email',
-      FilterExpression: 'used = :used',
       ExpressionAttributeValues: {
         ':phone': phoneNumber,
-        ':email': emailLower,
-        ':used': false
+        ':email': emailLower
       },
-      ScanIndexForward: false, // Most recent first
-      Limit: 1
+      ScanIndexForward: false // Most recent first
     }));
+
+    console.log(`[handleVerifyPhoneCode] Query returned ${result.Items?.length || 0} item(s) for ${phoneNumber} / ${emailLower}`);
 
     if (!result.Items || result.Items.length === 0) {
       console.log(`[handleVerifyPhoneCode] No verification code found for ${phoneNumber} / ${emailLower}`);
       return createResponse(404, { error: 'Verification code not found or expired' });
     }
 
-    const verification = result.Items[0];
+    // Find the matching verification code (check most recent first)
+    let verification = null;
     const now = Math.floor(Date.now() / 1000);
+    
+    for (const item of result.Items) {
+      // Skip expired codes
+      if (now >= item.expiresAt) {
+        console.log(`[handleVerifyPhoneCode] Skipping expired code (expiresAt: ${item.expiresAt}, now: ${now})`);
+        continue;
+      }
+      
+      // Skip used codes
+      if (item.used) {
+        console.log(`[handleVerifyPhoneCode] Skipping used code`);
+        continue;
+      }
+      
+      // Check if code matches
+      if (item.verificationCode === verificationCode) {
+        verification = item;
+        console.log(`[handleVerifyPhoneCode] Found matching verification code: ${verificationCode}`);
+        break;
+      }
+    }
 
-    // Check if code is expired
+    if (!verification) {
+      console.log(`[handleVerifyPhoneCode] No valid verification code found matching ${verificationCode}`);
+      return createResponse(404, { error: 'Verification code not found or expired' });
+    }
+
+    // Check if code is expired (double-check)
     if (now >= verification.expiresAt) {
       console.log(`[handleVerifyPhoneCode] Verification code expired (expiresAt: ${verification.expiresAt}, now: ${now})`);
       return createResponse(404, { error: 'Verification code expired' });
     }
 
-    // Check if code matches
-    if (verification.verificationCode !== verificationCode) {
-      console.log(`[handleVerifyPhoneCode] Verification code mismatch`);
-      return createResponse(400, { error: 'Invalid verification code' });
-    }
-
-    // Check if code already used
+    // Check if code already used (double-check)
     if (verification.used) {
       console.log(`[handleVerifyPhoneCode] Verification code already used`);
       return createResponse(400, { error: 'Verification code already used' });
