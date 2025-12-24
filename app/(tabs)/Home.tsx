@@ -64,60 +64,24 @@ export default function Home() {
     checkEmailDomain();
   }, []);
 
-  const handleNavigateToDashboard = () => {
-    navigation.navigate('Dashboard' as never, { 
-      appletId: '2', 
-      appletName: 'Art of the Possible' 
-    } as never);
-  };
-
-  const handleNavigateToAINewsletter = () => {
-    navigation.navigate('AINewsletter' as never, { 
-      appletId: '3', 
-      appletName: 'AI Newsletter' 
-    } as never);
-  };
-
-  const handleNavigateToConversationalAI = () => {
-    navigation.navigate('ConversationalAI' as never, { 
-      appletId: '5', 
-      appletName: 'AI Query' 
-    } as never);
-  };
-
   const handleNavigateToMyBuys = () => {
     navigation.navigate('MyBuys' as never);
-  };
-
-  const handleNavigateToOperations = () => {
-    navigation.navigate('Operations' as never, { 
-      appletId: '7', 
-      appletName: 'Operations' 
-    } as never);
-  };
-
-  const handleNavigateToGTM = () => {
-    navigation.navigate('GTM' as never, { 
-      appletId: '8', 
-      appletName: 'GTM' 
-    } as never);
-  };
-
-  const handleNavigateToAIChat = () => {
-    navigation.navigate('AIChat' as never, { 
-      appletId: '6', 
-      appletName: 'AI Chat' 
-    } as never);
   };
 
   const handleNavigateToSigmanauts = () => {
     navigation.navigate('Sigmanauts' as never);
   };
 
-  const handleNavigateToAskBigBuys = () => {
-    navigation.navigate('AskBigBuys' as never, { 
-      appletName: 'Ask Big Buys' 
-    } as never);
+  const handleNavigateToAI = () => {
+    navigation.navigate('AI' as never);
+  };
+
+  const handleNavigateToDashboards = () => {
+    navigation.navigate('Dashboards' as never);
+  };
+
+  const handleNavigateToApps = () => {
+    navigation.navigate('Apps' as never);
   };
 
   const appTiles: AppTile[] = [
@@ -132,46 +96,6 @@ export default function Home() {
       onPress: handleNavigateToMyBuys,
     },
     { 
-      id: '2', 
-      title: 'Art of the Possible', 
-      subtitle: 'Executive Dashboard', 
-      description: 'Beautiful dashboard for executives to gain quick insights on the go. Stay informed with real-time data.',
-      color: colors.tileColors.orange1,
-      iconName: 'briefcase-outline',
-      isActive: true,
-      onPress: handleNavigateToDashboard,
-    },
-    { 
-      id: '6', 
-      title: 'AI Chat', 
-      subtitle: 'AI Assistant', 
-      description: 'Chat with AI to get instant answers and insights. Powered by advanced AI technology.',
-      color: colors.tileColors.orange1,
-      iconName: 'chatbubbles-outline',
-      isActive: true,
-      onPress: handleNavigateToAIChat,
-    },
-    { 
-      id: '5', 
-      title: 'AI Query', 
-      subtitle: 'AI Assistant', 
-      description: 'Interact with your data using natural language. Ask questions and get instant insights powered by AI.',
-      color: colors.tileColors.orange1,
-      iconName: 'chatbubbles-outline',
-      isActive: true,
-      onPress: handleNavigateToConversationalAI,
-    },
-    { 
-      id: '7', 
-      title: 'Operations', 
-      subtitle: 'Workflow', 
-      description: 'Streamline your operations workflow with powerful automation and monitoring capabilities.',
-      color: colors.tileColors.orange1,
-      iconName: 'git-network-outline',
-      isActive: true,
-      onPress: handleNavigateToOperations,
-    },
-    { 
       id: 'sigmanauts', 
       title: 'Sigmanauts', 
       subtitle: 'Sigma Tools', 
@@ -182,24 +106,34 @@ export default function Home() {
       onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
     },
     { 
-      id: 'ask-big-buys', 
-      title: 'Ask Big Buys', 
-      subtitle: 'AI Assistant', 
-      description: 'Get instant answers and insights from the AI assistant. Ask questions about your data and get intelligent responses.',
-      color: colors.tileColors.orange1,
-      iconName: 'chatbubbles-outline',
-      isActive: true,
-      onPress: handleNavigateToAskBigBuys,
-    },
-    { 
-      id: '3', 
-      title: 'AI Newsletter', 
-      subtitle: 'Content', 
-      description: 'Stay updated with AI-generated content and insights. Get the latest news curated just for you.',
+      id: 'ai', 
+      title: 'AI', 
+      subtitle: 'AI Tools', 
+      description: 'Access AI-powered tools and assistants. Chat with AI, query data, read newsletters, and get intelligent insights.',
       color: colors.tileColors.orange1,
       iconName: 'sparkles-outline',
       isActive: true,
-      onPress: handleNavigateToAINewsletter,
+      onPress: handleNavigateToAI,
+    },
+    { 
+      id: 'dashboards', 
+      title: 'Dashboards', 
+      subtitle: 'Data Views', 
+      description: 'View executive dashboards and data visualizations. Get insights on the go with real-time data.',
+      color: colors.tileColors.orange1,
+      iconName: 'bar-chart-outline',
+      isActive: true,
+      onPress: handleNavigateToDashboards,
+    },
+    { 
+      id: 'apps', 
+      title: 'Apps', 
+      subtitle: 'Applications', 
+      description: 'Access workflow and operations applications. Streamline your work with powerful tools.',
+      color: colors.tileColors.orange1,
+      iconName: 'apps-outline',
+      isActive: true,
+      onPress: handleNavigateToApps,
     },
   ];
 

@@ -25,6 +25,9 @@ import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
 import Sigmanauts from './(tabs)/Sigmanauts';
 import AskJAKE from './(tabs)/AskJAKE';
 import AskBigBuys from './(tabs)/AskBigBuys';
+import AI from './(tabs)/AI';
+import Dashboards from './(tabs)/Dashboards';
+import Apps from './(tabs)/Apps';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
@@ -53,6 +56,9 @@ export type RootStackParamList = {
   Sigmanauts: undefined;
   AskJAKE: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   AskBigBuys: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  AI: undefined;
+  Dashboards: undefined;
+  Apps: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -699,6 +705,63 @@ export default function RootLayout() {
           component={AskBigBuys}
           options={{
             title: 'Ask Big Buys',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="AI" 
+          component={AI}
+          options={{
+            title: 'AI',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="Dashboards" 
+          component={Dashboards}
+          options={{
+            title: 'Dashboards',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="Apps" 
+          component={Apps}
+          options={{
+            title: 'Apps',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,

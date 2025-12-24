@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -79,6 +79,13 @@ export default function Dashboard() {
 
   // Set up navigation header with Home button and consistent styling
   useAppletHeader(navigation, handleHomePress);
+
+  // Set header title dynamically from appletName
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: appletName || 'Dashboard', // Use appletName if provided, otherwise default to 'Dashboard'
+    });
+  }, [navigation, appletName]);
 
   /**
    * Handle page selection from navigation bar
