@@ -46,6 +46,11 @@ QUOTA_LIMIT_1=1000000  # requests per day
 SHORT_URL_RATE_LIMIT=10    # requests per second (very restrictive)
 SHORT_URL_BURST_LIMIT=20   # burst capacity (very restrictive)
 
+# Phone validation endpoints: Strict limits to prevent SMS abuse
+# These endpoints send SMS messages (costs money) and should be rate limited
+PHONE_RATE_LIMIT=5         # requests per second (very restrictive - prevents SMS spam)
+PHONE_BURST_LIMIT=10       # burst capacity (very restrictive)
+
 echo "=========================================="
 echo "API Gateway 1: $API_ID_1"
 echo "=========================================="
@@ -57,6 +62,11 @@ echo "Short URL Endpoints (/s/{shortId}, /v1/s/{shortId}, /auth/s/{shortId}):"
 echo "  Rate Limit: $SHORT_URL_RATE_LIMIT requests/second"
 echo "  Burst Limit: $SHORT_URL_BURST_LIMIT requests"
 echo "  (Strict limits to prevent brute force attacks on magic links)"
+echo ""
+echo "Phone Validation Endpoints (/phone/validate, /phone/verify):"
+echo "  Rate Limit: $PHONE_RATE_LIMIT requests/second"
+echo "  Burst Limit: $PHONE_BURST_LIMIT requests"
+echo "  (Strict limits to prevent SMS abuse and spam)"
 echo ""
 echo "Quota Limit: $QUOTA_LIMIT_1 requests/day"
 echo ""
@@ -77,7 +87,15 @@ cat > /tmp/stage-update-1.json << EOF
     {"op": "replace", "path": "/v1/s/{shortId}/GET/throttling/burstLimit", "value": "$SHORT_URL_BURST_LIMIT"},
     {"op": "replace", "path": "/v1/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"},
     {"op": "replace", "path": "/auth/s/{shortId}/GET/throttling/burstLimit", "value": "$SHORT_URL_BURST_LIMIT"},
-    {"op": "replace", "path": "/auth/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"}
+    {"op": "replace", "path": "/auth/s/{shortId}/GET/throttling/rateLimit", "value": "$SHORT_URL_RATE_LIMIT"},
+    {"op": "replace", "path": "/phone/validate/POST/throttling/burstLimit", "value": "$PHONE_BURST_LIMIT"},
+    {"op": "replace", "path": "/phone/validate/POST/throttling/rateLimit", "value": "$PHONE_RATE_LIMIT"},
+    {"op": "replace", "path": "/phone/verify/POST/throttling/burstLimit", "value": "$PHONE_BURST_LIMIT"},
+    {"op": "replace", "path": "/phone/verify/POST/throttling/rateLimit", "value": "$PHONE_RATE_LIMIT"},
+    {"op": "replace", "path": "/v1/phone/validate/POST/throttling/burstLimit", "value": "$PHONE_BURST_LIMIT"},
+    {"op": "replace", "path": "/v1/phone/validate/POST/throttling/rateLimit", "value": "$PHONE_RATE_LIMIT"},
+    {"op": "replace", "path": "/v1/phone/verify/POST/throttling/burstLimit", "value": "$PHONE_BURST_LIMIT"},
+    {"op": "replace", "path": "/v1/phone/verify/POST/throttling/rateLimit", "value": "$PHONE_RATE_LIMIT"}
   ]
 }
 EOF
@@ -126,6 +144,40 @@ aws_cmd apigateway get-stage \
     --stage-name $STAGE \
     --region $REGION \
     --query 'methodSettings."/auth/s/{shortId}/GET".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo ""
+echo "Verifying phone validation endpoint configuration..."
+echo "  /phone/validate/POST:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/phone/validate/POST".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo "  /phone/verify/POST:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/phone/verify/POST".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo "  /v1/phone/validate/POST:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/v1/phone/validate/POST".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
+    --output json 2>/dev/null || echo "    (Not configured or using default)"
+
+echo "  /v1/phone/verify/POST:"
+aws_cmd apigateway get-stage \
+    --rest-api-id $API_ID_1 \
+    --stage-name $STAGE \
+    --region $REGION \
+    --query 'methodSettings."/v1/phone/verify/POST".{throttlingBurstLimit:throttlingBurstLimit,throttlingRateLimit:throttlingRateLimit}' \
     --output json 2>/dev/null || echo "    (Not configured or using default)"
 
 echo ""
@@ -192,6 +244,8 @@ echo -e "${YELLOW}Security Improvements:${NC}"
 echo "  • General endpoints: Reduced to 200 req/sec (from 1000) to prevent abuse"
 echo "  • Short URL endpoints: Strict 10 req/sec limit to prevent brute force attacks"
 echo "  • Short URL endpoints protect magic link authentication tokens"
+echo "  • Phone validation endpoints: Very strict 5 req/sec limit to prevent SMS abuse"
+echo "  • Phone endpoints protect against SMS spam and cost abuse"
 echo ""
 echo "Next steps:"
 echo "1. Monitor CloudWatch metrics for throttling events"
