@@ -6,9 +6,7 @@
 
 // Note: pg module is available at build time from each lambda's node_modules
 // The linting errors here are false positives - the module resolves correctly when building from within each lambda directory
-// @ts-expect-error - Module resolution works at build time from lambda directories
 import { Pool, PoolClient } from 'pg';
-// @ts-expect-error - Module resolution works at build time from lambda directories
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 // Initialize Secrets Manager client
@@ -80,20 +78,24 @@ export async function getPool(): Promise<Pool> {
 
   const credentials = await getCredentials();
 
+  // RDS PostgreSQL requires SSL by default, but uses self-signed certificates
+  // For VPC connections, we disable certificate validation since:
+  // 1. Traffic is already encrypted within the VPC
+  // 2. We trust the RDS instance (it's in our VPC)
+  // 3. Self-signed certs would otherwise cause connection failures
+  // Always use SSL with rejectUnauthorized: false for RDS connections
   pool = new Pool({
     host: credentials.host,
     port: credentials.port,
     database: credentials.database,
     user: credentials.username,
     password: credentials.password,
-    ssl: credentials.ssl
-      ? {
-          rejectUnauthorized: false, // RDS uses self-signed certs, connection is within VPC
-        }
-      : false,
+    ssl: {
+      rejectUnauthorized: false, // Required for RDS self-signed certs in VPC
+    },
     max: 5, // Maximum pool size (conservative for db.t3.micro)
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 10000, // Timeout after 10 seconds if connection cannot be established
+    connectionTimeoutMillis: 5000, // Timeout after 5 seconds if connection cannot be established
   });
 
   // Handle pool errors

@@ -6,9 +6,7 @@
 
 // Note: These AWS SDK modules are available at build time from each lambda's node_modules
 // The linting errors here are false positives - the modules resolve correctly when building from within each lambda directory
-// @ts-expect-error - Module resolution works at build time from lambda directories
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-// @ts-expect-error - Module resolution works at build time from lambda directories
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'crypto';
 import { query } from './postgres-client';

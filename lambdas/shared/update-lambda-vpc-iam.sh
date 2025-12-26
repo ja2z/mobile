@@ -318,6 +318,27 @@ done
 
 rm -f /tmp/updated-policy.json
 
+# Step 4: Ensure KMS VPC endpoint exists (required for encryption/decryption)
+echo ""
+echo "=========================================="
+echo "Step 4: Checking KMS VPC Endpoint"
+echo "=========================================="
+KMS_ENDPOINT_EXISTS=$(aws_cmd ec2 describe-vpc-endpoints \
+    --region "$REGION" \
+    --filters "Name=vpc-id,Values=$DEFAULT_VPC_ID" "Name=service-name,Values=com.amazonaws.us-west-2.kms" \
+    --query 'VpcEndpoints[0].VpcEndpointId' \
+    --output text 2>/dev/null || echo "")
+
+if [ -z "$KMS_ENDPOINT_EXISTS" ] || [ "$KMS_ENDPOINT_EXISTS" = "None" ]; then
+    echo "⚠️  KMS VPC endpoint not found"
+    echo "   Lambda functions need KMS VPC endpoint for encryption/decryption"
+    echo "   Run: ./lambdas/shared/setup-kms-vpc-endpoint.sh"
+    echo ""
+else
+    echo "✓ KMS VPC endpoint exists: $KMS_ENDPOINT_EXISTS"
+fi
+echo ""
+
 echo "=========================================="
 echo "✅ Lambda VPC & IAM Update Complete!"
 echo "=========================================="
@@ -328,5 +349,8 @@ echo "  - Secrets Manager permissions for PostgreSQL credentials"
 echo "  - Environment variables (POSTGRES_SECRET_NAME, POSTGRES_DATABASE)"
 echo ""
 echo "Note: Lambda functions in VPC may have increased cold start times."
-echo "      Consider increasing timeout if needed."
+echo "      Timeout has been set to 25 seconds to avoid API Gateway timeouts (29s limit)."
+echo ""
+echo "⚠️  IMPORTANT: Ensure KMS VPC endpoint exists for encryption/decryption:"
+echo "   Run: ./lambdas/shared/setup-kms-vpc-endpoint.sh"
 
