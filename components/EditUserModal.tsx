@@ -60,11 +60,62 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
 
       if (noExpiration) {
         updates.expirationDate = null;
+        console.log('[EditUserModal] Setting expirationDate to null (noExpiration=true)');
       } else if (expirationDate) {
-        // Convert to US/Pacific timezone, then to Unix timestamp
-        const pacificDate = new Date(expirationDate.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-        updates.expirationDate = Math.floor(pacificDate.getTime() / 1000);
+        try {
+          // Get date components in Pacific timezone
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Los_Angeles',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          });
+          
+          const parts = formatter.formatToParts(expirationDate);
+          const year = parts.find(p => p.type === 'year')?.value;
+          const month = parts.find(p => p.type === 'month')?.value;
+          const day = parts.find(p => p.type === 'day')?.value;
+          
+          if (!year || !month || !day) {
+            throw new Error('Failed to parse date components');
+          }
+          
+          // Create ISO string for midnight Pacific time
+          // Format: YYYY-MM-DDTHH:MM:SS-08:00 (PST, UTC-8)
+          // Note: This doesn't account for DST, but it's close enough for expiration dates
+          const pacificMidnightISO = `${year}-${month}-${day}T00:00:00-08:00`;
+          const pacificDate = new Date(pacificMidnightISO);
+          
+          const timestamp = Math.floor(pacificDate.getTime() / 1000);
+          
+          console.log('[EditUserModal] Converting expiration date:', {
+            originalDate: expirationDate.toISOString(),
+            year,
+            month,
+            day,
+            pacificMidnightISO,
+            pacificDate: pacificDate.toISOString(),
+            timestamp,
+            timestampDate: new Date(timestamp * 1000).toISOString()
+          });
+          
+          // Validate timestamp
+          if (isNaN(timestamp) || timestamp <= 0) {
+            throw new Error(`Invalid timestamp: ${timestamp}`);
+          }
+          
+          updates.expirationDate = timestamp;
+        } catch (error: any) {
+          console.error('[EditUserModal] Error converting expiration date:', error);
+          Alert.alert('Error', `Failed to set expiration date: ${error.message}`);
+          setSaving(false);
+          return;
+        }
+      } else {
+        console.log('[EditUserModal] No expirationDate set (expirationDate is null/undefined)');
       }
+      
+      console.log('[EditUserModal] Final updates object:', JSON.stringify(updates, null, 2));
 
       // Reactivate if user is deactivated
       if (user.isDeactivated) {

@@ -765,11 +765,39 @@ async function handleUpdateUser(userId: string, body: any, adminUser: any) {
 
     // Update expiration date if provided
     if (body.expirationDate !== undefined) {
+      console.log('[handleUpdateUser] Processing expirationDate:', {
+        rawValue: body.expirationDate,
+        type: typeof body.expirationDate,
+        isNull: body.expirationDate === null,
+        isEmptyString: body.expirationDate === ''
+      });
+      
       if (body.expirationDate === null || body.expirationDate === '') {
         // Remove expiration
         updateData.expirationDate = null;
+        console.log('[handleUpdateUser] Setting expirationDate to null (removing expiration)');
       } else {
-        updateData.expirationDate = parseInt(body.expirationDate, 10);
+        // Handle both string and number inputs
+        let expirationValue: number;
+        if (typeof body.expirationDate === 'number') {
+          expirationValue = Math.floor(body.expirationDate);
+        } else {
+          expirationValue = parseInt(String(body.expirationDate), 10);
+        }
+        
+        console.log('[handleUpdateUser] Parsed expirationValue:', expirationValue);
+        
+        // Validate that we got a valid number
+        if (isNaN(expirationValue) || expirationValue < 0) {
+          console.error('[handleUpdateUser] Invalid expiration date:', expirationValue);
+          return createResponse(400, { 
+            error: 'Invalid expiration date', 
+            message: 'Expiration date must be a valid Unix timestamp (positive number)'
+          });
+        }
+        
+        updateData.expirationDate = expirationValue;
+        console.log('[handleUpdateUser] Set expirationDate in updateData:', updateData.expirationDate);
       }
     }
 
@@ -781,7 +809,15 @@ async function handleUpdateUser(userId: string, body: any, adminUser: any) {
 
     // Update user using Postgres service
     if (Object.keys(updateData).length > 0) {
+      console.log('[handleUpdateUser] Calling updateUser with:', {
+        userId,
+        updateData,
+        updateDataKeys: Object.keys(updateData)
+      });
       await updateUser(userId, updateData);
+      console.log('[handleUpdateUser] updateUser completed successfully');
+    } else {
+      console.log('[handleUpdateUser] No updates to apply, updateData is empty');
     }
 
     // Log activity

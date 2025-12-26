@@ -173,6 +173,11 @@ export async function updateUser(
     values.push(updates.role);
   }
   if (updates.expirationDate !== undefined) {
+    console.log('[updateUser] Adding expirationDate to update:', {
+      expirationDate: updates.expirationDate,
+      type: typeof updates.expirationDate,
+      isNull: updates.expirationDate === null
+    });
     setParts.push(`expiration_date = $${paramIndex++}`);
     values.push(updates.expirationDate);
   }
@@ -205,10 +210,16 @@ export async function updateUser(
   values.push(now);
   values.push(userId); // For WHERE clause
 
-  await query(
-    `UPDATE users SET ${setParts.join(', ')} WHERE user_id = $${paramIndex}`,
-    values
-  );
+  const updateQuery = `UPDATE users SET ${setParts.join(', ')} WHERE user_id = $${paramIndex}`;
+  console.log('[updateUser] Executing SQL update:', {
+    query: updateQuery,
+    values: values.map((v, i) => ({ param: i + 1, value: v, type: typeof v })),
+    userId
+  });
+
+  await query(updateQuery, values);
+  
+  console.log('[updateUser] SQL update completed successfully');
 }
 
 /**
