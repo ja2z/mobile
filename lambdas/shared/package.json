@@ -1,0 +1,21 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for Lambda functions",
+  "scripts": {
+    "migrate": "ts-node migrate-dynamodb-to-postgres.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.921.0",
+    "@aws-sdk/client-secrets-manager": "^3.921.0",
+    "@aws-sdk/lib-dynamodb": "^3.921.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.2",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
+

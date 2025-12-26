@@ -11,8 +11,9 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 // @ts-expect-error - Module resolution works at build time from lambda directories
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'crypto';
+import { query } from './postgres-client';
 
-// Initialize AWS clients
+// Initialize AWS clients (still needed for updateLastActiveTime and rollback)
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
@@ -87,12 +88,38 @@ export async function logActivity(
       ...(Object.keys(filteredMetadata).length > 0 && { metadata: filteredMetadata }),
     };
 
-    await docClient.send(new PutCommand({
-      TableName: ACTIVITY_TABLE,
-      Item: activity,
-    }));
+    // Write to PostgreSQL
+    const metadataJson = Object.keys(filteredMetadata).length > 0 
+      ? JSON.stringify(filteredMetadata) 
+      : null;
 
-    console.log(`Activity logged: ${eventType} for user ${userId}`);
+    await query(
+      `INSERT INTO user_activity (
+        activity_id, user_id, email, event_type, timestamp, 
+        device_id, ip_address, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      ON CONFLICT (activity_id) DO NOTHING`,
+      [
+        activity.activityId,
+        activity.userId,
+        activity.email,
+        activity.eventType,
+        activity.timestamp,
+        activity.deviceId || null,
+        activity.ipAddress || null,
+        metadataJson,
+      ]
+    );
+
+    console.log(`Activity logged to PostgreSQL: ${eventType} for user ${userId}`);
+
+    // OLD CODE - Kept for rollback if needed
+    // Uncomment below and comment out PostgreSQL code above to rollback to DynamoDB
+    // await docClient.send(new PutCommand({
+    //   TableName: ACTIVITY_TABLE,
+    //   Item: activity,
+    // }));
+    // console.log(`Activity logged to DynamoDB: ${eventType} for user ${userId}`);
   } catch (error) {
     console.error('Error logging activity:', error);
     // Don't throw - activity logging should not break the main flow

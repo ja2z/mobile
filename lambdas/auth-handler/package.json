@@ -18,11 +18,13 @@
     "@aws-sdk/client-ses": "^3.921.0",
     "@aws-sdk/lib-dynamodb": "^3.921.0",
     "@types/aws-lambda": "^8.10.157",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.9.2",
+    "@types/pg": "^8.16.0",
     "typescript": "^5.9.3"
   }
 }
