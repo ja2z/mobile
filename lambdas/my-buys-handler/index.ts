@@ -10,6 +10,7 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import crypto from 'crypto';
 import { validateUserExpiration, checkUserDeactivated } from '../shared/user-validation';
 import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
+import { countAppletsByUser, createApplet, listApplets, getApplet, updateApplet, deleteApplet } from '../shared/applets-service';
 
 // Get AWS region from environment or default to us-west-2
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2';
@@ -21,7 +22,7 @@ const kmsClient = new KMSClient({ region: AWS_REGION });
 const secretsManager = new SecretsManagerClient({ region: AWS_REGION });
 
 // Environment variables
-const MY_BUYS_TABLE = process.env.MY_BUYS_TABLE || 'mobile-my-buys-applets';
+// MY_BUYS_TABLE removed - now using Postgres applets-service
 const MY_BUYS_SECRETS_TABLE = process.env.MY_BUYS_SECRETS_TABLE || 'mobile-my-buys-secrets';
 const KMS_KEY_ALIAS = process.env.KMS_KEY_ALIAS || 'alias/mobile-my-buys-secrets';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
@@ -551,17 +552,10 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         });
     }
     
-    // Check applet limit
-    const existingApplets = await docClient.send(new QueryCommand({
-        TableName: MY_BUYS_TABLE,
-        KeyConditionExpression: 'userId = :userId',
-        ExpressionAttributeValues: {
-            ':userId': userId
-        },
-        Select: 'COUNT'
-    }));
+    // Check applet limit using Postgres service
+    const appletCount = await countAppletsByUser(userId);
     
-    if ((existingApplets.Count || 0) >= MAX_APPLETS_PER_USER) {
+    if (appletCount >= MAX_APPLETS_PER_USER) {
         return createResponse(400, {
             success: false,
             error: 'Applet limit reached',
@@ -582,24 +576,18 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     // Save secret to secrets table (will create or update) - row-level security per user
     await saveSecret(userId, secretName, embedClientId, embedSecretKey);
     
-    // Create applet (store reference to secret name instead of encrypted secret)
+    // Create applet using Postgres service (store reference to secret name instead of encrypted secret)
     const appletId = generateUUID();
-    const now = Math.floor(Date.now() / 1000);
     
-    const applet = {
+    await createApplet({
         userId,
         appletId,
         name,
         embedUrl,
         secretName, // Store reference to secret instead of encryptedSecret and embedClientId
-        createdAt: now,
-        updatedAt: now
-    };
+    });
     
-    await docClient.send(new PutCommand({
-        TableName: MY_BUYS_TABLE,
-        Item: applet
-    }));
+    const now = Math.floor(Date.now() / 1000);
     
     // Log activity
     const ipAddress = getIpAddress(event);
@@ -628,17 +616,10 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
  * Handle GET /v1/my-buys/applets - List applets
  */
 async function handleListApplets(userId: string): Promise<any> {
-    const result = await docClient.send(new QueryCommand({
-        TableName: MY_BUYS_TABLE,
-        IndexName: 'userId-createdAt-index',
-        KeyConditionExpression: 'userId = :userId',
-        ExpressionAttributeValues: {
-            ':userId': userId
-        },
-        ScanIndexForward: false // Newest first
-    }));
+    // List applets using Postgres service (already sorted by created_at DESC)
+    const appletsData = await listApplets(userId);
     
-    const applets = (result.Items || []).map((item: any) => ({
+    const applets = appletsData.map((item) => ({
         appletId: item.appletId,
         name: item.name,
         embedUrl: item.embedUrl,
@@ -665,13 +646,10 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         });
     }
     
-    // Verify applet belongs to user
-    const existing = await docClient.send(new GetCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId }
-    }));
+    // Verify applet belongs to user using Postgres service
+    const existing = await getApplet(userId, appletId);
     
-    if (!existing.Item) {
+    if (!existing) {
         return createResponse(404, {
             success: false,
             error: 'Applet not found'
@@ -735,23 +713,12 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     // Save secret to secrets table (will create or update) - row-level security per user
     await saveSecret(userId, secretName, embedClientId, embedSecretKey);
     
-    // Update applet (store reference to secret name instead of encrypted secret)
-    const now = Math.floor(Date.now() / 1000);
-    
-    await docClient.send(new UpdateCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId },
-        UpdateExpression: 'SET #name = :name, embedUrl = :embedUrl, secretName = :secretName, updatedAt = :updatedAt',
-        ExpressionAttributeNames: {
-            '#name': 'name'
-        },
-        ExpressionAttributeValues: {
-            ':name': name,
-            ':embedUrl': embedUrl,
-            ':secretName': secretName,
-            ':updatedAt': now
-        }
-    }));
+    // Update applet using Postgres service (store reference to secret name instead of encrypted secret)
+    await updateApplet(userId, appletId, {
+        name,
+        embedUrl,
+        secretName,
+    });
     
     // Log activity
     const ipAddress = getIpAddress(event);
@@ -770,8 +737,8 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             appletId,
             name,
             embedUrl,
-            createdAt: existing.Item.createdAt,
-            updatedAt: now
+            createdAt: existing.createdAt,
+            updatedAt: existing.updatedAt
         }
     });
 }
@@ -788,24 +755,18 @@ async function handleDeleteApplet(event: any, userId: string, email: string, dev
         });
     }
     
-    // Verify applet belongs to user and get name for logging
-    const existing = await docClient.send(new GetCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId }
-    }));
+    // Verify applet belongs to user and get name for logging using Postgres service
+    const existing = await getApplet(userId, appletId);
     
-    if (!existing.Item) {
+    if (!existing) {
         return createResponse(404, {
             success: false,
             error: 'Applet not found'
         });
     }
     
-    // Delete applet
-    await docClient.send(new DeleteCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId }
-    }));
+    // Delete applet using Postgres service
+    await deleteApplet(userId, appletId);
     
     // Log activity
     const ipAddress = getIpAddress(event);
@@ -813,7 +774,7 @@ async function handleDeleteApplet(event: any, userId: string, email: string, dev
         'my_buys_applet_deleted',
         userId,
         getActivityLogEmail(email, isBackdoor),
-        { appletId, appletName: existing.Item.name },
+        { appletId, appletName: existing.name },
         deviceId,
         ipAddress
     );
@@ -836,13 +797,10 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
         });
     }
     
-    // Get applet
-    const applet = await docClient.send(new GetCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId }
-    }));
+    // Get applet using Postgres service
+    const applet = await getApplet(userId, appletId);
     
-    if (!applet.Item) {
+    if (!applet) {
         return createResponse(404, {
             success: false,
             error: 'Applet not found'
@@ -850,7 +808,7 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
     }
     
     // Get secret from secrets table (row-level security - only this user's secrets)
-    if (!applet.Item.secretName) {
+    if (!applet.secretName) {
         return createResponse(400, {
             success: false,
             error: 'Applet missing secret reference',
@@ -858,19 +816,19 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
         });
     }
     
-    const secretData = await getSecretByName(userId, applet.Item.secretName);
+    const secretData = await getSecretByName(userId, applet.secretName);
     if (!secretData) {
         return createResponse(404, {
             success: false,
             error: 'Secret not found',
-            message: `Secret "${applet.Item.secretName}" not found in secrets table`
+            message: `Secret "${applet.secretName}" not found in secrets table`
         });
     }
     
     // Parse embed URL
     let parsedUrl;
     try {
-        parsedUrl = parseEmbedUrl(applet.Item.embedUrl);
+        parsedUrl = parseEmbedUrl(applet.embedUrl);
     } catch (error: any) {
         return createResponse(400, {
             success: false,
@@ -905,7 +863,7 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
         getActivityLogEmail(email, isBackdoor),
         { 
             appletId, 
-            appletName: applet.Item.name,
+            appletName: applet.name,
             testSuccess: testResult.success,
             testStatusCode: testResult.statusCode
         },
@@ -990,13 +948,10 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
         });
     }
     
-    // Get applet
-    const applet = await docClient.send(new GetCommand({
-        TableName: MY_BUYS_TABLE,
-        Key: { userId, appletId }
-    }));
+    // Get applet using Postgres service
+    const applet = await getApplet(userId, appletId);
     
-    if (!applet.Item) {
+    if (!applet) {
         return createResponse(404, {
             success: false,
             error: 'Applet not found'
@@ -1004,7 +959,7 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
     }
     
     // Get secret from secrets table (row-level security - only this user's secrets)
-    if (!applet.Item.secretName) {
+    if (!applet.secretName) {
         return createResponse(400, {
             success: false,
             error: 'Applet missing secret reference',
@@ -1012,19 +967,19 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
         });
     }
     
-    const secretData = await getSecretByName(userId, applet.Item.secretName);
+    const secretData = await getSecretByName(userId, applet.secretName);
     if (!secretData) {
         return createResponse(404, {
             success: false,
             error: 'Secret not found',
-            message: `Secret "${applet.Item.secretName}" not found in secrets table`
+            message: `Secret "${applet.secretName}" not found in secrets table`
         });
     }
     
     // Parse embed URL
     let parsedUrl;
     try {
-        parsedUrl = parseEmbedUrl(applet.Item.embedUrl);
+        parsedUrl = parseEmbedUrl(applet.embedUrl);
     } catch (error: any) {
         return createResponse(400, {
             success: false,
@@ -1054,7 +1009,7 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
         'my_buys_applet_viewed',
         userId,
         getActivityLogEmail(email, isBackdoor),
-        { appletId, appletName: applet.Item.name },
+        { appletId, appletName: applet.name },
         deviceId,
         ipAddress
     );

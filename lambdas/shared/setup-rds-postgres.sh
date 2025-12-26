@@ -369,6 +369,55 @@ CREATE INDEX IF NOT EXISTS idx_user_activity_user_id_timestamp ON user_activity(
 CREATE INDEX IF NOT EXISTS idx_user_activity_event_type ON user_activity(event_type);
 CREATE INDEX IF NOT EXISTS idx_user_activity_email ON user_activity(email);
 CREATE INDEX IF NOT EXISTS idx_user_activity_timestamp ON user_activity(timestamp DESC);
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    user_id VARCHAR(255) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    role VARCHAR(50) NOT NULL DEFAULT 'basic',
+    expiration_date BIGINT,
+    is_deactivated BOOLEAN DEFAULT FALSE,
+    deactivated_at BIGINT,
+    last_active_at BIGINT,
+    registration_method VARCHAR(50),
+    phone_number VARCHAR(20),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_expiration_date ON users(expiration_date) WHERE expiration_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_deactivated ON users(is_deactivated) WHERE is_deactivated = TRUE;
+
+-- Approved emails table
+CREATE TABLE IF NOT EXISTS approved_emails (
+    email VARCHAR(255) PRIMARY KEY,
+    role VARCHAR(50) NOT NULL DEFAULT 'basic',
+    expiration_date BIGINT,
+    registered_at BIGINT,
+    approved_by VARCHAR(255),
+    approved_at BIGINT,
+    metadata JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_approved_emails_expiration_date ON approved_emails(expiration_date) WHERE expiration_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_approved_emails_registered_at ON approved_emails(registered_at) WHERE registered_at IS NOT NULL;
+
+-- Applets table
+CREATE TABLE IF NOT EXISTS applets (
+    user_id VARCHAR(255) NOT NULL,
+    applet_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    embed_url TEXT NOT NULL,
+    secret_name VARCHAR(255),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, applet_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_applets_user_id_created_at ON applets(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_applets_user_id ON applets(user_id);
 EOF
     
     echo "  ✓ Schema created"

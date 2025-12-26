@@ -8,6 +8,8 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCom
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomBytes, createHash } from 'crypto';
 import { validateRole, getUserProfileByEmail } from '../shared/user-validation';
+import { isEmailApproved as checkEmailApproved, getApprovedEmail, setRegisteredAtIfNotExists } from '../shared/approved-emails-service';
+import { createUser, updateUser } from '../shared/user-service';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -16,8 +18,7 @@ const secretsClient = new SecretsManagerClient({});
 
 // Environment variables
 const VERIFICATIONS_TABLE = process.env.VERIFICATIONS_TABLE || 'mobile-phone-verifications';
-const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-approved-emails';
-const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
+// APPROVED_EMAILS_TABLE and USERS_TABLE removed - now using Postgres services
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const TELNYX_API_KEY_SECRET_NAME = process.env.TELNYX_API_KEY_SECRET_NAME || 'mobile-app/telnyx-api-key';
 
@@ -377,16 +378,8 @@ async function handleVerifyPhoneCode(body: any, event: any) {
     // Create or update user profile with phone number
     const user = await getOrCreateUserProfile(emailLower, 'phone');
     
-    // Update user record to add phoneNumber
-    await docClient.send(new UpdateCommand({
-      TableName: USERS_TABLE,
-      Key: { userId: user.userId },
-      UpdateExpression: 'SET phoneNumber = :phone, updatedAt = :now',
-      ExpressionAttributeValues: {
-        ':phone': phoneNumber,
-        ':now': now
-      }
-    }));
+    // Update user record to add phoneNumber using Postgres service
+    await updateUser(user.userId, { phoneNumber });
 
     console.log(`[handleVerifyPhoneCode] Updated user ${user.userId} with phone number ${phoneNumber}`);
 
@@ -433,7 +426,7 @@ async function handleVerifyPhoneCode(body: any, event: any) {
 async function getOrCreateUserProfile(email: string, registrationMethod: string = 'phone'): Promise<{ userId: string; email: string; role: string }> {
   const emailLower = email.toLowerCase();
   
-  // First, try to find existing user by email
+  // First, try to find existing user by email using Postgres service
   const existingUser = await getUserProfileByEmail(emailLower);
   
   if (existingUser) {
@@ -441,19 +434,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     const role = validateRole(existingUser.role) || 'basic';
     
     // Update registration method if not set
-    // Note: registrationMethod is not in UserProfile interface but exists in DynamoDB
-    const userAny = existingUser as any;
-    if (!userAny.registrationMethod) {
-      const now = Math.floor(Date.now() / 1000);
-      await docClient.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId: existingUser.userId },
-        UpdateExpression: 'SET registrationMethod = :method, updatedAt = :now',
-        ExpressionAttributeValues: {
-          ':method': registrationMethod,
-          ':now': now
-        }
-      }));
+    if (!existingUser.registrationMethod) {
+      await updateUser(existingUser.userId, { registrationMethod });
     }
     
     return {
@@ -471,40 +453,32 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
   if (!emailLower.endsWith('@sigmacomputing.com')) {
     try {
-      const whitelistResult = await docClient.send(new GetCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower }
-      }));
+      const whitelistEmail = await getApprovedEmail(emailLower);
 
       // Block registration if not actively whitelisted
-      if (!whitelistResult.Item) {
+      if (!whitelistEmail) {
         console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} is not whitelisted`);
         throw new Error('Email not approved for registration. This email is not on the whitelist.');
       }
 
       // Check if whitelist entry has expired
-      if (whitelistResult.Item.expirationDate) {
+      if (whitelistEmail.expirationDate) {
         const now = Math.floor(Date.now() / 1000);
-        if (now >= whitelistResult.Item.expirationDate) {
+        if (now >= whitelistEmail.expirationDate) {
           console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} whitelist entry has expired`);
           throw new Error('Whitelist entry has expired. This email is no longer approved for access.');
         }
-        expirationDate = whitelistResult.Item.expirationDate;
+        expirationDate = whitelistEmail.expirationDate;
       }
       
       // Use role from whitelist if specified
-      if (whitelistResult.Item.role) {
-        userRole = validateRole(whitelistResult.Item.role) || 'basic';
+      if (whitelistEmail.role) {
+        userRole = validateRole(whitelistEmail.role) || 'basic';
       }
       
       // Mark user as registered in whitelist
       const now = Math.floor(Date.now() / 1000);
-      await docClient.send(new UpdateCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower },
-        UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
-        ExpressionAttributeValues: { ':now': now }
-      }));
+      await setRegisteredAtIfNotExists(emailLower, now);
     } catch (error) {
       // Re-throw whitelist validation errors
       if (error instanceof Error && (
@@ -520,25 +494,14 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   }
 
   const userId = `usr_${randomBytes(8).toString('hex')}`;
-  const now = Math.floor(Date.now() / 1000);
 
-  const userItem: any = {
+  await createUser({
     userId,
     email: emailLower,
     role: userRole,
+    expirationDate,
     registrationMethod,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  if (expirationDate) {
-    userItem.expirationDate = expirationDate;
-  }
-
-  await docClient.send(new PutCommand({
-    TableName: USERS_TABLE,
-    Item: userItem
-  }));
+  });
 
   console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${userRole}${expirationDate ? `, expires: ${expirationDate}` : ''}`);
 
@@ -560,27 +523,12 @@ async function isEmailApproved(email: string): Promise<boolean> {
     return true;
   }
 
-  // Check approved emails table
+  // Check approved emails table using Postgres service
   try {
-    const result = await docClient.send(new GetCommand({
-      TableName: APPROVED_EMAILS_TABLE,
-      Key: { email: emailLower }
-    }));
-
-    if (!result.Item) {
-      return false;
-    }
-
-    // Check if approval has expiration date
-    if (result.Item.expirationDate) {
-      const now = Math.floor(Date.now() / 1000);
-      return now < result.Item.expirationDate;
-    }
-
-    return true;
+    return await checkEmailApproved(emailLower);
   } catch (error) {
     console.error('[isEmailApproved] Error checking email approval:', error);
-    throw error;
+    return false;
   }
 }
 

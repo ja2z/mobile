@@ -6,18 +6,9 @@
 
 // Note: These AWS SDK modules are available at build time from each lambda's node_modules
 // The linting errors here are false positives - the modules resolve correctly when building from within each lambda directory
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'crypto';
 import { query } from './postgres-client';
-
-// Initialize AWS clients (still needed for updateLastActiveTime and rollback)
-const dynamoClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
-
-// Environment variables
-const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
-const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
+import { updateLastActiveTime as updateUserLastActiveTime } from './user-service';
 
 const BACKDOOR_USER_DISPLAY = 'backdoor user';
 
@@ -130,17 +121,7 @@ export async function logActivity(
  */
 export async function updateLastActiveTime(userId: string): Promise<void> {
   try {
-    const now = Math.floor(Date.now() / 1000);
-
-    await docClient.send(new UpdateCommand({
-      TableName: USERS_TABLE,
-      Key: { userId },
-      UpdateExpression: 'SET lastActiveAt = :now',
-      ExpressionAttributeValues: {
-        ':now': now,
-      },
-    }));
-
+    await updateUserLastActiveTime(userId);
     console.log(`Updated lastActiveAt for user ${userId}`);
   } catch (error) {
     console.error('Error updating last active time:', error);

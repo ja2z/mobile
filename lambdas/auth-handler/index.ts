@@ -11,6 +11,8 @@ import * as jwt from 'jsonwebtoken';
 import { randomBytes, createHash } from 'crypto';
 import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateRole } from '../shared/user-validation';
 import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
+import { isEmailApproved as checkEmailApproved, getApprovedEmail, setRegisteredAtIfNotExists } from '../shared/approved-emails-service';
+import { getUserProfileByEmail, createUser, updateUser } from '../shared/user-service';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -20,8 +22,7 @@ const secretsClient = new SecretsManagerClient({});
 
 // Environment variables
 const TOKENS_TABLE = process.env.TOKENS_TABLE || 'mobile-auth-tokens';
-const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-approved-emails';
-const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
+// APPROVED_EMAILS_TABLE and USERS_TABLE removed - now using Postgres services
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/backdoor-secret';
@@ -1076,39 +1077,16 @@ async function isEmailApproved(email: string): Promise<boolean> {
     return true;
   }
 
-  // Check approved emails table
-  console.log('[isEmailApproved] Checking approved emails table:', APPROVED_EMAILS_TABLE);
+  // Check approved emails table using Postgres service
+  console.log('[isEmailApproved] Checking approved emails table via Postgres');
   try {
-    const result = await docClient.send(new GetCommand({
-      TableName: APPROVED_EMAILS_TABLE,
-      Key: { email: emailLower }
-    }));
-
-    console.log('[isEmailApproved] DynamoDB query result:', result.Item ? 'Found item' : 'No item found');
-
-    if (!result.Item) {
-      console.log('[isEmailApproved] Email not found in approved emails table');
-      return false;
-    }
-
-    // Check if approval has expiration date
-    if (result.Item.expirationDate) {
-      const now = Math.floor(Date.now() / 1000);
-      const isNotExpired = now < result.Item.expirationDate;
-      console.log('[isEmailApproved] Email has expiration date:', result.Item.expirationDate, 'now:', now, 'isNotExpired:', isNotExpired);
-      return isNotExpired;
-    }
-
-    console.log('[isEmailApproved] Email approved (no expiration)');
-    return true;
+    const approved = await checkEmailApproved(emailLower);
+    console.log('[isEmailApproved] Postgres query result:', approved ? 'Approved' : 'Not approved');
+    return approved;
   } catch (error) {
     console.error('[isEmailApproved] Error checking email approval:', error);
     console.error('[isEmailApproved] Error details:', error instanceof Error ? error.message : String(error));
     console.error('[isEmailApproved] Error stack:', error instanceof Error ? error.stack : 'No stack');
-    if (error instanceof Error) {
-      console.error('[isEmailApproved] Error name:', error.name);
-      console.error('[isEmailApproved] Error code:', (error as any).code);
-    }
     // Re-throw to let caller handle it
     throw error;
   }
@@ -1122,41 +1100,26 @@ async function isEmailApproved(email: string): Promise<boolean> {
 async function getOrCreateUserProfile(email: string, registrationMethod: string = 'email'): Promise<{ userId: string; email: string; role: string }> {
   const emailLower = email.toLowerCase();
   
-  // First, try to find existing user by email using email-index GSI
-  const queryResult = await docClient.send(new QueryCommand({
-    TableName: USERS_TABLE,
-    IndexName: 'email-index',
-    KeyConditionExpression: 'email = :email',
-    ExpressionAttributeValues: { ':email': emailLower },
-    Limit: 1
-  }));
+  // First, try to find existing user by email using Postgres service
+  const existingUser = await getUserProfileByEmail(emailLower);
 
-  if (queryResult.Items && queryResult.Items.length > 0) {
+  if (existingUser) {
     // User exists, validate and return their profile
-    const user = queryResult.Items[0];
-    const role = validateRole(user.role) || 'basic';
+    const role = validateRole(existingUser.role) || 'basic';
     
     // Update registration method if not set
-    if (!user.registrationMethod) {
-      await docClient.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId: user.userId },
-        UpdateExpression: 'SET registrationMethod = :method',
-        ExpressionAttributeValues: { ':method': registrationMethod }
-      }));
+    if (!existingUser.registrationMethod) {
+      await updateUser(existingUser.userId, { registrationMethod });
     }
     
     // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
     // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
     if (!emailLower.endsWith('@sigmacomputing.com')) {
       try {
-        const whitelistResult = await docClient.send(new GetCommand({
-          TableName: APPROVED_EMAILS_TABLE,
-          Key: { email: emailLower }
-        }));
+        const whitelistEmail = await getApprovedEmail(emailLower);
 
-        if (whitelistResult.Item && whitelistResult.Item.expirationDate) {
-          const whitelistExpiration = whitelistResult.Item.expirationDate;
+        if (whitelistEmail && whitelistEmail.expirationDate) {
+          const whitelistExpiration = whitelistEmail.expirationDate;
           const now = Math.floor(Date.now() / 1000);
           
           // Check if whitelist entry has expired
@@ -1167,30 +1130,14 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
           // Update user expiration date if:
           // 1. User doesn't have an expiration date, OR
           // 2. Whitelist expiration is different from user expiration
-          if (!user.expirationDate || user.expirationDate !== whitelistExpiration) {
-            await docClient.send(new UpdateCommand({
-              TableName: USERS_TABLE,
-              Key: { userId: user.userId },
-              UpdateExpression: 'SET expirationDate = :expirationDate, updatedAt = :now',
-              ExpressionAttributeValues: {
-                ':expirationDate': whitelistExpiration,
-                ':now': now
-              }
-            }));
-            console.log(`Synced expiration date for existing user ${user.userId} from whitelist: ${whitelistExpiration}`);
+          if (!existingUser.expirationDate || existingUser.expirationDate !== whitelistExpiration) {
+            await updateUser(existingUser.userId, { expirationDate: whitelistExpiration });
+            console.log(`Synced expiration date for existing user ${existingUser.userId} from whitelist: ${whitelistExpiration}`);
           }
-        } else if (whitelistResult.Item && !whitelistResult.Item.expirationDate && user.expirationDate) {
+        } else if (whitelistEmail && !whitelistEmail.expirationDate && existingUser.expirationDate) {
           // If whitelist has no expiration but user has one, remove user expiration
-          const now = Math.floor(Date.now() / 1000);
-          await docClient.send(new UpdateCommand({
-            TableName: USERS_TABLE,
-            Key: { userId: user.userId },
-            UpdateExpression: 'SET updatedAt = :now REMOVE expirationDate',
-            ExpressionAttributeValues: {
-              ':now': now
-            }
-          }));
-          console.log(`Removed expiration date for existing user ${user.userId} (whitelist has no expiration)`);
+          await updateUser(existingUser.userId, { expirationDate: null });
+          console.log(`Removed expiration date for existing user ${existingUser.userId} (whitelist has no expiration)`);
         }
       } catch (error) {
         console.error('Error syncing expiration date from whitelist:', error);
@@ -1199,8 +1146,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     }
     
     return {
-      userId: user.userId,
-      email: user.email,
+      userId: existingUser.userId,
+      email: existingUser.email,
       role: role
     };
   }
@@ -1214,41 +1161,33 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
   if (!emailLower.endsWith('@sigmacomputing.com')) {
     try {
-      const whitelistResult = await docClient.send(new GetCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower }
-      }));
+      const whitelistEmail = await getApprovedEmail(emailLower);
 
       // SECURITY FIX: Block registration if not actively whitelisted
-      if (!whitelistResult.Item) {
+      if (!whitelistEmail) {
         console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} is not whitelisted`);
         throw new Error('Email not approved for registration. This email is not on the whitelist.');
       }
 
       // Check if whitelist entry has expired
-      if (whitelistResult.Item.expirationDate) {
+      if (whitelistEmail.expirationDate) {
         const now = Math.floor(Date.now() / 1000);
-        if (now >= whitelistResult.Item.expirationDate) {
+        if (now >= whitelistEmail.expirationDate) {
           console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} whitelist entry has expired`);
           throw new Error('Whitelist entry has expired. This email is no longer approved for access.');
         }
         // Set user expiration to whitelist expiration
-        expirationDate = whitelistResult.Item.expirationDate;
+        expirationDate = whitelistEmail.expirationDate;
       }
       
       // Use role from whitelist if specified
-      if (whitelistResult.Item.role) {
-        userRole = validateRole(whitelistResult.Item.role) || 'basic';
+      if (whitelistEmail.role) {
+        userRole = validateRole(whitelistEmail.role) || 'basic';
       }
       
       // Mark user as registered in whitelist (only set if not already set to preserve first registration time)
       const now = Math.floor(Date.now() / 1000);
-      await docClient.send(new UpdateCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower },
-        UpdateExpression: 'SET registeredAt = if_not_exists(registeredAt, :now)',
-        ExpressionAttributeValues: { ':now': now }
-      }));
+      await setRegisteredAtIfNotExists(emailLower, now);
     } catch (error) {
       // Re-throw whitelist validation errors to block registration
       if (error instanceof Error && (
@@ -1258,32 +1197,21 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
         console.error(`[getOrCreateUserProfile] Whitelist validation failed: ${error.message}`);
         throw error;
       }
-      // For other errors (e.g., DynamoDB errors), log and re-throw to be safe
+      // For other errors (e.g., database errors), log and re-throw to be safe
       console.error('[getOrCreateUserProfile] Error checking whitelist:', error);
       throw new Error('Unable to verify email approval. Registration blocked for security.');
     }
   }
 
   const userId = `usr_${randomBytes(8).toString('hex')}`;
-  const now = Math.floor(Date.now() / 1000);
 
-  const userItem: any = {
+  await createUser({
     userId,
     email: emailLower,
     role: userRole,
+    expirationDate,
     registrationMethod,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  if (expirationDate) {
-    userItem.expirationDate = expirationDate;
-  }
-
-  await docClient.send(new PutCommand({
-    TableName: USERS_TABLE,
-    Item: userItem
-  }));
+  });
 
   console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${userRole}${expirationDate ? `, expires: ${expirationDate}` : ''}`);
 
@@ -1709,6 +1637,10 @@ async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise
     const apiKey = await getTelnyxApiKey();
 
     // Send SMS via Telnyx API
+    // Increased timeout for VPC cold starts (default is 10s, using 30s)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
     const response = await fetch('https://api.telnyx.com/v2/messages', {
       method: 'POST',
       headers: {
@@ -1719,8 +1651,11 @@ async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise
         from: '+16505013151',
         to: phoneNumber,
         text: message
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();

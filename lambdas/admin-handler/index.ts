@@ -10,6 +10,8 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import * as jwt from 'jsonwebtoken';
 import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/user-validation';
 import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
+import { listUsers, updateUser, deleteUser } from '../shared/user-service';
+import { listApprovedEmails, createOrUpdateApprovedEmail, deleteApprovedEmail, getApprovedEmail } from '../shared/approved-emails-service';
 
 // CRITICAL: Log module initialization immediately after imports
 // This helps us verify the Lambda is loading the module at all
@@ -59,8 +61,7 @@ console.log('Initial memory usage:', {
 });
 
 // Environment variables
-const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
-const APPROVED_EMAILS_TABLE = process.env.APPROVED_EMAILS_TABLE || 'mobile-approved-emails';
+// USERS_TABLE and APPROVED_EMAILS_TABLE removed - now using Postgres services
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 const TOKENS_TABLE = process.env.TOKENS_TABLE || 'mobile-auth-tokens';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
@@ -629,29 +630,24 @@ async function handleListUsers(params: any, adminUser: any) {
   const offset = (page - 1) * limit;
 
   try {
-    // Scan all users (for small datasets, this is fine)
-    // In production, consider using pagination tokens
-    const scanResult = await docClient.send(new ScanCommand({
-      TableName: USERS_TABLE,
-    }));
-
-    let users = scanResult.Items || [];
+    // Get all users from Postgres (for small datasets, this is fine)
+    let allUsers = await listUsers(1000, 0); // Get up to 1000 users
 
     // Filter out deactivated users unless explicitly requested
     if (!showDeactivated) {
-      users = users.filter((u: any) => !u.isDeactivated);
+      allUsers = allUsers.filter((u) => !u.isDeactivated);
     }
 
     // Filter by email if provided
     if (emailFilter) {
       const filterLower = emailFilter.toLowerCase();
-      users = users.filter((u: any) => 
+      allUsers = allUsers.filter((u) => 
         u.email?.toLowerCase().includes(filterLower)
       );
     }
 
     // Sort users
-    users.sort((a: any, b: any) => {
+    allUsers.sort((a, b) => {
       let aVal: any, bVal: any;
       let comparison: number;
       
@@ -679,11 +675,11 @@ async function handleListUsers(params: any, adminUser: any) {
     });
 
     // Paginate
-    const total = users.length;
-    const paginatedUsers = users.slice(offset, offset + limit);
+    const total = allUsers.length;
+    const paginatedUsers = allUsers.slice(offset, offset + limit);
 
     // Format response
-    const formattedUsers = paginatedUsers.map((u: any) => ({
+    const formattedUsers = paginatedUsers.map((u) => ({
       userId: u.userId,
       email: u.email,
       role: u.role || 'basic',
@@ -714,17 +710,12 @@ async function handleListUsers(params: any, adminUser: any) {
  */
 async function handleGetUser(userId: string, adminUser: any) {
   try {
-    // Fetch user directly from DynamoDB to get all fields
-    const result = await docClient.send(new GetCommand({
-      TableName: USERS_TABLE,
-      Key: { userId },
-    }));
+    // Fetch user from Postgres
+    const user = await getUserProfile(userId);
 
-    if (!result.Item) {
+    if (!user) {
       return createResponse(404, { error: 'User not found' });
     }
-
-    const user = result.Item as any;
 
     return createResponse(200, {
       userId: user.userId,
@@ -736,6 +727,7 @@ async function handleGetUser(userId: string, adminUser: any) {
       isDeactivated: user.isDeactivated || false,
       deactivatedAt: user.deactivatedAt,
       expirationDate: user.expirationDate,
+      phoneNumber: user.phoneNumber,
     });
   } catch (error) {
     console.error('Error getting user:', error);
@@ -754,10 +746,13 @@ async function handleUpdateUser(userId: string, body: any, adminUser: any) {
       return createResponse(404, { error: 'User not found' });
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    const updates: any = {
-      updatedAt: now,
-    };
+    // Build update object for Postgres service
+    const updateData: {
+      role?: string;
+      expirationDate?: number | null;
+      isDeactivated?: boolean;
+      deactivatedAt?: number | null;
+    } = {};
 
     // Update role if provided
     if (body.role !== undefined) {
@@ -765,72 +760,35 @@ async function handleUpdateUser(userId: string, body: any, adminUser: any) {
       if (!validatedRole) {
         return createResponse(400, { error: 'Invalid role. Must be "basic" or "admin"' });
       }
-      updates.role = validatedRole;
+      updateData.role = validatedRole;
     }
 
     // Update expiration date if provided
     if (body.expirationDate !== undefined) {
       if (body.expirationDate === null || body.expirationDate === '') {
         // Remove expiration
-        updates.expirationDate = undefined;
+        updateData.expirationDate = null;
       } else {
-        updates.expirationDate = parseInt(body.expirationDate, 10);
+        updateData.expirationDate = parseInt(body.expirationDate, 10);
       }
     }
 
     // Reactivate if requested
     if (body.reactivate === true && user.isDeactivated) {
-      updates.isDeactivated = false;
-      updates.deactivatedAt = undefined;
+      updateData.isDeactivated = false;
+      updateData.deactivatedAt = null;
     }
 
-    // Build update expression
-    const updateExpressions: string[] = [];
-    const expressionAttributeNames: any = {};
-    const expressionAttributeValues: any = {};
-
-    updateExpressions.push('#updatedAt = :now');
-    expressionAttributeNames['#updatedAt'] = 'updatedAt';
-    expressionAttributeValues[':now'] = now;
-
-    if (updates.role !== undefined) {
-      updateExpressions.push('#role = :role');
-      expressionAttributeNames['#role'] = 'role';
-      expressionAttributeValues[':role'] = updates.role;
+    // Update user using Postgres service
+    if (Object.keys(updateData).length > 0) {
+      await updateUser(userId, updateData);
     }
-
-    if (updates.expirationDate !== undefined) {
-      if (updates.expirationDate === undefined) {
-        // Remove expiration
-        updateExpressions.push('REMOVE expirationDate');
-      } else {
-        updateExpressions.push('expirationDate = :expirationDate');
-        expressionAttributeValues[':expirationDate'] = updates.expirationDate;
-      }
-    }
-
-    if (updates.isDeactivated !== undefined) {
-      updateExpressions.push('isDeactivated = :isDeactivated');
-      expressionAttributeValues[':isDeactivated'] = updates.isDeactivated;
-      
-      if (updates.deactivatedAt !== undefined) {
-        updateExpressions.push('REMOVE deactivatedAt');
-      }
-    }
-
-    await docClient.send(new UpdateCommand({
-      TableName: USERS_TABLE,
-      Key: { userId },
-      UpdateExpression: `SET ${updateExpressions.join(', ')}`,
-      ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-      ExpressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-    }));
 
     // Log activity
     await logActivity('user_updated', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
       targetUserId: userId,
       targetEmail: user.email,
-      updates,
+      updates: updateData,
     });
 
     return createResponse(200, {
@@ -860,16 +818,11 @@ async function handleDeactivateUser(userId: string, adminUser: any) {
 
     const now = Math.floor(Date.now() / 1000);
 
-    // Mark user as deactivated
-    await docClient.send(new UpdateCommand({
-      TableName: USERS_TABLE,
-      Key: { userId },
-      UpdateExpression: 'SET isDeactivated = :true, deactivatedAt = :now, updatedAt = :now',
-      ExpressionAttributeValues: {
-        ':true': true,
-        ':now': now,
-      },
-    }));
+    // Mark user as deactivated using Postgres service
+    await updateUser(userId, {
+      isDeactivated: true,
+      deactivatedAt: now,
+    });
 
     // Delete all user sessions
     try {
@@ -942,33 +895,12 @@ async function handleListWhitelist(adminUser: any) {
   
   console.log('Admin user validated:', { userId: adminUser.userId, email: adminUser.email });
   
-  // Check table name exists
-  if (!APPROVED_EMAILS_TABLE) {
-    console.error('APPROVED_EMAILS_TABLE is not set');
-    return createResponse(500, { error: 'Table name not configured' });
-  }
-  
-  console.log('Table name:', APPROVED_EMAILS_TABLE);
-  
-  // Check docClient exists
-  if (!docClient) {
-    console.error('docClient is null/undefined');
-    return createResponse(500, { error: 'DynamoDB client not initialized' });
-  }
-  
-  console.log('docClient validated');
-  
   try {
-    console.log('Attempting to scan APPROVED_EMAILS_TABLE...');
-    const scanCommand = new ScanCommand({
-      TableName: APPROVED_EMAILS_TABLE,
-    });
-    console.log('ScanCommand created successfully');
-    
-    const scanResult = await docClient.send(scanCommand);
-    console.log('Scan successful, items found:', scanResult.Items?.length || 0);
+    console.log('Fetching approved emails from Postgres...');
+    const approvedEmails = await listApprovedEmails();
+    console.log('Postgres query successful, items found:', approvedEmails.length);
 
-    const whitelistUsers = (scanResult.Items || []).map((item: any) => {
+    const whitelistUsers = approvedEmails.map((item) => {
       return {
         email: item.email,
         role: item.role || 'basic',
@@ -1023,20 +955,23 @@ async function handleAddWhitelistUser(body: any, adminUser: any) {
     };
 
     // Set expiration date (default to 2 weeks if not specified and noExpiration is false)
+    let finalExpirationDate: number | undefined = undefined;
     if (noExpiration) {
       // No expiration
     } else if (expirationDate) {
-      whitelistItem.expirationDate = parseInt(expirationDate, 10);
+      finalExpirationDate = parseInt(expirationDate, 10);
     } else {
       // Default to 2 weeks from now
-      whitelistItem.expirationDate = now + (14 * 24 * 60 * 60);
+      finalExpirationDate = now + (14 * 24 * 60 * 60);
     }
 
-    // Update if exists, otherwise create
-    await docClient.send(new PutCommand({
-      TableName: APPROVED_EMAILS_TABLE,
-      Item: whitelistItem,
-    }));
+    // Update if exists, otherwise create using Postgres service
+    await createOrUpdateApprovedEmail(emailLower, {
+      role: validatedRole,
+      expirationDate: finalExpirationDate,
+      approvedBy: adminUser.email,
+      approvedAt: now,
+    });
 
     // Log activity
     await logActivity('whitelist_user_added', adminUser.userId, getActivityLogEmail(adminUser.email, adminUser.isBackdoor), {
@@ -1091,30 +1026,22 @@ async function handleDeleteWhitelistUser(email: string, adminUser: any) {
     // Check if whitelist entry exists before trying to delete
     let whitelistExisted = false;
     try {
-      const whitelistCheck = await docClient.send(new GetCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower },
-      }));
-      whitelistExisted = !!whitelistCheck.Item;
+      const whitelistCheck = await getApprovedEmail(emailLower);
+      whitelistExisted = !!whitelistCheck;
     } catch (error) {
       console.error('Error checking whitelist entry:', error);
       // Continue - we'll still try to delete it
     }
 
-    // Remove from whitelist (this is idempotent - won't fail if item doesn't exist)
+    // Remove from whitelist using Postgres service (this is idempotent - won't fail if item doesn't exist)
     try {
       console.log('Attempting to delete whitelist entry for:', emailLower);
-      await docClient.send(new DeleteCommand({
-        TableName: APPROVED_EMAILS_TABLE,
-        Key: { email: emailLower },
-      }));
+      await deleteApprovedEmail(emailLower);
       console.log('Whitelist entry deleted successfully');
     } catch (error: any) {
       console.error('Error deleting whitelist entry:', error);
       console.error('Error type:', typeof error);
       console.error('Error message:', error?.message);
-      console.error('Error name:', error?.name);
-      console.error('Error code:', error?.code);
       // If the entry doesn't exist, that's fine - continue
       if (!whitelistExisted) {
         console.log('Whitelist entry did not exist, continuing...');
@@ -1125,19 +1052,14 @@ async function handleDeleteWhitelistUser(email: string, adminUser: any) {
       }
     }
 
-    // If user exists, deactivate them
+    // If user exists, deactivate them using Postgres service
     if (user) {
       try {
         const now = Math.floor(Date.now() / 1000);
-        await docClient.send(new UpdateCommand({
-          TableName: USERS_TABLE,
-          Key: { userId: user.userId },
-          UpdateExpression: 'SET isDeactivated = :true, deactivatedAt = :now, updatedAt = :now',
-          ExpressionAttributeValues: {
-            ':true': true,
-            ':now': now,
-          },
-        }));
+        await updateUser(user.userId, {
+          isDeactivated: true,
+          deactivatedAt: now,
+        });
 
         // Delete user sessions
         try {

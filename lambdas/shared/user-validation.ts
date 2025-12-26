@@ -4,28 +4,10 @@
  * Can be imported by multiple Lambda functions
  */
 
-// Note: These AWS SDK modules are available at build time from each lambda's node_modules
-// The linting errors here are false positives - the modules resolve correctly when building from within each lambda directory
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { getUserProfile, getUserProfileByEmail, UserProfile } from './user-service';
 
-// Initialize AWS clients
-const dynamoClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
-
-// Environment variables
-const USERS_TABLE = process.env.USERS_TABLE || 'mobile-users';
-
-export interface UserProfile {
-  userId: string;
-  email: string;
-  role: string;
-  expirationDate?: number;
-  isDeactivated?: boolean;
-  deactivatedAt?: number;
-  createdAt?: number;
-  updatedAt?: number;
-}
+// Re-export UserProfile type for backward compatibility
+export type { UserProfile };
 
 /**
  * Validate user expiration
@@ -97,16 +79,11 @@ export async function checkUserDeactivated(userId: string): Promise<boolean> {
  */
 export async function getUserProfileWithValidation(userId: string): Promise<UserProfile | null> {
   try {
-    const result = await docClient.send(new GetCommand({
-      TableName: USERS_TABLE,
-      Key: { userId }
-    }));
-
-    if (!result.Item) {
+    const user = await getUserProfile(userId);
+    
+    if (!user) {
       return null;
     }
-
-    const user = result.Item as UserProfile;
     
     // If user is deactivated, return null
     if (user.isDeactivated) {
@@ -120,55 +97,8 @@ export async function getUserProfileWithValidation(userId: string): Promise<User
   }
 }
 
-/**
- * Get user profile by userId
- * @param userId - User ID to fetch
- * @returns User profile or null if not found
- */
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  try {
-    const result = await docClient.send(new GetCommand({
-      TableName: USERS_TABLE,
-      Key: { userId }
-    }));
-
-    if (!result.Item) {
-      return null;
-    }
-
-    return result.Item as UserProfile;
-  } catch (error) {
-    console.error('Error getting user profile:', error);
-    return null;
-  }
-}
-
-/**
- * Get user profile by email
- * @param email - Email address to lookup
- * @returns User profile or null if not found
- */
-export async function getUserProfileByEmail(email: string): Promise<UserProfile | null> {
-  try {
-    const emailLower = email.toLowerCase();
-    const result = await docClient.send(new QueryCommand({
-      TableName: USERS_TABLE,
-      IndexName: 'email-index',
-      KeyConditionExpression: 'email = :email',
-      ExpressionAttributeValues: { ':email': emailLower },
-      Limit: 1
-    }));
-
-    if (!result.Items || result.Items.length === 0) {
-      return null;
-    }
-
-    return result.Items[0] as UserProfile;
-  } catch (error) {
-    console.error('Error getting user profile by email:', error);
-    return null;
-  }
-}
+// Re-export functions from user-service for backward compatibility
+export { getUserProfile, getUserProfileByEmail };
 
 /**
  * Validate role - only allow "basic" and "admin"
