@@ -102,7 +102,7 @@ export default function Home() {
       description: 'Access Sigma employee tools and resources. Available only for @sigmacomputing.com email addresses.',
       color: colors.tileColors.orange1,
       iconName: 'people-outline',
-      isActive: isSigmaEmployee,
+      isActive: true,
       onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
     },
     { 
@@ -302,30 +302,32 @@ export default function Home() {
           <Text style={styles.detailDescription}>{selectedTile.description}</Text>
 
           {/* Launch button */}
-          <TouchableOpacity
-            style={[
-              styles.launchButton,
-              { 
-                backgroundColor: selectedTile.isActive ? selectedTile.color : colors.border,
-                opacity: selectedTile.isActive ? 1 : 0.6,
-              },
-            ]}
-            onPress={handleLaunchPress}
-            disabled={!selectedTile.isActive}
-            activeOpacity={0.8}
-            accessibilityLabel={selectedTile.isActive ? `Launch ${selectedTile.title}` : 'Coming soon'}
-            accessibilityRole="button"
-          >
-            <Text style={[
-              styles.launchButtonText,
-              { color: selectedTile.isActive ? '#FFFFFF' : colors.textSecondary }
-            ]}>
-              {selectedTile.isActive ? 'Launch' : 'Coming Soon'}
-            </Text>
-            {selectedTile.isActive && (
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" style={styles.launchIcon} />
-            )}
-          </TouchableOpacity>
+          {selectedTile.id === 'sigmanauts' && !isSigmaEmployee ? null : (
+            <TouchableOpacity
+              style={[
+                styles.launchButton,
+                { 
+                  backgroundColor: selectedTile.isActive ? selectedTile.color : colors.border,
+                  opacity: selectedTile.isActive ? 1 : 0.6,
+                },
+              ]}
+              onPress={handleLaunchPress}
+              disabled={!selectedTile.isActive}
+              activeOpacity={0.8}
+              accessibilityLabel={selectedTile.isActive ? `Launch ${selectedTile.title}` : 'Coming soon'}
+              accessibilityRole="button"
+            >
+              <Text style={[
+                styles.launchButtonText,
+                { color: selectedTile.isActive ? '#FFFFFF' : colors.textSecondary }
+              ]}>
+                {selectedTile.isActive ? 'Launch' : 'Coming Soon'}
+              </Text>
+              {selectedTile.isActive && (
+                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" style={styles.launchIcon} />
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </Animated.View>
     );
@@ -377,7 +379,9 @@ export default function Home() {
                 accessibilityRole="button"
                 disabled={!!selectedTile}
               >
-                <View style={[styles.tile, { opacity: tile.isActive ? 1 : 0.4 }]}>
+                <View style={[styles.tile, { 
+                  opacity: (tile.id === 'sigmanauts' && !isSigmaEmployee) ? 0.4 : (tile.isActive ? 1 : 0.4)
+                }]}>
                   {/* Color accent bar */}
                   <View style={[styles.tileAccent, { backgroundColor: tile.color }]} />
                   
