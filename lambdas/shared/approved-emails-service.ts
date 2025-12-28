@@ -58,6 +58,9 @@ function rowToApprovedEmail(row: ApprovedEmailRow): ApprovedEmail {
  * Check if email is approved (not expired)
  * @param email - Email address to check
  * @returns true if approved and not expired, false otherwise
+ * 
+ * Note: Whitelist expiration only matters pre-registration.
+ * Once a user is registered, only the users table expiration matters.
  */
 export async function isEmailApproved(email: string): Promise<boolean> {
   try {
@@ -73,11 +76,17 @@ export async function isEmailApproved(email: string): Promise<boolean> {
 
     const approvedEmail = rowToApprovedEmail(result.rows[0]);
 
-    // Check if expiration date exists and has passed
+    // If user is registered, whitelist expiration no longer matters
+    // Only check expiration for pre-registration users
+    if (approvedEmail.registeredAt) {
+      return true; // Registered users are approved (users table expiration checked separately)
+    }
+
+    // For unregistered users, check whitelist expiration
     if (approvedEmail.expirationDate) {
       const now = Math.floor(Date.now() / 1000);
       if (now >= approvedEmail.expirationDate) {
-        return false; // Expired
+        return false; // Whitelist expired (pre-registration)
       }
     }
 

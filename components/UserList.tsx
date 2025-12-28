@@ -204,10 +204,20 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short',
     });
   };
 
-  const renderUserItem = ({ item }: { item: User }) => (
+  const isExpired = (expirationDate?: number): boolean => {
+    if (!expirationDate) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return now >= expirationDate;
+  };
+
+  const renderUserItem = ({ item }: { item: User }) => {
+    const expired = isExpired(item.expirationDate);
+    
+    return (
     <View style={styles.userItem}>
       <View style={styles.userInfo}>
         <Text style={styles.userEmail}>{item.email}</Text>
@@ -223,7 +233,10 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
           {item.isDeactivated && (
             <Text style={[styles.userMetaText, styles.deactivatedText]}>Deactivated</Text>
           )}
-          {item.expirationDate && (
+          {expired && (
+            <Text style={[styles.userMetaText, styles.expiredText]}>Expired</Text>
+          )}
+          {item.expirationDate && !expired && (
             <Text style={styles.userMetaText}>
               Expires: {formatDateTime(item.expirationDate)}
             </Text>
@@ -249,7 +262,8 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
         )}
       </View>
     </View>
-  );
+    );
+  };
 
   const getSortFieldLabel = (field: 'email' | 'createdAt' | 'lastActiveAt'): string => {
     switch (field) {
@@ -468,6 +482,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   deactivatedText: {
+    color: colors.error,
+    fontWeight: '600',
+  },
+  expiredText: {
     color: colors.error,
     fontWeight: '600',
   },

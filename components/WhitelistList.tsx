@@ -241,6 +241,7 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short',
     });
   };
 
@@ -343,17 +344,6 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
                 {item.approvedAt && (
                   <Text style={styles.whitelistMetaText}>
                     Whitelisted: {formatDateTime(item.approvedAt)}
-                  </Text>
-                )}
-                <Text style={[
-                  styles.whitelistMetaText,
-                  expired && styles.expiredText
-                ]}>
-                  Expires: {item.expirationDate ? formatDateTime(item.expirationDate) : 'No expiration'}
-                </Text>
-                {expired && (
-                  <Text style={[styles.whitelistMetaText, styles.expiredText]}>
-                    Expired
                   </Text>
                 )}
                 <Text style={styles.registeredText}>

@@ -168,6 +168,37 @@ function getIpAddress(event: any): string | undefined {
 }
 
 /**
+ * Check if user (by email) is expired or deactivated
+ * @param email - Email address to check
+ * @returns Object with blocked status, reason, and userId if blocked
+ */
+async function checkUserStatusByEmail(email: string): Promise<{ 
+  blocked: boolean; 
+  reason?: string; 
+  userId?: string 
+}> {
+  const user = await getUserProfileByEmail(email);
+  if (!user) {
+    return { blocked: false }; // New user, allow through
+  }
+  
+  // Check deactivation first
+  if (user.isDeactivated) {
+    return { blocked: true, reason: 'User is deactivated', userId: user.userId };
+  }
+  
+  // Check expiration
+  if (user.expirationDate) {
+    const now = Math.floor(Date.now() / 1000);
+    if (now >= user.expirationDate) {
+      return { blocked: true, reason: 'User account has expired', userId: user.userId };
+    }
+  }
+  
+  return { blocked: false, userId: user.userId };
+}
+
+/**
  * Handle email magic link request (self-service registration)
  */
 async function handleRequestMagicLink(body: any, event?: any) {
@@ -259,6 +290,33 @@ async function handleRequestMagicLink(body: any, event?: any) {
       return createResponse(403, { 
         error: 'Email not approved',
         message: 'This email is not approved for access. Please contact your administrator.'
+      });
+    }
+
+    // Check if user is expired or deactivated (before sending magic link)
+    console.log('[handleRequestMagicLink] Checking user status...');
+    const userStatusCheck = await checkUserStatusByEmail(emailLower);
+    if (userStatusCheck.blocked) {
+      console.log('[handleRequestMagicLink] User is blocked:', userStatusCheck.reason);
+      // Log failed login attempt
+      try {
+        const ipAddress = event ? getIpAddress(event) : undefined;
+        await logActivity('failed_login', userStatusCheck.userId || 'unknown', emailLower, {
+          reason: userStatusCheck.reason === 'User account has expired' ? 'Account expired' : 'User is deactivated',
+          sourceFlow: 'email'
+        }, undefined, ipAddress);
+      } catch (activityError) {
+        console.error('[handleRequestMagicLink] Failed to log activity:', activityError);
+      }
+      
+      // Return appropriate error message
+      const errorMessage = userStatusCheck.reason === 'User account has expired'
+        ? 'Your account has expired. Please contact your administrator.'
+        : 'Your account has been deactivated. Please contact your administrator.';
+      
+      return createResponse(403, {
+        error: userStatusCheck.reason === 'User account has expired' ? 'Account expired' : 'Account deactivated',
+        message: errorMessage
       });
     }
 
@@ -484,6 +542,33 @@ async function handleSendToMobile(body: any, event: any) {
     });
   }
 
+  // Check if user is expired or deactivated (before sending magic link)
+  console.log('[handleSendToMobile] Checking user status...');
+  const userStatusCheck = await checkUserStatusByEmail(emailLower);
+  if (userStatusCheck.blocked) {
+    console.log('[handleSendToMobile] User is blocked:', userStatusCheck.reason);
+    // Log failed login attempt
+    try {
+      const ipAddress = getIpAddress(event);
+      await logActivity('failed_login', userStatusCheck.userId || 'unknown', emailLower, {
+        reason: userStatusCheck.reason === 'User account has expired' ? 'Account expired' : 'User is deactivated',
+        sourceFlow: 'sms'
+      }, undefined, ipAddress);
+    } catch (activityError) {
+      console.error('[handleSendToMobile] Failed to log activity:', activityError);
+    }
+    
+    // Return appropriate error message
+    const errorMessage = userStatusCheck.reason === 'User account has expired'
+      ? 'Your account has expired. Please contact your administrator.'
+      : 'Your account has been deactivated. Please contact your administrator.';
+    
+    return createResponse(403, {
+      error: userStatusCheck.reason === 'User account has expired' ? 'Account expired' : 'Account deactivated',
+      message: errorMessage
+    });
+  }
+
   // Generate magic link token
   // Note: Don't create user profile here - only create after successful authentication
   const tokenId = `tok_ml_${randomBytes(16).toString('hex')}`;
@@ -638,24 +723,54 @@ async function handleVerifyMagicLink(body: any, event: any) {
   try {
     user = await getOrCreateUserProfile(tokenData.email, tokenData.metadata?.sourceFlow || 'email');
   } catch (error) {
-    // Handle whitelist validation errors - block registration
-    if (error instanceof Error && (
-      error.message.includes('not approved') || 
-      error.message.includes('not on the whitelist') ||
-      error.message.includes('expired') ||
-      error.message.includes('Unable to verify email approval')
-    )) {
+    // Handle different types of errors with appropriate responses
+    if (error instanceof Error) {
       const ipAddress = getIpAddress(event);
-      await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
-        reason: 'Registration blocked - not whitelisted',
-        sourceFlow: tokenData.metadata?.sourceFlow || 'unknown',
-        errorMessage: error.message
-      }, deviceId, ipAddress);
       
-      return createResponse(403, { 
-        error: 'Registration not allowed',
-        message: error.message || 'This email is not approved for access. Please contact your administrator.'
-      });
+      // User account expired or deactivated (corner case: admin changed expiration after magic link sent)
+      if (error.message.includes('User account has expired') || error.message.includes('User is deactivated')) {
+        // Try to get userId for logging
+        let userId = 'unknown';
+        try {
+          const existingUser = await getUserProfileByEmail(tokenData.email);
+          if (existingUser) {
+            userId = existingUser.userId;
+          }
+        } catch (e) {
+          // Ignore - we'll use 'unknown'
+        }
+        
+        await logActivity('failed_login', userId, tokenData.email || 'unknown', {
+          reason: error.message.includes('deactivated') ? 'User is deactivated' : 'Account expired',
+          sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
+        }, deviceId, ipAddress);
+        
+        const errorMessage = error.message.includes('deactivated')
+          ? 'Your account has been deactivated. Please contact your administrator.'
+          : 'Your account has expired. Please contact your administrator.';
+        
+        return createResponse(403, {
+          error: error.message.includes('deactivated') ? 'Account deactivated' : 'Account expired',
+          message: errorMessage
+        });
+      }
+      
+      // Whitelist validation errors - block registration
+      if (error.message.includes('not approved') || 
+          error.message.includes('not on the whitelist') ||
+          error.message.includes('Whitelist entry has expired') ||
+          error.message.includes('Unable to verify email approval')) {
+        await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+          reason: 'Registration blocked - not whitelisted',
+          sourceFlow: tokenData.metadata?.sourceFlow || 'unknown',
+          errorMessage: error.message
+        }, deviceId, ipAddress);
+        
+        return createResponse(403, { 
+          error: 'Registration not allowed',
+          message: error.message || 'This email is not approved for access. Please contact your administrator.'
+        });
+      }
     }
     // Re-throw other errors (shouldn't happen, but be safe)
     throw error;
@@ -951,6 +1066,39 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
     user = await getOrCreateUserProfile(emailLower, 'backdoor');
     console.log('[handleAuthenticateBackdoor] User profile retrieved/created:', { userId: user.userId, email: user.email, role: user.role });
   } catch (error) {
+    // Handle expiration/deactivation errors specifically
+    if (error instanceof Error && (
+      error.message.includes('User account has expired') || 
+      error.message.includes('User is deactivated')
+    )) {
+      // Try to get userId for logging
+      let userId = 'unknown';
+      try {
+        const existingUser = await getUserProfileByEmail(emailLower);
+        if (existingUser) {
+          userId = existingUser.userId;
+        }
+      } catch (e) {
+        // Ignore - we'll use 'unknown'
+      }
+      
+      const ipAddress = getIpAddress(event);
+      await logActivity('failed_login', userId, BACKDOOR_USER_DISPLAY, {
+        reason: error.message.includes('deactivated') ? 'User is deactivated' : 'Account expired',
+        sourceFlow: 'backdoor'
+      }, deviceId, ipAddress);
+      
+      const errorMessage = error.message.includes('deactivated')
+        ? 'Your account has been deactivated. Please contact your administrator.'
+        : 'Your account has expired. Please contact your administrator.';
+      
+      return createResponse(403, {
+        error: error.message.includes('deactivated') ? 'Account deactivated' : 'Account expired',
+        message: errorMessage
+      });
+    }
+    
+    // Handle other errors (whitelist, etc.)
     console.error('[handleAuthenticateBackdoor] ERROR getting/creating user profile:', error);
     console.error('[handleAuthenticateBackdoor] Error type:', typeof error);
     console.error('[handleAuthenticateBackdoor] Error message:', error instanceof Error ? error.message : String(error));
@@ -1107,43 +1255,28 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     // User exists, validate and return their profile
     const role = validateRole(existingUser.role) || 'basic';
     
+    // Check if user is expired BEFORE syncing from whitelist
+    // This catches the corner case where admin manually set expiration to past
+    // after user received magic link but before they clicked it
+    if (existingUser.isDeactivated) {
+      throw new Error('User is deactivated');
+    }
+    
+    if (existingUser.expirationDate) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now >= existingUser.expirationDate) {
+        throw new Error('User account has expired');
+      }
+    }
+    
     // Update registration method if not set
     if (!existingUser.registrationMethod) {
       await updateUser(existingUser.userId, { registrationMethod });
     }
     
-    // Sync expiration date from whitelist if user doesn't have one or whitelist has been updated
-    // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
-    if (!emailLower.endsWith('@sigmacomputing.com')) {
-      try {
-        const whitelistEmail = await getApprovedEmail(emailLower);
-
-        if (whitelistEmail && whitelistEmail.expirationDate) {
-          const whitelistExpiration = whitelistEmail.expirationDate;
-          const now = Math.floor(Date.now() / 1000);
-          
-          // Check if whitelist entry has expired
-          if (now >= whitelistExpiration) {
-            throw new Error('Whitelist entry has expired');
-          }
-          
-          // Update user expiration date if:
-          // 1. User doesn't have an expiration date, OR
-          // 2. Whitelist expiration is different from user expiration
-          if (!existingUser.expirationDate || existingUser.expirationDate !== whitelistExpiration) {
-            await updateUser(existingUser.userId, { expirationDate: whitelistExpiration });
-            console.log(`Synced expiration date for existing user ${existingUser.userId} from whitelist: ${whitelistExpiration}`);
-          }
-        } else if (whitelistEmail && !whitelistEmail.expirationDate && existingUser.expirationDate) {
-          // If whitelist has no expiration but user has one, remove user expiration
-          await updateUser(existingUser.userId, { expirationDate: null });
-          console.log(`Removed expiration date for existing user ${existingUser.userId} (whitelist has no expiration)`);
-        }
-      } catch (error) {
-        console.error('Error syncing expiration date from whitelist:', error);
-        // Continue even if sync fails - don't block login
-      }
-    }
+    // Note: Whitelist expiration is only used pre-registration.
+    // Once user is registered, only the users table expiration matters.
+    // No sync logic needed here - user expiration is authoritative post-registration.
     
     return {
       userId: existingUser.userId,
