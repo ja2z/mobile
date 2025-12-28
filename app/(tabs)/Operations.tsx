@@ -211,6 +211,8 @@ export default function Operations() {
         <DashboardView 
           ref={dashboardRef}
           workbookId={Config.WORKBOOKS.OPERATIONS}
+          appletId={appletId}
+          appletName={appletName || 'Operations'}
           initialPageId="qxcXRVDVVX"
         />
       </View>

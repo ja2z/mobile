@@ -57,6 +57,7 @@ export default function Sigmanauts() {
    */
   const handleNavigateToAskJAKE = useCallback(() => {
     navigation.navigate('AskJAKE' as never, { 
+      appletId: '10', 
       appletName: 'Ask J.A.K.E.' 
     } as never);
   }, [navigation]);

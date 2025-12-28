@@ -77,6 +77,7 @@ export default function AI() {
    */
   const handleNavigateToAskBigBuys = useCallback(() => {
     navigation.navigate('AskBigBuys' as never, { 
+      appletId: '9', 
       appletName: 'Ask Big Buys' 
     } as never);
   }, [navigation]);
