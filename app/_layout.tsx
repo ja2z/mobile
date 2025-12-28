@@ -25,6 +25,7 @@ import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
 import Sigmanauts from './(tabs)/Sigmanauts';
 import AskJAKE from './(tabs)/AskJAKE';
 import AskBigBuys from './(tabs)/AskBigBuys';
+import BBMUsage from './(tabs)/BBMUsage';
 import AI from './(tabs)/AI';
 import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
@@ -56,6 +57,7 @@ export type RootStackParamList = {
   Sigmanauts: undefined;
   AskJAKE: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   AskBigBuys: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  BBMUsage: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   AI: undefined;
   Dashboards: undefined;
   Apps: undefined;
@@ -705,6 +707,25 @@ export default function RootLayout() {
           component={AskBigBuys}
           options={{
             title: 'Ask Big Buys',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen 
+          name="BBMUsage" 
+          component={BBMUsage}
+          options={{
+            title: 'BBM Usage',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,

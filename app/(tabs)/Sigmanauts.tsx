@@ -62,6 +62,16 @@ export default function Sigmanauts() {
     } as never);
   }, [navigation]);
 
+  /**
+   * Handle BBM Usage applet press
+   */
+  const handleNavigateToBBMUsage = useCallback(() => {
+    navigation.navigate('BBMUsage' as never, { 
+      appletId: '11', 
+      appletName: 'BBM Usage' 
+    } as never);
+  }, [navigation]);
+
   // Canned applets for Sigmanauts
   const applets: CannedApplet[] = [
     {
@@ -79,6 +89,14 @@ export default function Sigmanauts() {
       iconName: 'chatbubbles-outline',
       color: colors.tileColors.orange1,
       onPress: handleNavigateToAskJAKE,
+    },
+    {
+      id: '11',
+      title: 'BBM Usage',
+      subtitle: 'Usage Analytics',
+      iconName: 'bar-chart-outline',
+      color: colors.tileColors.orange1,
+      onPress: handleNavigateToBBMUsage,
     },
   ];
 

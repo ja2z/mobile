@@ -143,6 +143,13 @@ const SIGMA_APPLET_CONFIG: Record<string, AppletJWTConfig> = {
     // Note: Ask J.A.K.E. and GTM both use sigma-on-sigma org config with no applet-specific overrides
     // They follow the exact same pattern - no explicit config entry needed (uses org defaults)
     
+    // BBM Usage applet - only needs all_clients_team, no user_attributes
+    '11': {  // appletId
+        teams: ["all_clients_team"],
+        user_attributes: null,  // Explicitly exclude
+        account_type: "Creator"  // Keep from org config
+    },
+    
     // Future example: Another applet that needs different teams
     // '7': {
     //     teams: ["special_team"],

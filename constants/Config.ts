@@ -23,6 +23,7 @@ export const Config = {
     AI_CHAT: 'chat-element-1zDqvtcRb2dDYpguvuqDNc',
     OPERATIONS: '285cUkL2a6T21lfRQk4brT',
     GTM_OPERATIONS: 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB',
+    BBM_USAGE: '78NllSMKt7BnpeWpAIQgqC',
   },
   
   // Navigation configuration
