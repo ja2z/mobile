@@ -384,13 +384,27 @@ async function saveSecret(userId: string, secretName: string, clientId: string, 
 
 /**
  * Test embed URL by making a HEAD request
+ * Note: When Lambda is in VPC, this requires NAT Gateway for internet access
  */
 async function testEmbedUrl(url: string): Promise<{ success: boolean, statusCode: number, message: string }> {
+    // Use a 5-second timeout to fail fast if there's a network issue
+    const TIMEOUT_MS = 5000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
     try {
+        console.log(`[testEmbedUrl] Testing URL: ${url}`);
+        const startTime = Date.now();
+        
         const response = await fetch(url, {
             method: 'HEAD',
             redirect: 'follow',
+            signal: controller.signal,
         });
+        
+        clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
+        console.log(`[testEmbedUrl] Request completed in ${duration}ms, status: ${response.status}`);
         
         if (response.ok) {
             return {
@@ -406,10 +420,21 @@ async function testEmbedUrl(url: string): Promise<{ success: boolean, statusCode
             };
         }
     } catch (error: any) {
+        clearTimeout(timeoutId);
+        const errorMessage = error.name === 'AbortError' 
+            ? `Request timeout after ${TIMEOUT_MS}ms. The Lambda may not have internet access via NAT Gateway, or the server is slow/unavailable.`
+            : `Network error: ${error.message}`;
+        
+        console.error(`[testEmbedUrl] Error testing URL: ${errorMessage}`, {
+            errorName: error.name,
+            errorMessage: error.message,
+            url: url
+        });
+        
         return {
             success: false,
             statusCode: 0,
-            message: `Network error: ${error.message}`
+            message: errorMessage
         };
     }
 }
