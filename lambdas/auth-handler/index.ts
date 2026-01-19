@@ -77,6 +77,11 @@ export const handler = async (event: any) => {
       console.log('[handler] Parsing request body, body type:', typeof event.body);
       try {
         body = JSON.parse(event.body);
+        // Handle double-encoded JSON (body is a JSON string containing another JSON string)
+        if (typeof body === 'string') {
+          console.log('[handler] Body is still a string after first parse, parsing again...');
+          body = JSON.parse(body);
+        }
         console.log('[handler] Parsed body:', JSON.stringify(body));
       } catch (parseError) {
         console.error('[handler] Error parsing body:', parseError);
@@ -471,7 +476,7 @@ async function handleRequestMagicLink(body: any, event?: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, app, linkType = 'universal', emailhash, pageId, variables } = body;
+  const { email, app, linkType = 'universal', emailhash, pageId, variables, message } = body;
 
   // Get API key from header (API Gateway may lowercase headers)
   const headers = event.headers || {};
@@ -647,7 +652,7 @@ async function handleSendToMobile(body: any, event: any) {
   // Log magic link for debugging
   console.log(`Generated magic link for SMS: ${magicLink} (tokenId: ${tokenId}, phoneNumber: ${phoneNumber})`);
   
-  await sendMagicLinkSMS(phoneNumber, magicLink);
+  await sendMagicLinkSMS(phoneNumber, magicLink, message);
 
   return createResponse(200, {
     success: true,
@@ -1782,8 +1787,13 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
 /**
  * Send magic link via SMS using Telnyx API
  */
-async function sendMagicLinkSMS(phoneNumber: string, magicLink: string): Promise<void> {
-  const message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
+async function sendMagicLinkSMS(phoneNumber: string, magicLink: string, customMessage?: string): Promise<void> {
+  let message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
+  
+  // If a custom message is provided, prepend it to the SMS
+  if (customMessage) {
+    message = `${customMessage}\n\n${message}`;
+  }
 
   try {
     // Get Telnyx API key from Secrets Manager
