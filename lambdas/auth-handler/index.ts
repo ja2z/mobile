@@ -471,7 +471,7 @@ async function handleRequestMagicLink(body: any, event?: any) {
  * Handle SMS magic link request (desktop-to-mobile handoff)
  */
 async function handleSendToMobile(body: any, event: any) {
-  const { email, phoneNumber, app, linkType = 'universal', emailhash, pageId, variables } = body;
+  const { email, app, linkType = 'universal', emailhash, pageId, variables } = body;
 
   // Get API key from header (API Gateway may lowercase headers)
   const headers = event.headers || {};
@@ -495,8 +495,8 @@ async function handleSendToMobile(body: any, event: any) {
   }
 
   // Validate input
-  if (!email || !phoneNumber) {
-    return createResponse(400, { error: 'Email and phone number are required' });
+  if (!email) {
+    return createResponse(400, { error: 'Email is required' });
   }
 
   // Validate email hash (required for security)
@@ -519,12 +519,8 @@ async function handleSendToMobile(body: any, event: any) {
       message: 'The email signature is invalid. This request may have been tampered with.'
     });
   }
-  
-  console.log(`Email hash verified successfully for email: ${email}`);
 
-  if (!isValidPhoneNumber(phoneNumber)) {
-    return createResponse(400, { error: 'Invalid phone number format. Use E.164 format (e.g., +14155551234)' });
-  }
+  console.log(`Email hash verified successfully for email: ${email}`);
 
   // Validate linkType
   if (linkType !== 'direct' && linkType !== 'universal') {
@@ -566,6 +562,30 @@ async function handleSendToMobile(body: any, event: any) {
     return createResponse(403, {
       error: userStatusCheck.reason === 'User account has expired' ? 'Account expired' : 'Account deactivated',
       message: errorMessage
+    });
+  }
+
+  // Get user profile to retrieve phone number from database
+  console.log('[handleSendToMobile] Retrieving user profile to get phone number...');
+  const user = await getUserProfileByEmail(emailLower);
+  
+  // Check if user has a verified phone number
+  if (!user || !user.phoneNumber) {
+    console.log('[handleSendToMobile] User does not have a verified phone number');
+    return createResponse(400, {
+      error: 'Phone number not verified',
+      message: 'You must verify your phone number before using the send-to-mobile feature. Please verify your phone number first.'
+    });
+  }
+
+  const phoneNumber = user.phoneNumber;
+
+  // Validate phone number format (safety check for data integrity)
+  if (!isValidPhoneNumber(phoneNumber)) {
+    console.error(`[handleSendToMobile] Invalid phone number format in database for user ${emailLower}: ${phoneNumber}`);
+    return createResponse(500, {
+      error: 'Invalid phone number format',
+      message: 'The phone number on file is in an invalid format. Please contact support.'
     });
   }
 
