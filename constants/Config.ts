@@ -23,6 +23,7 @@ export const Config = {
     AI_CHAT: 'chat-element-1zDqvtcRb2dDYpguvuqDNc',
     OPERATIONS: '4dc63DnExwkJ9SsAzHJWBt',
     GTM_OPERATIONS: 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB',
+    ASK_JAKE: '11NZoe57oPmsH1LAk0L9YX',
     BBM_USAGE: '78NllSMKt7BnpeWpAIQgqC',
   },
   

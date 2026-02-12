@@ -7,6 +7,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
+import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
 
@@ -15,7 +16,7 @@ type AskJAKEScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AskJ
 
 /**
  * Ask J.A.K.E. Page Component
- * Displays the Ask J.A.K.E. AI assistant
+ * Displays the Ask J.A.K.E. workbook
  */
 export default function AskJAKE() {
   const route = useRoute<AskJAKERouteProp>();
@@ -47,11 +48,12 @@ export default function AskJAKE() {
       <View style={styles.content}>
         <DashboardView 
           ref={dashboardRef}
+          workbookId={Config.WORKBOOKS.ASK_JAKE}
           appletId={appletId}
           appletName={appletName || 'Ask J.A.K.E.'}
           initialPageId={pageId}
           initialVariables={variables}
-          embedPath="sigma-on-sigma/ask"
+          embedPath="sigma-on-sigma/workbook"
         />
       </View>
       <EmbedUrlInfoModal
