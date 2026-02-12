@@ -25,13 +25,43 @@ type OperationsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'O
 export default function Operations() {
   const route = useRoute<OperationsRouteProp>();
   const navigation = useNavigation<OperationsScreenNavigationProp>();
-  const { appletId, appletName } = route.params || {};
+  const { appletId, appletName, pageId, variables } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
   
+  // Log route params for debugging
+  useEffect(() => {
+    console.log('📱 ===== OPERATIONS SCREEN =====');
+    console.log('📱 Route params:', JSON.stringify(route.params, null, 2));
+    console.log('📱 Extracted values:');
+    console.log('📱   appletId:', appletId);
+    console.log('📱   appletName:', appletName);
+    console.log('📱   pageId:', pageId);
+    console.log('📱   variables:', JSON.stringify(variables, null, 2));
+    console.log('📱 Passing to DashboardView:');
+    console.log('📱   initialPageId:', pageId);
+    console.log('📱   initialVariables:', JSON.stringify(variables, null, 2));
+    console.log('📱 ===== END OPERATIONS SCREEN =====');
+  }, [route.params, appletId, appletName, pageId, variables]);
+  
+  // Define pages for navigation bar (matching OperationsNavigationBar)
+  const pages = [
+    { id: 'qxcXRVDVVX', name: 'Analytics', icon: 'analytics-outline' as const },
+    { id: 'Jc8Oqr9HNj', name: 'Transfer', icon: 'swap-horizontal-outline' as const },
+    { id: 'hkCtcLBQ0N', name: 'Filters', icon: 'options-outline' as const },
+  ];
+  
+  // Determine initial selected page: use pageId from deep link if it exists in pages array, otherwise default
+  const getInitialSelectedPage = () => {
+    if (pageId && pages.some(p => p.id === pageId)) {
+      return pageId;
+    }
+    return 'qxcXRVDVVX'; // Default to 'Analytics'
+  };
+  
   // Navigation state
-  const [selectedPage, setSelectedPage] = useState('qxcXRVDVVX'); // Default to 'Analytics' (new page ID)
+  const [selectedPage, setSelectedPage] = useState(getInitialSelectedPage());
   const [isFilterActive, setIsFilterActive] = useState(false);
-  const [previousPage, setPreviousPage] = useState('qxcXRVDVVX');
+  const [previousPage, setPreviousPage] = useState(getInitialSelectedPage());
   const [workbookLoaded, setWorkbookLoaded] = useState(false);
   
   // Inventory verification modal state
@@ -213,7 +243,8 @@ export default function Operations() {
           workbookId={Config.WORKBOOKS.OPERATIONS}
           appletId={appletId}
           appletName={appletName || 'Operations'}
-          initialPageId="qxcXRVDVVX"
+          initialPageId={pageId}
+          initialVariables={variables}
         />
       </View>
       {workbookLoaded && (

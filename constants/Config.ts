@@ -21,7 +21,7 @@ export const Config = {
     AI_NEWSLETTER: '70xl8hMTdNeqN75p4i4dSG',
     CONVERSATIONAL_AI: '5vuwQqluzlA5gmq9A82vt7',
     AI_CHAT: 'chat-element-1zDqvtcRb2dDYpguvuqDNc',
-    OPERATIONS: '285cUkL2a6T21lfRQk4brT',
+    OPERATIONS: '4dc63DnExwkJ9SsAzHJWBt',
     GTM_OPERATIONS: 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB',
     BBM_USAGE: '78NllSMKt7BnpeWpAIQgqC',
   },
