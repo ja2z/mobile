@@ -15,18 +15,6 @@ export const Config = {
   // App configuration
   APP_NAME: 'Big Buys Mobile',
   
-  // Workbook IDs
-  WORKBOOKS: {
-    AOP_EXEC_DASHBOARD: '6vzpQFMQkEiBIbnybiwrH3',
-    AI_NEWSLETTER: '70xl8hMTdNeqN75p4i4dSG',
-    CONVERSATIONAL_AI: '5vuwQqluzlA5gmq9A82vt7',
-    AI_CHAT: 'chat-element-1zDqvtcRb2dDYpguvuqDNc',
-    OPERATIONS: '4dc63DnExwkJ9SsAzHJWBt',
-    GTM_OPERATIONS: 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB',
-    ASK_JAKE: '11NZoe57oPmsH1LAk0L9YX',
-    BBM_USAGE: '78NllSMKt7BnpeWpAIQgqC',
-  },
-  
   // Navigation configuration
   NAVIGATION: {
     HEADER_HEIGHT: 60,
