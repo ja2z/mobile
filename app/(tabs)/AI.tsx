@@ -1,166 +1,114 @@
-import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
 import type { RootStackParamList } from '../_layout';
 
 type AIScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AI'>;
 
-interface CannedApplet {
-  id: string;
-  title: string;
-  subtitle: string;
-  iconName: keyof typeof Ionicons.glyphMap;
-  color: string;
-  onPress: () => void;
-}
+const LIST_SCREEN = 'AI';
+const SPINNER_DELAY_MS = 200;
 
 /**
  * AI Page Component
- * Displays AI-related applets in a grid layout
+ * Displays AI-related applets in a grid layout (fetched from API)
  */
 export default function AI() {
   const navigation = useNavigation<AIScreenNavigationProp>();
+  const [applets, setApplets] = useState<BuiltInApplet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showSpinner, setShowSpinner] = useState(false);
+  const spinnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /**
-   * Handle home button press
-   * Uses goBack() to animate in the opposite direction (back animation)
-   */
+  useEffect(() => {
+    spinnerTimeoutRef.current = setTimeout(() => {
+      setShowSpinner(true);
+    }, SPINNER_DELAY_MS);
+
+    return () => {
+      if (spinnerTimeoutRef.current) clearTimeout(spinnerTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    listBuiltInApplets()
+      .then((all) => setApplets(all.filter((a) => a.list_screen === LIST_SCREEN)))
+      .catch((err) => console.error('Failed to fetch applets:', err))
+      .finally(() => setLoading(false));
+  }, []);
+
   const handleHomePress = useCallback(() => {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      // Fallback: navigate to Home if we can't go back
       navigation.navigate('Home' as never);
     }
   }, [navigation]);
 
-  // Set up navigation header with Home button and consistent styling
   useAppletHeader(navigation, handleHomePress);
 
-  /**
-   * Handle AI Chat applet press
-   */
-  const handleNavigateToAIChat = useCallback(() => {
-    navigation.navigate('AIChat' as never, { 
-      appletId: '6', 
-      appletName: 'AI Chat' 
-    } as never);
-  }, [navigation]);
-
-  /**
-   * Handle AI Query applet press
-   */
-  const handleNavigateToConversationalAI = useCallback(() => {
-    navigation.navigate('ConversationalAI' as never, { 
-      appletId: '5', 
-      appletName: 'AI Query' 
-    } as never);
-  }, [navigation]);
-
-  /**
-   * Handle AI Newsletter applet press
-   */
-  const handleNavigateToAINewsletter = useCallback(() => {
-    navigation.navigate('AINewsletter' as never, { 
-      appletId: '3', 
-      appletName: 'AI Newsletter' 
-    } as never);
-  }, [navigation]);
-
-  /**
-   * Handle Ask Big Buys applet press
-   */
-  const handleNavigateToAskBigBuys = useCallback(() => {
-    navigation.navigate('AskBigBuys' as never, { 
-      appletId: '9', 
-      appletName: 'Ask Big Buys' 
-    } as never);
-  }, [navigation]);
-
-  // AI applets
-  const applets: CannedApplet[] = [
-    {
-      id: 'ask-big-buys',
-      title: 'Ask Big Buys',
-      subtitle: 'Ask Sigma',
-      iconName: 'chatbubbles-outline',
-      color: colors.tileColors.orange1,
-      onPress: handleNavigateToAskBigBuys,
+  const navigateToApplet = useCallback(
+    (applet: BuiltInApplet) => {
+      const params = {
+        appletId: applet.applet_id,
+        appletName: applet.name,
+        workbookId: applet.workbook_id ?? undefined,
+        slug: applet.slug,
+        embedPath: applet.embed_path,
+        name: applet.name,
+      };
+      const screen = applet.target_screen === 'conversationalai' ? 'ConversationalAI' : applet.target_screen;
+      navigation.navigate(screen as keyof RootStackParamList, params as never);
     },
-    {
-      id: '6',
-      title: 'AI Chat',
-      subtitle: 'Chat Element',
-      iconName: 'chatbubbles-outline',
-      color: colors.tileColors.orange1,
-      onPress: handleNavigateToAIChat,
-    },
-    {
-      id: '5',
-      title: 'AI Query',
-      subtitle: 'AI Assistant',
-      iconName: 'chatbubbles-outline',
-      color: colors.tileColors.orange1,
-      onPress: handleNavigateToConversationalAI,
-    },
-    {
-      id: '3',
-      title: 'AI Newsletter',
-      subtitle: 'Content',
-      iconName: 'sparkles-outline',
-      color: colors.tileColors.orange1,
-      onPress: handleNavigateToAINewsletter,
-    },
-  ];
+    [navigation]
+  );
 
-  /**
-   * Render applet tile
-   */
-  const renderAppletTile = (applet: CannedApplet) => {
-    return (
-      <TouchableOpacity
-        key={applet.id}
-        style={styles.tileButton}
-        onPress={applet.onPress}
-        activeOpacity={0.7}
-        accessibilityLabel={`${applet.title} - ${applet.subtitle}`}
-        accessibilityRole="button"
-      >
-        <View style={styles.tile}>
-          {/* Color accent bar */}
-          <View style={[styles.tileAccent, { backgroundColor: applet.color }]} />
-          
-          {/* Tile content */}
-          <View style={styles.tileContent}>
-            {/* Icon */}
-            <View style={[styles.iconContainer, { backgroundColor: applet.color + '20' }]}>
-              <Ionicons name={applet.iconName} size={24} color={applet.color} />
-            </View>
-
-            {/* Text content */}
-            <View style={styles.tileTextContainer}>
-              <Text style={styles.tileTitle} numberOfLines={2}>
-                {applet.title}
-              </Text>
-              <Text style={styles.tileSubtitle} numberOfLines={1}>
-                {applet.subtitle}
-              </Text>
-            </View>
+  const renderAppletTile = (applet: BuiltInApplet) => (
+    <TouchableOpacity
+      key={applet.applet_id}
+      style={styles.tileButton}
+      onPress={() => navigateToApplet(applet)}
+      activeOpacity={0.7}
+      accessibilityLabel={`${applet.name} - ${applet.subtitle || ''}`}
+      accessibilityRole="button"
+    >
+      <View style={styles.tile}>
+        <View style={[styles.tileAccent, { backgroundColor: applet.color || colors.tileColors.orange1 }]} />
+        <View style={styles.tileContent}>
+          <View style={[styles.iconContainer, { backgroundColor: (applet.color || colors.tileColors.orange1) + '20' }]}>
+            <Ionicons name={(applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline'} size={24} color={applet.color || colors.tileColors.orange1} />
+          </View>
+          <View style={styles.tileTextContainer}>
+            <Text style={styles.tileTitle} numberOfLines={2}>
+              {applet.name}
+            </Text>
+            <Text style={styles.tileSubtitle} numberOfLines={1}>
+              {applet.subtitle || ''}
+            </Text>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (loading && showSpinner) {
+    return (
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
     );
-  };
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <StatusBar barStyle="light-content" />
-      
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -178,6 +126,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollView: {
     flex: 1,
@@ -234,4 +187,3 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
-

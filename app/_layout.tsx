@@ -9,11 +9,9 @@ import Login from './(tabs)/Login';
 import ExpiredLink from './(tabs)/ExpiredLink';
 import Home from './(tabs)/Home';
 import Dashboard from './(tabs)/Dashboard';
-import AINewsletter from './(tabs)/AINewsletter';
 import ConversationalAI from './(tabs)/ConversationalAI';
-import AIChat from './(tabs)/AIChat';
 import Operations from './(tabs)/Operations';
-import GTM from './(tabs)/GTM';
+import GenericAppletView from './(tabs)/GenericAppletView';
 import Admin from './(tabs)/Admin';
 import ActivityLog from './(tabs)/ActivityLog';
 import EditUser from './(tabs)/EditUser';
@@ -23,9 +21,6 @@ import AddMyBuysApplet from './(tabs)/AddMyBuysApplet';
 import EditMyBuysApplet from './(tabs)/EditMyBuysApplet';
 import ViewMyBuysApplet from './(tabs)/ViewMyBuysApplet';
 import Sigmanauts from './(tabs)/Sigmanauts';
-import AskJAKE from './(tabs)/AskJAKE';
-import AskBigBuys from './(tabs)/AskBigBuys';
-import BBMUsage from './(tabs)/BBMUsage';
 import AI from './(tabs)/AI';
 import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
@@ -34,18 +29,17 @@ import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
+import { listBuiltInApplets } from '../services/BuiltInAppletsService';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
   Login: undefined;
   ExpiredLink: { email?: string; errorType?: 'expired' | 'invalid' | 'used' };
   Home: undefined;
-  Dashboard: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  AINewsletter: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  ConversationalAI: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  AIChat: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  Operations: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  GTM: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
+  Dashboard: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
+  ConversationalAI: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
+  Operations: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
+  GenericAppletView: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
   Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
@@ -55,9 +49,6 @@ export type RootStackParamList = {
   EditMyBuysApplet: { appletId: string };
   ViewMyBuysApplet: { appletId: string };
   Sigmanauts: undefined;
-  AskJAKE: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  AskBigBuys: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
-  BBMUsage: { appletId?: string; appletName?: string; pageId?: string; variables?: Record<string, string> };
   AI: undefined;
   Dashboards: undefined;
   Apps: undefined;
@@ -225,21 +216,53 @@ export default function RootLayout() {
           console.log('✅ Authentication successful!', { email: session.user.email });
           
           // Map app name to screen name
-          // Valid app names: "dashboard", "ainewsletter", "conversationalai", "operations" (case-insensitive)
-          // Default to "Home" if no app specified or invalid app name
+          // Try to fetch from API and find applet by app_name (case-insensitive)
           let targetScreen: 'Home' | DeepLinkableScreen = 'Home';
+          let screenParams: Record<string, unknown> = {};
+          
           if (app) {
-            const appLower = app.toLowerCase();
-            if (appLower === 'dashboard') {
-              targetScreen = 'Dashboard';
-            } else if (appLower === 'ainewsletter' || appLower === 'ai-newsletter') {
-              targetScreen = 'AINewsletter';
-            } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
-              targetScreen = 'ConversationalAI';
-            } else if (appLower === 'operations') {
-              targetScreen = 'Operations';
-            } else {
-              console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+            try {
+              const applets = await listBuiltInApplets();
+              const appNormalized = app.toLowerCase().replace(/-/g, '');
+              const applet = applets.find(
+                (a) => a.app_name && a.app_name.toLowerCase().replace(/-/g, '') === appNormalized
+              );
+              
+              if (applet) {
+                const ts = applet.target_screen;
+                targetScreen = (ts === 'conversationalai' ? 'ConversationalAI' : ts) as DeepLinkableScreen;
+                screenParams = {
+                  appletId: applet.applet_id,
+                  appletName: applet.name,
+                  workbookId: applet.workbook_id ?? undefined,
+                  slug: applet.slug,
+                  embedPath: applet.embed_path,
+                  name: applet.name,
+                  pageId,
+                  variables,
+                };
+              } else {
+                // Fallback to hardcoded app-to-screen mapping
+                const appLower = app.toLowerCase();
+                if (appLower === 'dashboard') {
+                  targetScreen = 'Dashboard';
+                } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
+                  targetScreen = 'ConversationalAI';
+                } else if (appLower === 'operations') {
+                  targetScreen = 'Operations';
+                } else {
+                  console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+                }
+                if (pageId) screenParams.pageId = pageId;
+                if (variables) screenParams.variables = variables;
+              }
+            } catch (fetchError) {
+              console.error('Failed to fetch applets for deep link:', fetchError);
+              Toast.show({
+                type: 'error',
+                text1: 'Failed to load app',
+                text2: 'Navigating to Home',
+              });
             }
           }
           
@@ -249,13 +272,6 @@ export default function RootLayout() {
           
           // Store deep link params for navigation once container is ready
           if (targetScreen !== 'Home') {
-            const screenParams: { pageId?: string; variables?: Record<string, string> } = {};
-            if (pageId) {
-              screenParams.pageId = pageId;
-            }
-            if (variables) {
-              screenParams.variables = variables;
-            }
             setPendingDeepLinkNav({
               screen: targetScreen,
               params: screenParams,
@@ -517,48 +533,10 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen 
-          name="AINewsletter" 
-          component={AINewsletter}
-          options={{
-            title: 'AI Newsletter',
-            headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 0,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen 
           name="ConversationalAI" 
           component={ConversationalAI}
           options={{
             title: 'AI Query',
-            headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 0,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen 
-          name="AIChat" 
-          component={AIChat}
-          options={{
-            title: 'AI Chat',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,
@@ -582,10 +560,10 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen 
-          name="GTM" 
-          component={GTM}
-          options={{
-            title: 'GTM',
+          name="GenericAppletView" 
+          component={GenericAppletView}
+          options={({ route }) => ({
+            title: (route.params as { name?: string })?.name || 'Applet',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,
@@ -598,7 +576,7 @@ export default function RootLayout() {
               fontWeight: 'bold',
             },
             headerTransparent: false,
-          }}
+          })}
         />
         <Stack.Screen 
           name="Admin" 
@@ -669,63 +647,6 @@ export default function RootLayout() {
           component={Sigmanauts}
           options={{
             title: 'Sigmanauts',
-            headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 0,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen 
-          name="AskJAKE" 
-          component={AskJAKE}
-          options={{
-            title: 'Ask J.A.K.E.',
-            headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 0,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen 
-          name="AskBigBuys" 
-          component={AskBigBuys}
-          options={{
-            title: 'Ask Big Buys',
-            headerShown: true,
-            headerStyle: {
-              backgroundColor: colors.primary,
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 0,
-            },
-            headerTintColor: '#FFFFFF',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen 
-          name="BBMUsage" 
-          component={BBMUsage}
-          options={{
-            title: 'BBM Usage',
             headerShown: true,
             headerStyle: {
               backgroundColor: colors.primary,

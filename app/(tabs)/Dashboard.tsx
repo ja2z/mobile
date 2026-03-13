@@ -8,7 +8,6 @@ import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
-import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
 
@@ -22,7 +21,9 @@ type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Da
 export default function Dashboard() {
   const route = useRoute<DashboardRouteProp>();
   const navigation = useNavigation<DashboardScreenNavigationProp>();
-  const { appletId, appletName, pageId, variables } = route.params || {};
+  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables } = route.params || {};
+  const fullEmbedPath = slug && embedPath ? `${slug}/${embedPath}` : 'papercrane-embedding-gcp/workbook';
+  const resolvedWorkbookId = workbookId || '6vzpQFMQkEiBIbnybiwrH3';
   const dashboardRef = useRef<DashboardViewRef>(null);
   
   // Log route params for debugging
@@ -80,12 +81,12 @@ export default function Dashboard() {
   // Set up navigation header with Home button and consistent styling
   useAppletHeader(navigation, handleHomePress);
 
-  // Set header title dynamically from appletName
+  // Set header title dynamically from appletName or name
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: appletName || 'Dashboard', // Use appletName if provided, otherwise default to 'Dashboard'
+      title: appletName || name || 'Dashboard',
     });
-  }, [navigation, appletName]);
+  }, [navigation, appletName, name]);
 
   /**
    * Handle page selection from navigation bar
@@ -153,11 +154,12 @@ export default function Dashboard() {
       <View style={styles.content}>
         <DashboardView 
           ref={dashboardRef}
-          workbookId={Config.WORKBOOKS.AOP_EXEC_DASHBOARD}
+          workbookId={resolvedWorkbookId}
           appletId={appletId}
-          appletName={appletName}
+          appletName={appletName || name}
           initialPageId={pageId}
           initialVariables={variables}
+          embedPath={fullEmbedPath}
         />
       </View>
       {workbookLoaded && (

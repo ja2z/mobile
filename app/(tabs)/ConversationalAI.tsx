@@ -9,7 +9,6 @@ import { DashboardView, DashboardViewRef } from '../../components/DashboardView'
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { ChatModal, ChatModalRef } from '../../components/ChatModal';
 import { NavigationBar } from '../../components/NavigationBar';
-import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
 import { ChatMessage } from '../../types/chat.types';
@@ -24,7 +23,9 @@ type ConversationalAIScreenNavigationProp = StackNavigationProp<RootStackParamLi
 export default function ConversationalAI() {
   const route = useRoute<ConversationalAIRouteProp>();
   const navigation = useNavigation<ConversationalAIScreenNavigationProp>();
-  const { appletId, appletName, pageId, variables } = route.params || {};
+  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables } = route.params || {};
+  const fullEmbedPath = slug && embedPath ? `${slug}/${embedPath}` : 'papercrane-embedding-gcp/workbook';
+  const resolvedWorkbookId = workbookId || '5vuwQqluzlA5gmq9A82vt7';
   const dashboardRef = useRef<DashboardViewRef>(null);
   const chatModalRef = useRef<ChatModalRef>(null);
   
@@ -211,11 +212,12 @@ export default function ConversationalAI() {
       <View style={styles.content}>
         <DashboardView 
           ref={dashboardRef}
-          workbookId={Config.WORKBOOKS.CONVERSATIONAL_AI}
+          workbookId={resolvedWorkbookId}
           appletId={appletId}
-          appletName={appletName}
+          appletName={appletName || name}
           initialPageId={pageId}
           initialVariables={variables}
+          embedPath={fullEmbedPath}
         />
       </View>
       {workbookLoaded && (

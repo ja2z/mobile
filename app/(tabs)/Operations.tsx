@@ -10,7 +10,6 @@ import { DashboardView, DashboardViewRef } from '../../components/DashboardView'
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { InventoryVerificationModal } from '../../components/InventoryVerificationModal';
 import { OperationsNavigationBar } from '../../components/OperationsNavigationBar';
-import { Config } from '../../constants/Config';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { InventoryVerificationData } from '../../types/inventory.types';
 import { spacing } from '../../constants/Theme';
@@ -25,7 +24,9 @@ type OperationsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'O
 export default function Operations() {
   const route = useRoute<OperationsRouteProp>();
   const navigation = useNavigation<OperationsScreenNavigationProp>();
-  const { appletId, appletName, pageId, variables } = route.params || {};
+  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables } = route.params || {};
+  const fullEmbedPath = slug && embedPath ? `${slug}/${embedPath}` : 'papercrane-embedding-gcp/workbook';
+  const resolvedWorkbookId = workbookId || '4dc63DnExwkJ9SsAzHJWBt';
   const dashboardRef = useRef<DashboardViewRef>(null);
   
   // Log route params for debugging
@@ -240,11 +241,12 @@ export default function Operations() {
       <View style={styles.content}>
         <DashboardView 
           ref={dashboardRef}
-          workbookId={Config.WORKBOOKS.OPERATIONS}
+          workbookId={resolvedWorkbookId}
           appletId={appletId}
-          appletName={appletName || 'Operations'}
+          appletName={appletName || name || 'Operations'}
           initialPageId={pageId}
           initialVariables={variables}
+          embedPath={fullEmbedPath}
         />
       </View>
       {workbookLoaded && (
