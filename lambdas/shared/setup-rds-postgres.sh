@@ -418,6 +418,45 @@ CREATE TABLE IF NOT EXISTS applets (
 
 CREATE INDEX IF NOT EXISTS idx_applets_user_id_created_at ON applets(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_applets_user_id ON applets(user_id);
+
+-- sigma_org_config table (Sigma org configuration)
+CREATE TABLE IF NOT EXISTS sigma_org_config (
+    slug VARCHAR(100) NOT NULL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL,
+    client_id VARCHAR(255) NOT NULL,
+    secret_name VARCHAR(255) NOT NULL,
+    add_embed_suffix BOOLEAN NOT NULL DEFAULT true,
+    teams JSONB,
+    user_attributes JSONB,
+    account_type VARCHAR(100),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+-- built_in_applets table (built-in applet metadata and JWT overrides)
+CREATE TABLE IF NOT EXISTS built_in_applets (
+    applet_id VARCHAR(255) NOT NULL PRIMARY KEY,
+    slug VARCHAR(100) NOT NULL REFERENCES sigma_org_config(slug),
+    list_screen VARCHAR(100) NOT NULL,
+    target_screen VARCHAR(100) NOT NULL,
+    app_name VARCHAR(100),
+    name VARCHAR(255) NOT NULL,
+    subtitle VARCHAR(255),
+    workbook_id VARCHAR(255),
+    embed_path VARCHAR(100) NOT NULL DEFAULT 'workbook',
+    icon_name VARCHAR(100),
+    color VARCHAR(50),
+    sort_order INT NOT NULL DEFAULT 0,
+    teams JSONB,
+    user_attributes JSONB,
+    account_type VARCHAR(100),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_built_in_applets_list_screen ON built_in_applets(list_screen);
+CREATE INDEX IF NOT EXISTS idx_built_in_applets_app_name ON built_in_applets(app_name);
+CREATE INDEX IF NOT EXISTS idx_built_in_applets_slug ON built_in_applets(slug);
 EOF
     
     echo "  ✓ Schema created"

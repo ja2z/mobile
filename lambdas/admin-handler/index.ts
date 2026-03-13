@@ -12,6 +12,7 @@ import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/u
 import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
 import { listUsers, updateUser, deleteUser } from '../shared/user-service';
 import { listApprovedEmails, createOrUpdateApprovedEmail, deleteApprovedEmail, getApprovedEmail } from '../shared/approved-emails-service';
+import { listBuiltInApplets } from '../shared/built-in-applets-service';
 
 // CRITICAL: Log module initialization immediately after imports
 // This helps us verify the Lambda is loading the module at all
@@ -165,6 +166,9 @@ const handlerImpl = async (event: any) => {
       } else if (path.startsWith('/v1/whitelist/')) {
         path = path.replace('/v1/whitelist/', '/v1/admin/whitelist/');
         console.log(`Normalized (added /admin): ${path}`);
+      } else if (path.startsWith('/applets/')) {
+        path = '/v1' + path;
+        console.log(`Normalized (added /v1 prefix for applets): ${path}`);
       } else {
         console.log(`No normalization needed: ${path}`);
       }
@@ -269,10 +273,11 @@ const handlerImpl = async (event: any) => {
       return createResponse(401, { error: 'Invalid or expired token' });
     }
 
-    // Check if user is admin (except for activity/log endpoint which allows both roles)
+    // Check if user is admin (except for activity/log endpoint and applets which allow both roles)
     const isActivityLogEndpoint = path === '/v1/admin/activity/log' && method === 'POST';
+    const isAppletsBuiltInEndpoint = path === '/v1/applets/built-in' && method === 'GET';
     
-    if (!isActivityLogEndpoint && decoded.role !== 'admin') {
+    if (!isActivityLogEndpoint && !isAppletsBuiltInEndpoint && decoded.role !== 'admin') {
       return createResponse(403, { error: 'Admin access required' });
     }
     
@@ -317,6 +322,8 @@ const handlerImpl = async (event: any) => {
       } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
         const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
         return await handleDeactivateUser(userId!, decoded);
+      } else if (path === '/v1/applets/built-in' && method === 'GET') {
+        return await handleListBuiltInApplets(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'GET') {
         return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
@@ -615,6 +622,23 @@ export const handler = async (event: any, context: any) => {
     };
   }
 };
+
+/**
+ * List built-in applets (requires auth, allows basic and admin)
+ */
+async function handleListBuiltInApplets(user: any) {
+  try {
+    const listScreen = undefined; // Return all applets; caller can filter by list_screen
+    const applets = await listBuiltInApplets(listScreen);
+    return createResponse(200, { applets });
+  } catch (error: any) {
+    console.error('Error listing built-in applets:', error);
+    return createResponse(500, {
+      error: 'Failed to list built-in applets',
+      details: error?.message || String(error)
+    });
+  }
+}
 
 /**
  * List users with pagination, filtering, and sorting

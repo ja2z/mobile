@@ -1,0 +1,21 @@
+-- Seed sigma_org_config (from generate-url index.ts lines 59-113)
+INSERT INTO sigma_org_config (slug, domain, client_id, secret_name, add_embed_suffix, teams, user_attributes, account_type, created_at, updated_at)
+VALUES 
+  ('sigma-on-sigma', 'https://staging.sigmacomputing.io', '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863', 'mobile-app/jwt-secret-sos', false, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('papercrane-embedding-gcp', 'https://app.sigmacomputing.com', 'ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355', 'sigma/jwt-secret', true, '["all_clients_team","acme_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('papercranestaging', 'https://staging.sigmacomputing.io', '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e', 'mobile-app/jwt-secret-papercranestaging', true, '["all_clients_team"]'::jsonb, null, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
+ON CONFLICT (slug) DO NOTHING;
+
+-- Seed built_in_applets
+INSERT INTO built_in_applets (applet_id, slug, list_screen, target_screen, app_name, name, subtitle, workbook_id, embed_path, icon_name, color, sort_order, teams, user_attributes, account_type, created_at, updated_at)
+VALUES 
+  ('2', 'papercrane-embedding-gcp', 'Dashboards', 'Dashboard', 'dashboard', 'Art of the Possible', 'Executive Dashboard', '6vzpQFMQkEiBIbnybiwrH3', 'workbook', 'briefcase-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('7', 'papercrane-embedding-gcp', 'Apps', 'Operations', 'operations', 'Operations', 'Workflow', '4dc63DnExwkJ9SsAzHJWBt', 'workbook', 'git-network-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('8', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'GTM', 'Operations', 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB', 'workbook', 'trending-up-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('10', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'Ask J.A.K.E.', 'AI Assistant', '11NZoe57oPmsH1LAk0L9YX', 'workbook', 'chatbubbles-outline', null, 20, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('11', 'papercrane-embedding-gcp', 'Sigmanauts', 'GenericAppletView', null, 'BBM Usage', 'Usage Analytics', '78NllSMKt7BnpeWpAIQgqC', 'workbook', 'bar-chart-outline', null, 30, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('6', 'papercranestaging', 'AI', 'GenericAppletView', null, 'AI Chat', 'Chat Element', 'chat-element-1zDqvtcRb2dDYpguvuqDNc', 'workbook', 'chatbubbles-outline', null, 20, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('5', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'conversationalai', 'AI Query', 'AI Assistant', '5vuwQqluzlA5gmq9A82vt7', 'workbook', 'chatbubbles-outline', null, 30, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('3', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'ainewsletter', 'AI Newsletter', 'Content', '70xl8hMTdNeqN75p4i4dSG', 'workbook', 'sparkles-outline', null, 40, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('9', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', null, 'Ask Big Buys', 'Ask Sigma', null, 'ask', 'chatbubbles-outline', null, 10, '["acme_team","all_clients_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
+ON CONFLICT (applet_id) DO NOTHING;

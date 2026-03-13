@@ -2,6 +2,8 @@ import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-sec
 import crypto from 'crypto';
 import { validateUserExpiration, checkUserDeactivated } from '../shared/user-validation';
 import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
+import { getSigmaOrgConfigBySlug } from '../shared/sigma-org-config-service';
+import { getBuiltInAppletByIdOrName } from '../shared/built-in-applets-service';
 import * as jwt from 'jsonwebtoken';
 
 // Get AWS region from environment or default to us-west-2
@@ -21,144 +23,9 @@ const cachedEmbedSecrets: Record<string, string> = {};
  */
 interface JWTPayloadConfig {
     teams?: string[];                    // Teams to include (undefined = don't include)
-    user_attributes?: Record<string, any> | null; // User attributes (null = explicitly exclude, undefined = don't include)
+    user_attributes?: Record<string, any>; // User attributes (null/undefined = omit from JWT entirely)
     account_type?: string;               // Account type (undefined = don't include)
 }
-
-/**
- * Applet JWT Override Configuration
- * Can override teams, user_attributes, and account_type from org config
- */
-interface AppletJWTConfig {
-    teams?: string[] | null;                    // Override teams (null = explicitly exclude)
-    user_attributes?: Record<string, any> | null; // Override user_attributes (null = explicitly exclude)
-    account_type?: string | null;               // Override account_type (null = explicitly exclude)
-}
-
-/**
- * Sigma Org Configuration
- * Maps slug to org configuration (domain, client_id, secret name, and JWT payload config)
- * 
- * Format: embedPath is "{slug}/workbook" or "{slug}/ask" (e.g., "sigma-on-sigma/workbook")
- * Slug identifies the org/environment; domain is stored in the config (no inference needed)
- * 
- * Single entry per slug - shared JWT config for all paths (workbook, ask, etc.)
- */
-interface SigmaOrgConfig {
-    domain: string;                      // Base domain URL (e.g., "https://app.sigmacomputing.com")
-    clientId: string;                    // Used as both 'kid' in header and 'iss' in payload
-    secretName: string;                  // AWS Secrets Manager secret name
-    addEmbedSuffix: boolean;             // Whether to add +embed to email
-    jwtConfig: JWTPayloadConfig;        // JWT payload configuration (shared for all paths)
-}
-
-/**
- * Sigma Org Registry
- * Add new orgs here as needed
- * Key format: slug only (e.g., "sigma-on-sigma", "papercrane-embedding-gcp")
- */
-const SIGMA_ORG_CONFIG: Record<string, SigmaOrgConfig> = {
-    // Staging: sigma-on-sigma
-    // Used by: GTM (workbook), Ask J.A.K.E. (ask)
-    'sigma-on-sigma': {
-        domain: 'https://staging.sigmacomputing.io',
-        clientId: '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863',
-        secretName: 'mobile-app/jwt-secret-sos',
-        addEmbedSuffix: false,
-        jwtConfig: {
-            // Empty = no teams, no user_attributes, no account_type
-        }
-    },
-    
-    // Production: papercrane-embedding-gcp
-    'papercrane-embedding-gcp': {
-        domain: 'https://app.sigmacomputing.com',
-        clientId: 'ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355',
-        secretName: 'sigma/jwt-secret',
-        addEmbedSuffix: true,
-        jwtConfig: {
-            teams: ["all_clients_team", "acme_team"],
-            user_attributes: {
-                merchant_id: "{{merchant_id}}"
-            },
-            account_type: "Creator"
-        }
-    },
-    
-    // Staging: papercranestaging
-    'papercranestaging': {
-        domain: 'https://staging.sigmacomputing.io',
-        clientId: '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e',
-        secretName: 'mobile-app/jwt-secret-papercranestaging',
-        addEmbedSuffix: true,
-        jwtConfig: {
-            teams: ["all_clients_team"],
-            // No user_attributes by default
-            account_type: "Creator"
-        }
-    },
-    
-    // Add more orgs here as needed:
-    // 'another-slug': {
-    //     domain: 'https://app.sigmacomputing.com',
-    //     clientId: '...',
-    //     secretName: 'sigma/jwt-secret-another',
-    //     addEmbedSuffix: true,
-    //     jwtConfig: {
-    //         teams: [...],
-    //         user_attributes: {...},
-    //         account_type: "..."
-    //     }
-    // },
-};
-
-/**
- * Applet Registry
- * Maps appletId or appletName to JWT configuration overrides
- * Key can be appletId (e.g., "6") or appletName (e.g., "AI Chat")
- * appletId takes precedence if both exist
- */
-const SIGMA_APPLET_CONFIG: Record<string, AppletJWTConfig> = {
-    // AI Chat applet - only needs all_clients_team, no user_attributes
-    '6': {  // appletId
-        teams: ["all_clients_team"],
-        user_attributes: null,  // Explicitly exclude
-        account_type: "Creator"  // Keep from org config
-    },
-    'AI Chat': {  // appletName (fallback if appletId not found)
-        teams: ["all_clients_team"],
-        user_attributes: null,
-        account_type: "Creator"
-    },
-    
-    // Ask Big Buys applet - uses papercrane-embedding-gcp org config with applet-specific overrides
-    'Ask Big Buys': {  // appletName
-        teams: ["acme_team", "all_clients_team"],
-        user_attributes: {
-            merchant_id: "{{merchant_id}}"
-        },
-        account_type: "Creator"
-    },
-    
-    // Note: Ask J.A.K.E. and GTM both use sigma-on-sigma org config with no applet-specific overrides
-    // They follow the exact same pattern - no explicit config entry needed (uses org defaults)
-    
-    // BBM Usage applet - only needs all_clients_team, no user_attributes
-    '11': {  // appletId
-        teams: ["all_clients_team"],
-        user_attributes: null,  // Explicitly exclude
-        account_type: "Creator"  // Keep from org config
-    },
-    
-    // Future example: Another applet that needs different teams
-    // '7': {
-    //     teams: ["special_team"],
-    //     user_attributes: {
-    //         merchant_id: "{{merchant_id}}",
-    //         custom_field: "value"
-    //     }
-    // },
-};
 
 /**
  * Get IP address from event
@@ -253,37 +120,51 @@ async function getEmbedSecretByName(secretName: string): Promise<string> {
  * embedPath format: "{slug}/workbook", "{slug}/ask", or just "{slug}"
  */
 function extractSlug(embedPath: string): string {
-    // Remove trailing "/workbook" or "/ask" if present
-    const slug = embedPath.replace(/\/workbook$/, '').replace(/\/ask$/, '').trim();
-    return slug || 'papercrane-embedding-gcp'; // Default fallback
+    const parts = embedPath.split('/');
+    return parts[0]?.trim() || '';
 }
 
 /**
  * Get Sigma org configuration for a given embedPath
- * Simplified: Extract slug and lookup directly (no domain inference needed)
+ * Queries Postgres sigma_org_config by slug. Returns error if slug not found (no fallback).
  */
-function getSigmaOrgConfig(embedPath: string): SigmaOrgConfig {
+async function getSigmaOrgConfig(embedPath: string): Promise<{
+    domain: string;
+    clientId: string;
+    secretName: string;
+    addEmbedSuffix: boolean;
+    jwtConfig: JWTPayloadConfig;
+}> {
     const slug = extractSlug(embedPath);
     
     console.log('🔧 getSigmaOrgConfig - Input embedPath:', embedPath);
     console.log('🔧 getSigmaOrgConfig - Extracted slug:', slug);
-    console.log('🔧 getSigmaOrgConfig - Available slugs:', Object.keys(SIGMA_ORG_CONFIG));
     
-    const config = SIGMA_ORG_CONFIG[slug];
+    const row = await getSigmaOrgConfigBySlug(slug);
     
-    if (!config) {
-        console.warn(`⚠️ No config found for slug "${slug}", using production default`);
-        return SIGMA_ORG_CONFIG['papercrane-embedding-gcp'];
+    if (!row) {
+        throw new Error(`Sigma org config not found for slug: ${slug}`);
     }
     
+    const jwtConfig: JWTPayloadConfig = {};
+    if (row.teams) jwtConfig.teams = row.teams as string[];
+    if (row.user_attributes != null) jwtConfig.user_attributes = row.user_attributes as Record<string, any>;
+    if (row.account_type) jwtConfig.account_type = row.account_type;
+    
     console.log('🔧 getSigmaOrgConfig - Found config:', {
-        domain: config.domain,
-        clientId: config.clientId.substring(0, 16) + '...',
-        secretName: config.secretName,
-        addEmbedSuffix: config.addEmbedSuffix
+        domain: row.domain,
+        clientId: row.client_id.substring(0, 16) + '...',
+        secretName: row.secret_name,
+        addEmbedSuffix: row.add_embed_suffix
     });
     
-    return config;
+    return {
+        domain: row.domain,
+        clientId: row.client_id,
+        secretName: row.secret_name,
+        addEmbedSuffix: row.add_embed_suffix,
+        jwtConfig
+    };
 }
 
 /**
@@ -316,47 +197,28 @@ function replaceTemplateVariables(obj: any, merchantId: string): any {
 
 /**
  * Get JWT payload configuration for a specific applet
- * Merges org-level defaults with applet-specific overrides
+ * Merges org-level defaults with applet-specific overrides from built_in_applets
  */
-function getJWTConfig(
-    orgConfig: SigmaOrgConfig, 
-    appletId?: string, 
+async function getJWTConfig(
+    orgJwtConfig: JWTPayloadConfig,
+    appletId?: string,
     appletName?: string
-): JWTPayloadConfig {
-    // Start with org-level defaults
-    const config: JWTPayloadConfig = {
-        teams: orgConfig.jwtConfig.teams,
-        user_attributes: orgConfig.jwtConfig.user_attributes,
-        account_type: orgConfig.jwtConfig.account_type
-    };
-    
-    // Apply applet-specific overrides (appletId takes precedence)
-    let appletOverride: AppletJWTConfig | undefined;
-    if (appletId && SIGMA_APPLET_CONFIG[appletId]) {
-        appletOverride = SIGMA_APPLET_CONFIG[appletId];
-    } else if (appletName && SIGMA_APPLET_CONFIG[appletName]) {
-        appletOverride = SIGMA_APPLET_CONFIG[appletName];
-    }
-    
-    if (appletOverride) {
-        // Override teams if specified (null means exclude)
-        if (appletOverride.teams !== undefined) {
-            config.teams = appletOverride.teams === null ? undefined : appletOverride.teams;
-        }
-        
-        // Override user_attributes if specified (null means exclude)
-        if (appletOverride.user_attributes !== undefined) {
-            config.user_attributes = appletOverride.user_attributes === null 
-                ? undefined 
-                : appletOverride.user_attributes;
-        }
-        
-        // Override account_type if specified (null means exclude)
-        if (appletOverride.account_type !== undefined) {
-            config.account_type = appletOverride.account_type === null 
-                ? undefined 
-                : appletOverride.account_type;
-        }
+): Promise<JWTPayloadConfig> {
+    // Start with org-level defaults (only include keys with non-null values)
+    const config: JWTPayloadConfig = {};
+    if (orgJwtConfig.teams) config.teams = orgJwtConfig.teams;
+    if (orgJwtConfig.user_attributes != null) config.user_attributes = orgJwtConfig.user_attributes;
+    if (orgJwtConfig.account_type) config.account_type = orgJwtConfig.account_type;
+
+    // Query applet overrides from Postgres (appletId takes precedence)
+    const applet = await getBuiltInAppletByIdOrName(appletId, appletName);
+
+    if (applet) {
+        // Override with applet values when non-null (null = omit from JWT entirely)
+        if (applet.teams != null) config.teams = applet.teams;
+        if (applet.user_attributes === null) delete config.user_attributes;
+        else if (applet.user_attributes != null) config.user_attributes = applet.user_attributes as Record<string, any>;
+        if (applet.account_type != null) config.account_type = applet.account_type;
     }
     
     return config;
@@ -620,8 +482,8 @@ export const handler = async (event: any) => {
         const pageId = body.page_id;
         const variables = body.variables; // Should be Record<string, string>
         
-        // Get Sigma org configuration
-        const orgConfig = getSigmaOrgConfig(embedPath);
+        // Get Sigma org configuration from Postgres
+        const orgConfig = await getSigmaOrgConfig(embedPath);
         console.log('🔧 Sigma org config:', {
             clientId: orgConfig.clientId,
             secretName: orgConfig.secretName,
@@ -676,9 +538,9 @@ export const handler = async (event: any) => {
         // Current timestamp
         const now = Math.floor(Date.now() / 1000);
         
-        // Get JWT configuration (org defaults + applet overrides)
+        // Get JWT configuration (org defaults + applet overrides from Postgres)
         console.log('🔧 Getting JWT config - appletId:', appletId, 'appletName:', appletName);
-        const jwtConfig = getJWTConfig(orgConfig, appletId, appletName);
+        const jwtConfig = await getJWTConfig(orgConfig.jwtConfig, appletId, appletName);
         console.log('🔧 JWT config result:', JSON.stringify(jwtConfig, null, 2));
         
         // Create JWT payload
@@ -697,8 +559,8 @@ export const handler = async (event: any) => {
             payload.teams = jwtConfig.teams;
         }
         
-        // Add user_attributes if configured (replace template variables)
-        if (jwtConfig.user_attributes !== undefined) {
+        // Add user_attributes if configured (omit entirely when null/undefined)
+        if (jwtConfig.user_attributes != null) {
             payload.user_attributes = replaceTemplateVariables(jwtConfig.user_attributes, merchantId);
         }
         
