@@ -443,6 +443,7 @@ CREATE TABLE IF NOT EXISTS built_in_applets (
     name VARCHAR(255) NOT NULL,
     subtitle VARCHAR(255),
     workbook_id VARCHAR(255),
+    initial_page_id VARCHAR(255),
     embed_path VARCHAR(100) NOT NULL DEFAULT 'workbook',
     icon_name VARCHAR(100),
     color VARCHAR(50),

@@ -15,6 +15,8 @@ export interface BuiltInAppletRow {
   name: string;
   subtitle: string | null;
   workbook_id: string | null;
+  /** Sigma page id for first paint on tap-to-open (optional). */
+  initial_page_id?: string | null;
   embed_path: string;
   icon_name: string | null;
   color: string | null;

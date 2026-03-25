@@ -61,6 +61,7 @@ export default function Apps() {
         slug: applet.slug,
         embedPath: applet.embed_path,
         name: applet.name,
+        pageId: applet.initial_page_id || undefined,
       };
       const screen = applet.target_screen === 'conversationalai' ? 'ConversationalAI' : applet.target_screen;
       navigation.navigate(screen as keyof RootStackParamList, params as never);

@@ -15,6 +15,8 @@ export interface BuiltInApplet {
   name: string;
   subtitle: string | null;
   workbook_id: string | null;
+  /** Sigma page id for initial embed when opening this built-in applet from a list (optional). */
+  initial_page_id?: string | null;
   embed_path: string;
   icon_name: string | null;
   color: string | null;

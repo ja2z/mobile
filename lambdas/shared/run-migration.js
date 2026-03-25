@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS built_in_applets (
     name VARCHAR(255) NOT NULL,
     subtitle VARCHAR(255),
     workbook_id VARCHAR(255),
+    initial_page_id VARCHAR(255),
     embed_path VARCHAR(100) NOT NULL DEFAULT 'workbook',
     icon_name VARCHAR(100),
     color VARCHAR(50),
@@ -56,19 +57,23 @@ VALUES
   ('demeng', 'https://app.sigmacomputing.com', '9e1426b8908b69c1204f9740630fb7851f43e8626c3ef01bb120c84cf92f61d8', 'mobile-app/jwt-secret-demeng', true, '["all_clients_team"]'::jsonb, null, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
 ON CONFLICT (slug) DO NOTHING;
 
-INSERT INTO built_in_applets (applet_id, slug, list_screen, target_screen, app_name, name, subtitle, workbook_id, embed_path, icon_name, color, sort_order, teams, user_attributes, account_type, created_at, updated_at)
+INSERT INTO built_in_applets (applet_id, slug, list_screen, target_screen, app_name, name, subtitle, workbook_id, initial_page_id, embed_path, icon_name, color, sort_order, teams, user_attributes, account_type, created_at, updated_at)
 VALUES 
-  ('2', 'papercrane-embedding-gcp', 'Dashboards', 'Dashboard', 'dashboard', 'Art of the Possible', 'Executive Dashboard', '6vzpQFMQkEiBIbnybiwrH3', 'workbook', 'briefcase-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('7', 'papercrane-embedding-gcp', 'Apps', 'Operations', 'operations', 'Operations', 'Workflow', '4dc63DnExwkJ9SsAzHJWBt', 'workbook', 'git-network-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('8', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'GTM', 'Operations', 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB', 'workbook', 'trending-up-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('10', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'Ask J.A.K.E.', 'AI Assistant', '11NZoe57oPmsH1LAk0L9YX', 'workbook', 'chatbubbles-outline', null, 20, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('11', 'papercrane-embedding-gcp', 'Sigmanauts', 'GenericAppletView', null, 'BBM Usage', 'Usage Analytics', '78NllSMKt7BnpeWpAIQgqC', 'workbook', 'bar-chart-outline', null, 30, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('6', 'papercranestaging', 'AI', 'GenericAppletView', null, 'AI Chat', 'Chat Element', 'chat-element-1zDqvtcRb2dDYpguvuqDNc', 'workbook', 'chatbubbles-outline', null, 20, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('5', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'conversationalai', 'AI Query', 'AI Assistant', '5vuwQqluzlA5gmq9A82vt7', 'workbook', 'chatbubbles-outline', null, 30, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('3', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'ainewsletter', 'AI Newsletter', 'Content', '70xl8hMTdNeqN75p4i4dSG', 'workbook', 'sparkles-outline', null, 40, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('9', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', null, 'Ask Big Buys', 'Ask Sigma', null, 'ask', 'chatbubbles-outline', null, 10, '["acme_team","all_clients_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('12', 'demeng', 'Apps', 'GenericAppletView', null, 'Cold Provisions', null, '7nfuQle3nF7bY7RrOXLG1F', 'workbook', 'camera-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
+  ('2', 'papercrane-embedding-gcp', 'Dashboards', 'Dashboard', 'dashboard', 'Art of the Possible', 'Executive Dashboard', '6vzpQFMQkEiBIbnybiwrH3', NULL, 'workbook', 'briefcase-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('7', 'papercrane-embedding-gcp', 'Apps', 'Operations', 'operations', 'Operations', 'Workflow', '4dc63DnExwkJ9SsAzHJWBt', NULL, 'workbook', 'git-network-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('8', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'GTM', 'Operations', 'GTM-Operations-Mobile-ybIiXXEgE4k1rAMLt6UkB', NULL, 'workbook', 'trending-up-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('10', 'sigma-on-sigma', 'Sigmanauts', 'GenericAppletView', null, 'Ask J.A.K.E.', 'AI Assistant', '11NZoe57oPmsH1LAk0L9YX', NULL, 'workbook', 'chatbubbles-outline', null, 20, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('11', 'papercrane-embedding-gcp', 'Sigmanauts', 'GenericAppletView', null, 'BBM Usage', 'Usage Analytics', '78NllSMKt7BnpeWpAIQgqC', NULL, 'workbook', 'bar-chart-outline', null, 30, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('6', 'papercranestaging', 'AI', 'GenericAppletView', null, 'AI Chat', 'Chat Element', 'chat-element-1zDqvtcRb2dDYpguvuqDNc', NULL, 'workbook', 'chatbubbles-outline', null, 20, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('5', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'conversationalai', 'AI Query', 'AI Assistant', '5vuwQqluzlA5gmq9A82vt7', NULL, 'workbook', 'chatbubbles-outline', null, 30, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('3', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'ainewsletter', 'AI Newsletter', 'Content', '70xl8hMTdNeqN75p4i4dSG', NULL, 'workbook', 'sparkles-outline', null, 40, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('9', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', null, 'Ask Big Buys', 'Ask Sigma', null, NULL, 'ask', 'chatbubbles-outline', null, 10, '["acme_team","all_clients_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('12', 'demeng', 'Apps', 'GenericAppletView', null, 'Cold Provisions', null, '7nfuQle3nF7bY7RrOXLG1F', NULL, 'workbook', 'camera-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
 ON CONFLICT (applet_id) DO NOTHING;
+`;
+
+const ADD_INITIAL_PAGE_ID_SQL = `
+ALTER TABLE built_in_applets ADD COLUMN IF NOT EXISTS initial_page_id VARCHAR(255);
 `;
 
 const PATCH_SQL = `
@@ -106,6 +111,10 @@ async function main() {
     console.log('Creating tables...');
     await pool.query(SCHEMA_SQL);
     console.log('✓ Tables created');
+
+    console.log('Applying built_in_applets migrations...');
+    await pool.query(ADD_INITIAL_PAGE_ID_SQL);
+    console.log('✓ initial_page_id column ensured');
 
     console.log('Seeding data...');
     await pool.query(SEED_SQL);

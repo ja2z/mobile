@@ -1,0 +1,52 @@
+---
+description: How to connect to the mobile app Postgres (RDS) for migrations and ad hoc SQL from this repo.
+alwaysApply: false
+---
+
+# Postgres (RDS) — local / agent usage
+
+## Connection
+
+Credentials live in **repo-root `.env`** (gitignored). Standard libpq variables:
+
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
+
+RDS requires TLS from many networks. Prefer:
+
+```bash
+export PGSSLMODE=require
+```
+
+## Run `psql` with env loaded
+
+From repo root:
+
+```bash
+set -a && source .env && set +a
+export PGSSLMODE=require
+./scripts/psql-with-env.sh
+```
+
+Or one-shot SQL:
+
+```bash
+set -a && source .env && set +a
+export PGSSLMODE=require
+./scripts/psql-with-env.sh -v ON_ERROR_STOP=1 -f path/to/script.sql
+```
+
+`scripts/psql-with-env.sh` loads `.env` and invokes Homebrew `psql` if needed.
+
+## Migrations and seeds in-repo
+
+- **`lambdas/shared/run-migration.js`** — creates tables, runs `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for additive changes, seeds idempotently. Needs AWS Secrets Manager access to Postgres credentials (same as deployed Lambdas), unless you override with env.
+- **`lambdas/shared/patch-add-initial-page-id-to-built-in-applets.sql`** — idempotent column add for `built_in_applets.initial_page_id`.
+- **`lambdas/shared/seed-built-in-applets.sql`** — reference seed for `sigma_org_config` and `built_in_applets`.
+
+## Schema note: built-in landing page
+
+`built_in_applets.initial_page_id` (nullable) is the Sigma **page id** for first paint when opening a built-in applet from the app list (tap-to-open). The generate-url Lambda still receives `page_id` in the **request body**; the mobile app passes it from navigation params sourced from this column when set.
+
+## AWS
+
+RDS access may require VPN or corporate network. If the agent cannot reach the host, run the same SQL locally or use the AWS console query editor. For Lambda deploys and CLI patterns, see **`aws-cli-usage.mdc`**.

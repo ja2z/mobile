@@ -238,7 +238,7 @@ export default function RootLayout() {
                   slug: applet.slug,
                   embedPath: applet.embed_path,
                   name: applet.name,
-                  pageId,
+                  pageId: pageId || applet.initial_page_id || undefined,
                   variables,
                 };
               } else {
