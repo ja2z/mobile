@@ -35,7 +35,8 @@ yarn-error.*
 *.swo
 *~
 
-# local env files
+# local env files (never commit secrets)
+.env
 .env*.local
 
 # typescript
@@ -50,7 +51,9 @@ lambdas/**/node_modules/
 lambdas/**/dist/
 lambdas/**/*.zip
 
-# ios build
+# ios build (local EAS IPAs; keep directory in repo)
+builds/*
+!builds/.gitkeep
 build-*.ipa
 eas-build*.log
 eas-deploy*.log
