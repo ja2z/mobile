@@ -310,6 +310,14 @@ export class AuthService {
       // Decode JWT to get expiration, issued at dates, and role
       const decodedJWT = this.decodeJWT(jwt);
       const expiresAt = decodedJWT?.exp || 0;
+
+      // If the JWT has expired, treat as unauthenticated and clear stored credentials
+      const now = Math.floor(Date.now() / 1000);
+      if (expiresAt && now >= expiresAt) {
+        console.log('[AuthService] Session JWT is expired, clearing session');
+        await this.clearSession();
+        return null;
+      }
       
       // Update user role from JWT if not in stored user (for backward compatibility)
       if (!user.role && decodedJWT?.role) {
@@ -410,21 +418,30 @@ export class AuthService {
   }
 
   /**
-   * Handle API response and check for expiration errors
-   * Throws error if account is expired or deactivated
-   * This should be caught by the caller to show an alert
+   * Handle API response and check for auth/expiration errors.
+   *
+   * - 401: session JWT is invalid/expired → clears session, throws with isSessionExpired=true
+   *        Callers should silently navigate to Login (no alert).
+   * - 403 Account expired/deactivated → clears session, throws with isExpirationError=true
+   *        Callers should show an explanatory alert then navigate to Login.
    */
   static async handleApiResponse(response: Response): Promise<Response> {
     if (!response.ok) {
       // Clone response to read body without consuming it
       const clonedResponse = response.clone();
       const data = await clonedResponse.json().catch(() => ({}));
-      
-      // Check for expiration or deactivation errors
-      if (response.status === 403 && (data.error === 'Account expired' || data.error === 'Account deactivated')) {
-        // Clear session
+
+      // 401 — invalid or expired session token
+      if (response.status === 401) {
         await this.clearSession();
-        // Throw specific error that can be caught and shown as alert
+        const error = new Error('Your session has expired. Please sign in again.') as any;
+        error.isSessionExpired = true;
+        throw error;
+      }
+      
+      // 403 — account expired or deactivated
+      if (response.status === 403 && (data.error === 'Account expired' || data.error === 'Account deactivated')) {
+        await this.clearSession();
         const errorMessage = data.message || data.error || 'Your account has expired. You can no longer use the app.';
         const error = new Error(errorMessage) as any;
         error.isExpirationError = true;

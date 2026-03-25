@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Animated, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { Config } from '../constants/Config';
 import { EmbedUrlService } from '../services/EmbedUrlService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, typography } from '../constants/Theme';
+import type { RootStackParamList } from '../app/_layout';
 
 interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
@@ -88,6 +91,7 @@ export const SkeletonPlaceholder: React.FC = () => {
  * and automatic URL refresh before token expiry
  */
 export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({ workbookId, appletId, appletName, initialUrl, initialJwt, initialPageId, initialVariables, embedPath }, ref) => {
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const [url, setUrl] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -315,15 +319,23 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
       
     } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard URL';
-      
-      // Handle expiration errors
+
+      // 401 — session expired: silent redirect to Login, no modal
+      if (err.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+
+      // 403 — account expired/deactivated: show explanation then redirect
       if (err.isExpirationError) {
         Alert.alert(
           'Account Expired',
           errorMessage,
-          [{ text: 'OK' }]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
-        setError(errorMessage);
         return;
       }
       

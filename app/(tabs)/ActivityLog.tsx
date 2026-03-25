@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService, type ActivityLog as ActivityLogType } from '../../services/AdminService';
-import { AuthService } from '../../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import { Alert } from 'react-native';
@@ -62,22 +61,17 @@ export default function ActivityLog() {
       setTotalPages(response.pagination.totalPages);
     } catch (error: any) {
       console.error('Error loading activity logs:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       }
     } finally {

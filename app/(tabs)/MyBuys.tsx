@@ -30,8 +30,19 @@ export default function MyBuys() {
     try {
       const data = await MyBuysService.listApplets();
       setApplets(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load applets:', error);
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' as const }] });
+        return;
+      }
+      if (error.isExpirationError) {
+        Alert.alert('Account Expired', error.message || 'Your account has expired.', [{
+          text: 'OK',
+          onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' as const }] }),
+        }]);
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to load applets';
       Alert.alert('Error', errorMessage);
     } finally {

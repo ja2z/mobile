@@ -13,7 +13,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { AdminService, type User } from '../services/AdminService';
-import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -127,22 +126,16 @@ export function EditUserModal({ visible, user, onClose, onUserUpdated }: EditUse
       onUserUpdated();
     } catch (error: any) {
       console.error('Error updating user:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         Alert.alert('Error', 'Failed to update user. Please try again.');

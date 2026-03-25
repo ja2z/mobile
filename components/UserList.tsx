@@ -14,7 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService, type User } from '../services/AdminService';
-import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import { useDebounce } from '../hooks/useDebounce';
@@ -95,22 +94,17 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
       setTotalPages(response.pagination.totalPages);
     } catch (error: any) {
       console.error('Error loading users:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         Alert.alert('Error', 'Failed to load users. Please try again.');
@@ -156,22 +150,16 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
               loadUsers();
             } catch (error: any) {
               console.error('Error deactivating user:', error);
-              if (error.isExpirationError) {
+              if (error.isSessionExpired) {
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              } else if (error.isExpirationError) {
                 Alert.alert(
                   'Account Expired',
                   error.message || 'Your account has expired. You can no longer use the app.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: async () => {
-                        await AuthService.clearSession();
-                        navigation.reset({
-                          index: 0,
-                          routes: [{ name: 'Login' }],
-                        });
-                      },
-                    },
-                  ]
+                  [{
+                    text: 'OK',
+                    onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+                  }]
                 );
               } else {
                 Alert.alert('Error', 'Failed to deactivate user. Please try again.');

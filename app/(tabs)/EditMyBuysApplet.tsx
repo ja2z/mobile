@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp, RouteProp } from '@react-navigation/stack';
 import { MyBuysService } from '../../services/MyBuysService';
-import { AuthService } from '../../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -105,22 +104,16 @@ export default function EditMyBuysApplet() {
         }
       } catch (error: any) {
         console.error('Error loading applet:', error);
-        if (error.isExpirationError) {
+        if (error.isSessionExpired) {
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        } else if (error.isExpirationError) {
           Alert.alert(
             'Account Expired',
             error.message || 'Your account has expired. You can no longer use the app.',
-            [
-              {
-                text: 'OK',
-                onPress: async () => {
-                  await AuthService.clearSession();
-                  navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'Login' }],
-                  });
-                },
-              },
-            ]
+            [{
+              text: 'OK',
+              onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+            }]
           );
         } else {
           Alert.alert('Error', error.message || 'Failed to load applet', [
@@ -208,22 +201,16 @@ export default function EditMyBuysApplet() {
       }
     } catch (error: any) {
       console.error('Error testing configuration:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         setTestResult({ success: false, message: error.message || 'Test failed. Please check your configuration.' });
@@ -281,22 +268,16 @@ export default function EditMyBuysApplet() {
       navigation.goBack();
     } catch (error: any) {
       console.error('Error updating applet:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         Alert.alert('Error', error.message || 'Failed to update applet. Please try again.');
@@ -325,22 +306,16 @@ export default function EditMyBuysApplet() {
               navigation.goBack();
             } catch (error: any) {
               console.error('Error deleting applet:', error);
-              if (error.isExpirationError) {
+              if (error.isSessionExpired) {
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              } else if (error.isExpirationError) {
                 Alert.alert(
                   'Account Expired',
                   error.message || 'Your account has expired. You can no longer use the app.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: async () => {
-                        await AuthService.clearSession();
-                        navigation.reset({
-                          index: 0,
-                          routes: [{ name: 'Login' }],
-                        });
-                      },
-                    },
-                  ]
+                  [{
+                    text: 'OK',
+                    onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+                  }]
                 );
               } else {
                 Alert.alert('Error', error.message || 'Failed to delete applet. Please try again.');

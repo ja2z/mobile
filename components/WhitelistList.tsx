@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService, type WhitelistUser } from '../services/AdminService';
-import { AuthService } from '../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import { SortButton, type SortDirection } from './SortButton';
@@ -83,22 +82,17 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
         stack: error?.stack,
         isExpirationError: error?.isExpirationError
       });
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         Alert.alert(
@@ -132,22 +126,16 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
               loadWhitelist();
             } catch (error: any) {
               console.error('Error deleting whitelist user:', error);
-              if (error.isExpirationError) {
+              if (error.isSessionExpired) {
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              } else if (error.isExpirationError) {
                 Alert.alert(
                   'Account Expired',
                   error.message || 'Your account has expired. You can no longer use the app.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: async () => {
-                        await AuthService.clearSession();
-                        navigation.reset({
-                          index: 0,
-                          routes: [{ name: 'Login' }],
-                        });
-                      },
-                    },
-                  ]
+                  [{
+                    text: 'OK',
+                    onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+                  }]
                 );
               } else {
                 Alert.alert('Error', 'Failed to delete whitelist user. Please try again.');
@@ -192,22 +180,16 @@ export function WhitelistList({ refreshTrigger }: WhitelistListProps = {}) {
       } as never);
     } catch (error: any) {
       console.error('Error navigating to user:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         // Still navigate even if check fails

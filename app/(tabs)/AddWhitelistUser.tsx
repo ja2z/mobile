@@ -16,7 +16,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { AdminService } from '../../services/AdminService';
-import { AuthService } from '../../services/AuthService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 
@@ -74,22 +73,16 @@ export default function AddWhitelistUser() {
       ]);
     } catch (error: any) {
       console.error('Error adding whitelist user:', error);
-      if (error.isExpirationError) {
+      if (error.isSessionExpired) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else if (error.isExpirationError) {
         Alert.alert(
           'Account Expired',
           error.message || 'Your account has expired. You can no longer use the app.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                await AuthService.clearSession();
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              },
-            },
-          ]
+          [{
+            text: 'OK',
+            onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+          }]
         );
       } else {
         Alert.alert('Error', error.message || 'Failed to add whitelist user. Please try again.');

@@ -95,20 +95,16 @@ export default function ViewMyBuysApplet() {
           appletId,
         });
         
-        if (error.isExpirationError) {
+        if (error.isSessionExpired) {
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        } else if (error.isExpirationError) {
           Alert.alert(
             'Account Expired',
             error.message || 'Your account has expired. You can no longer use the app.',
             [
               {
                 text: 'OK',
-                onPress: async () => {
-                  await AuthService.clearSession();
-                  navigation.reset({
-                    index: 0,
-                    routes: [{ name: 'Login' }],
-                  });
-                },
+                onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
               },
             ]
           );
