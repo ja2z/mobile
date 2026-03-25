@@ -3,7 +3,8 @@ INSERT INTO sigma_org_config (slug, domain, client_id, secret_name, add_embed_su
 VALUES 
   ('sigma-on-sigma', 'https://staging.sigmacomputing.io', '227618a72fff29baf535f3218c125a31567899d4c394fa1a78ff0d3b05cd3863', 'mobile-app/jwt-secret-sos', false, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
   ('papercrane-embedding-gcp', 'https://app.sigmacomputing.com', 'ff917c5524fa296ed349ea375657ccc721765ff12b0e276cc3cd5873812c4355', 'sigma/jwt-secret', true, '["all_clients_team","acme_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('papercranestaging', 'https://staging.sigmacomputing.io', '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e', 'mobile-app/jwt-secret-papercranestaging', true, '["all_clients_team"]'::jsonb, null, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
+  ('papercranestaging', 'https://staging.sigmacomputing.io', '6a7146e4be37a736b19eb598a42d21ce6f5bfcea4beb4441c83266f96dc8ed2e', 'mobile-app/jwt-secret-papercranestaging', true, '["all_clients_team"]'::jsonb, null, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('demeng', 'https://app.sigmacomputing.com', '9e1426b8908b69c1204f9740630fb7851f43e8626c3ef01bb120c84cf92f61d8', 'mobile-app/jwt-secret-demeng', true, '["all_clients_team"]'::jsonb, null, 'Creator', extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
 ON CONFLICT (slug) DO NOTHING;
 
 -- Seed built_in_applets
@@ -17,5 +18,6 @@ VALUES
   ('6', 'papercranestaging', 'AI', 'GenericAppletView', null, 'AI Chat', 'Chat Element', 'chat-element-1zDqvtcRb2dDYpguvuqDNc', 'workbook', 'chatbubbles-outline', null, 20, '["all_clients_team"]'::jsonb, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
   ('5', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'conversationalai', 'AI Query', 'AI Assistant', '5vuwQqluzlA5gmq9A82vt7', 'workbook', 'chatbubbles-outline', null, 30, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
   ('3', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', 'ainewsletter', 'AI Newsletter', 'Content', '70xl8hMTdNeqN75p4i4dSG', 'workbook', 'sparkles-outline', null, 40, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
-  ('9', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', null, 'Ask Big Buys', 'Ask Sigma', null, 'ask', 'chatbubbles-outline', null, 10, '["acme_team","all_clients_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
+  ('9', 'papercrane-embedding-gcp', 'AI', 'GenericAppletView', null, 'Ask Big Buys', 'Ask Sigma', null, 'ask', 'chatbubbles-outline', null, 10, '["acme_team","all_clients_team"]'::jsonb, '{"merchant_id":"{{merchant_id}}"}'::jsonb, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000),
+  ('12', 'demeng', 'Apps', 'GenericAppletView', null, 'Cold Provisions', null, '7nfuQle3nF7bY7RrOXLG1F', 'workbook', 'camera-outline', null, 10, null, null, null, extract(epoch from now())::bigint * 1000, extract(epoch from now())::bigint * 1000)
 ON CONFLICT (applet_id) DO NOTHING;
