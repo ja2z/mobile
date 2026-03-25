@@ -24,7 +24,7 @@ print_usage() {
     echo "Examples:"
     echo "  ./eas-build.sh production"
     echo "  ./eas-build.sh development"
-    echo "  ./eas-build.sh deploy ./build-1234567890.ipa"
+    echo "  ./eas-build.sh deploy ./builds/build-ios-20250101-120000.ipa"
     exit 1
 }
 
@@ -109,16 +109,30 @@ find_ipa_file() {
         fi
     fi
     
-    # Fallback: find most recent IPA in project root
+    # Fallback: find most recent IPA under builds/ (then project root for legacy paths)
     cd "$project_root"
+    local search_dir=""
+    if [ -d "$project_root/builds" ]; then
+        search_dir="builds"
+    else
+        search_dir="."
+    fi
     
     # Find IPA files and get the most recent one (macOS/BSD compatible)
     # Try macOS/BSD stat first (stat -f)
-    local ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    local ipa_relative=$(find "$search_dir" -maxdepth 1 -name "*.ipa" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     
     # If stat -f doesn't work (Linux), try stat -c instead
     if [ -z "$ipa_relative" ]; then
-        ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+        ipa_relative=$(find "$search_dir" -maxdepth 1 -name "*.ipa" -type f -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    fi
+    
+    # Legacy: IPA at repo root
+    if [ -z "$ipa_relative" ] && [ "$search_dir" != "." ]; then
+        ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+        if [ -z "$ipa_relative" ]; then
+            ipa_relative=$(find . -maxdepth 1 -name "*.ipa" -type f -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+        fi
     fi
     
     # Convert relative path to absolute path
@@ -337,14 +351,21 @@ fi
 LOGS_DIR="$PROJECT_ROOT/scripts/logs"
 mkdir -p "$LOGS_DIR"
 
-# Setup log file
-LOG_FILE="$LOGS_DIR/eas-build-${BUILD_TYPE}-$(date '+%Y%m%d-%H%M%S').log"
+# Local EAS build artifacts (IPA) live under builds/
+BUILDS_DIR="$PROJECT_ROOT/builds"
+mkdir -p "$BUILDS_DIR"
+
+# Setup log file and matching artifact basename for this run
+BUILD_TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
+LOG_FILE="$LOGS_DIR/eas-build-${BUILD_TYPE}-${BUILD_TIMESTAMP}.log"
+LOCAL_IPA_OUTPUT="$BUILDS_DIR/build-ios-${BUILD_TIMESTAMP}.ipa"
 
 echo -e "${GREEN}===========================================================${NC}"
 echo -e "${GREEN}EAS Build Script${NC}"
 echo -e "${GREEN}===========================================================${NC}"
 echo -e "Build Type: ${YELLOW}${BUILD_TYPE}${NC}"
 echo -e "Project Root: ${BLUE}${PROJECT_ROOT}${NC}"
+echo -e "IPA Output: ${BLUE}${LOCAL_IPA_OUTPUT}${NC}"
 echo -e "Log File: ${BLUE}${LOG_FILE}${NC}"
 echo -e "Start Time: ${BLUE}$(timestamp)${NC}"
 echo -e "${GREEN}===========================================================${NC}"
@@ -367,7 +388,7 @@ if [ "$BUILD_TYPE" == "production" ]; then
     echo -e "${YELLOW}Building production version (this may take several minutes)...${NC}"
     
     # Run build in background and capture PID
-    eas build --profile production --platform ios --local --non-interactive >> "$LOG_FILE" 2>&1 &
+    eas build --profile production --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
     # Show progress and monitor for errors
@@ -412,14 +433,19 @@ if [ "$BUILD_TYPE" == "production" ]; then
     log "Build completed successfully!"
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
     
-    # Find the IPA file
-    IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
+    # Find the IPA file (prefer --output path from this run)
+    IPA_PATH=""
+    if [ -f "$LOCAL_IPA_OUTPUT" ]; then
+        IPA_PATH="$LOCAL_IPA_OUTPUT"
+    else
+        IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
+    fi
     
     if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
         log "ERROR: Could not find IPA file"
-        echo -e "${RED}Could not find IPA file in project root: $PROJECT_ROOT${NC}"
+        echo -e "${RED}Could not find IPA file (expected: $LOCAL_IPA_OUTPUT)${NC}"
         echo -e "${YELLOW}Searching for IPA files...${NC}"
-        find "$PROJECT_ROOT" -name "*.ipa" -type f 2>/dev/null | head -5
+        find "$PROJECT_ROOT/builds" "$PROJECT_ROOT" -maxdepth 1 -name "*.ipa" -type f 2>/dev/null | head -5
         exit 1
     fi
     
@@ -445,7 +471,7 @@ else
     echo -e "${YELLOW}Building development version (this may take several minutes)...${NC}"
     
     # Run build in background and capture PID
-    eas build --profile development --platform ios --local --non-interactive >> "$LOG_FILE" 2>&1 &
+    eas build --profile development --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
     # Show progress and monitor for errors
@@ -490,14 +516,19 @@ else
     log "Build completed successfully!"
     echo -e "${GREEN}✓ Build completed successfully!${NC}"
     
-    # Find the IPA file
-    IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
+    # Find the IPA file (prefer --output path from this run)
+    IPA_PATH=""
+    if [ -f "$LOCAL_IPA_OUTPUT" ]; then
+        IPA_PATH="$LOCAL_IPA_OUTPUT"
+    else
+        IPA_PATH=$(find_ipa_file "$PROJECT_ROOT" "$LOG_FILE")
+    fi
     
     if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
         log "ERROR: Could not find IPA file"
-        echo -e "${RED}Could not find IPA file in project root: $PROJECT_ROOT${NC}"
+        echo -e "${RED}Could not find IPA file (expected: $LOCAL_IPA_OUTPUT)${NC}"
         echo -e "${YELLOW}Searching for IPA files...${NC}"
-        find "$PROJECT_ROOT" -name "*.ipa" -type f 2>/dev/null | head -5
+        find "$PROJECT_ROOT/builds" "$PROJECT_ROOT" -maxdepth 1 -name "*.ipa" -type f 2>/dev/null | head -5
         exit 1
     fi
     
@@ -527,6 +558,7 @@ echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}===========================================================${NC}"
 echo -e "Total Time: ${YELLOW}${MINUTES}m ${SECONDS}s${NC}"
 echo -e "End Time: ${BLUE}$(timestamp)${NC}"
+echo -e "IPA File: ${BLUE}${IPA_PATH}${NC}"
 echo -e "Log File: ${BLUE}${LOG_FILE}${NC}"
 echo -e "${GREEN}===========================================================${NC}"
 
