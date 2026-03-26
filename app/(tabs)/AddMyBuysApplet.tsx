@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
+import * as Clipboard from 'expo-clipboard';
 import { MyBuysService } from '../../services/MyBuysService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
@@ -209,15 +210,31 @@ export default function AddMyBuysApplet() {
     try {
       setSaving(true);
 
-      await MyBuysService.createApplet({
+      const created = await MyBuysService.createApplet({
         name,
         embedUrl,
         embedClientId,
         embedSecretKey,
       });
 
-      // Navigate back on success (no success message needed)
-      navigation.goBack();
+      if (created.deepLinkSlug) {
+        Alert.alert(
+          'Applet created',
+          `Deep link key (use as the app value when requesting magic links):\n\n${created.deepLinkSlug}`,
+          [
+            {
+              text: 'Copy key',
+              onPress: async () => {
+                await Clipboard.setStringAsync(created.deepLinkSlug!);
+                navigation.goBack();
+              },
+            },
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]
+        );
+      } else {
+        navigation.goBack();
+      }
     } catch (error: any) {
       console.error('Error creating applet:', error);
       if (error.isSessionExpired) {

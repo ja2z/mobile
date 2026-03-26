@@ -15,11 +15,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp, RouteProp } from '@react-navigation/stack';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { MyBuysService } from '../../services/MyBuysService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
 import { SecretKeyInfoModal } from '../../components/SecretKeyInfoModal';
+import { DeepLinkKeyInfoModal } from '../../components/DeepLinkKeyInfoModal';
 import type { RootStackParamList } from '../_layout';
 import type { Applet } from '../../types/mybuys.types';
 
@@ -49,6 +52,7 @@ export default function EditMyBuysApplet() {
   const [embedUrlModalVisible, setEmbedUrlModalVisible] = useState(false);
   const [clientIdModalVisible, setClientIdModalVisible] = useState(false);
   const [secretKeyModalVisible, setSecretKeyModalVisible] = useState(false);
+  const [deepLinkKeyModalVisible, setDeepLinkKeyModalVisible] = useState(false);
 
   // Refs for field navigation
   const embedUrlInputRef = useRef<TextInput>(null);
@@ -168,6 +172,16 @@ export default function EditMyBuysApplet() {
 
     return () => clearTimeout(timeoutId);
   }, [embedUrl]);
+
+  const handleCopyDeepLinkKey = async () => {
+    if (!applet?.deepLinkSlug) return;
+    await Clipboard.setStringAsync(applet.deepLinkSlug);
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      // Haptics not available on this device
+    }
+  };
 
   /**
    * Check if all required fields are filled
@@ -384,6 +398,35 @@ export default function EditMyBuysApplet() {
           />
         </View>
 
+        {applet?.deepLinkSlug ? (
+          <View style={styles.fieldContainer}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Deep link key</Text>
+              <TouchableOpacity
+                onPress={() => setDeepLinkKeyModalVisible(true)}
+                style={styles.infoButton}
+                activeOpacity={0.7}
+                accessibilityLabel="About deep link key"
+              >
+                <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+              </TouchableOpacity>
+              <View style={styles.labelRowSpacer} />
+              <TouchableOpacity
+                onPress={handleCopyDeepLinkKey}
+                style={styles.copyKeyButton}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.copyKeyButtonText}>Copy</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.readonlySlugContainer}>
+              <Text style={styles.readonlySlugText} selectable>
+                {applet.deepLinkSlug}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Embed URL Field */}
         <View style={styles.fieldContainer}>
           <View style={styles.labelRow}>
@@ -543,6 +586,10 @@ export default function EditMyBuysApplet() {
         visible={secretKeyModalVisible}
         onClose={() => setSecretKeyModalVisible(false)}
       />
+      <DeepLinkKeyInfoModal
+        visible={deepLinkKeyModalVisible}
+        onClose={() => setDeepLinkKeyModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -579,6 +626,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.sm,
+  },
+  labelRowSpacer: {
+    flex: 1,
   },
   label: {
     ...typography.body,
@@ -622,6 +672,27 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginLeft: 'auto',
+  },
+  copyKeyButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  copyKeyButtonText: {
+    ...typography.bodySmall,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  /** Read-only display: not styled like a TextInput (no border box) */
+  readonlySlugContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  readonlySlugText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 22,
   },
   testResultContainer: {
     flexDirection: 'row',

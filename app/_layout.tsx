@@ -30,6 +30,7 @@ import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { listBuiltInApplets } from '../services/BuiltInAppletsService';
+import { MyBuysService } from '../services/MyBuysService';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
@@ -56,13 +57,6 @@ export type RootStackParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 
-// Extract screen names that support pageId and variables from RootStackParamList
-type DeepLinkableScreen = {
-  [K in keyof RootStackParamList]: RootStackParamList[K] extends { pageId?: string; variables?: Record<string, string> }
-    ? K
-    : never;
-}[keyof RootStackParamList];
-
 /**
  * Root Layout Component
  * Sets up the main navigation structure for the app
@@ -73,9 +67,9 @@ export default function RootLayout() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isVerifyingMagicLink, setIsVerifyingMagicLink] = useState(false);
   const [expiredLinkParams, setExpiredLinkParams] = useState<{ email?: string; errorType?: 'expired' | 'invalid' | 'used' } | null>(null);
-  const [pendingDeepLinkNav, setPendingDeepLinkNav] = useState<{ 
-    screen: DeepLinkableScreen; 
-    params: { pageId?: string; variables?: Record<string, string> } 
+  const [pendingDeepLinkNav, setPendingDeepLinkNav] = useState<{
+    screen: keyof RootStackParamList;
+    params: Record<string, unknown>;
   } | null>(null);
   const navigationRef = useRef<any>(null);
 
@@ -215,59 +209,87 @@ export default function RootLayout() {
           const session = await AuthService.verifyMagicLink(token);
           console.log('✅ Authentication successful!', { email: session.user.email });
           
-          // Map app name to screen name
-          // Try to fetch from API and find applet by app_name (case-insensitive)
-          let targetScreen: 'Home' | DeepLinkableScreen = 'Home';
+          // Map app query param to screen (My Buys slugs, built-in applets, or hardcoded fallbacks)
+          let targetScreen: keyof RootStackParamList = 'Home';
           let screenParams: Record<string, unknown> = {};
-          
+
           if (app) {
-            try {
-              const applets = await listBuiltInApplets();
-              const appNormalized = app.toLowerCase().replace(/-/g, '');
-              const applet = applets.find(
-                (a) => a.app_name && a.app_name.toLowerCase().replace(/-/g, '') === appNormalized
-              );
-              
-              if (applet) {
-                const ts = applet.target_screen;
-                targetScreen = (ts === 'conversationalai' ? 'ConversationalAI' : ts) as DeepLinkableScreen;
-                screenParams = {
-                  appletId: applet.applet_id,
-                  appletName: applet.name,
-                  workbookId: applet.workbook_id ?? undefined,
-                  slug: applet.slug,
-                  embedPath: applet.embed_path,
-                  name: applet.name,
-                  pageId: pageId || applet.initial_page_id || undefined,
-                  variables,
-                };
-              } else {
-                // Fallback to hardcoded app-to-screen mapping
-                const appLower = app.toLowerCase();
-                if (appLower === 'dashboard') {
-                  targetScreen = 'Dashboard';
-                } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
-                  targetScreen = 'ConversationalAI';
-                } else if (appLower === 'operations') {
-                  targetScreen = 'Operations';
+            if (app.startsWith('mybuys:')) {
+              try {
+                const userApplets = await MyBuysService.listApplets();
+                const match = userApplets.find((a) => a.deepLinkSlug === app);
+                if (match) {
+                  targetScreen = 'ViewMyBuysApplet';
+                  screenParams = { appletId: match.appletId };
                 } else {
-                  console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+                  console.warn(`⚠️ No My Buys applet for deep link slug: ${app}`);
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Applet not found',
+                    text2: 'Check your deep link key or open the applet from My Buys.',
+                  });
                 }
-                if (pageId) screenParams.pageId = pageId;
-                if (variables) screenParams.variables = variables;
+              } catch (e) {
+                console.error('Failed to resolve My Buys deep link:', e);
+                Toast.show({
+                  type: 'error',
+                  text1: 'Failed to load My Buys',
+                  text2: 'Navigating to Home',
+                });
               }
-            } catch (fetchError) {
-              console.error('Failed to fetch applets for deep link:', fetchError);
-              Toast.show({
-                type: 'error',
-                text1: 'Failed to load app',
-                text2: 'Navigating to Home',
-              });
+            } else {
+              try {
+                const applets = await listBuiltInApplets();
+                const appNormalized = app.toLowerCase().replace(/-/g, '');
+                const applet = applets.find(
+                  (a) => a.app_name && a.app_name.toLowerCase().replace(/-/g, '') === appNormalized
+                );
+
+                if (applet) {
+                  const ts = applet.target_screen;
+                  targetScreen = (ts === 'conversationalai' ? 'ConversationalAI' : ts) as keyof RootStackParamList;
+                  screenParams = {
+                    appletId: applet.applet_id,
+                    appletName: applet.name,
+                    workbookId: applet.workbook_id ?? undefined,
+                    slug: applet.slug,
+                    embedPath: applet.embed_path,
+                    name: applet.name,
+                    pageId: pageId || applet.initial_page_id || undefined,
+                    variables,
+                  };
+                } else {
+                  const appLower = app.toLowerCase();
+                  if (appLower === 'dashboard') {
+                    targetScreen = 'Dashboard';
+                  } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
+                    targetScreen = 'ConversationalAI';
+                  } else if (appLower === 'operations') {
+                    targetScreen = 'Operations';
+                  } else {
+                    console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+                  }
+                  if (pageId) screenParams.pageId = pageId;
+                  if (variables) screenParams.variables = variables;
+                }
+              } catch (fetchError) {
+                console.error('Failed to fetch applets for deep link:', fetchError);
+                Toast.show({
+                  type: 'error',
+                  text1: 'Failed to load app',
+                  text2: 'Navigating to Home',
+                });
+              }
             }
           }
           
           // Update initial route if it hasn't been set yet (for when deep link comes before initial auth check)
-          setInitialRoute(targetScreen);
+          // ViewMyBuysApplet requires route.params (appletId) on first paint; mounting it as
+          // initialRouteName leaves route.params undefined and crashes. Use Home first; onReady
+          // applies pendingDeepLinkNav to navigate there with params.
+          const initialRouteForStack =
+            targetScreen === 'ViewMyBuysApplet' ? 'Home' : targetScreen;
+          setInitialRoute(initialRouteForStack);
           setIsCheckingAuth(false);
           
           // Store deep link params for navigation once container is ready

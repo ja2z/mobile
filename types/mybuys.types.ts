@@ -7,6 +7,8 @@ export interface Applet {
   name: string;
   embedUrl: string;
   secretName?: string; // Reference to secret in secrets table
+  /** Globally unique mybuys:word-word-word value for magic link `app` param */
+  deepLinkSlug?: string;
   createdAt: number;
   updatedAt: number;
 }

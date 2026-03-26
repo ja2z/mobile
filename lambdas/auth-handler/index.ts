@@ -13,6 +13,7 @@ import { validateUserExpiration, checkUserDeactivated, getUserProfile, validateR
 import { logActivity, logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 import { isEmailApproved as checkEmailApproved, getApprovedEmail, setRegisteredAtIfNotExists } from '../shared/approved-emails-service';
 import { getUserProfileByEmail, createUser, updateUser } from '../shared/user-service';
+import { getAppletByDeepLinkSlug } from '../shared/applets-service';
 
 // Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
@@ -607,6 +608,17 @@ async function handleSendToMobile(body: any, event: any) {
       error: 'Invalid request',
       message: 'pageId and variables can only be used when app is specified'
     });
+  }
+
+  // My Buys deep links: slug must exist in Postgres and belong to this user
+  if (app && typeof app === 'string' && app.startsWith('mybuys:')) {
+    const applet = await getAppletByDeepLinkSlug(app);
+    if (!applet || applet.userId !== user.userId) {
+      return createResponse(400, {
+        error: 'Invalid app',
+        message: 'The app link is invalid or you do not have access to this applet.'
+      });
+    }
   }
 
   // Store token in DynamoDB

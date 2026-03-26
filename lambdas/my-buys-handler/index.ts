@@ -603,17 +603,15 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     
     // Create applet using Postgres service (store reference to secret name instead of encrypted secret)
     const appletId = generateUUID();
-    
-    await createApplet({
+
+    const created = await createApplet({
         userId,
         appletId,
         name,
         embedUrl,
         secretName, // Store reference to secret instead of encryptedSecret and embedClientId
     });
-    
-    const now = Math.floor(Date.now() / 1000);
-    
+
     // Log activity
     const ipAddress = getIpAddress(event);
     await logActivityAndUpdateLastActive(
@@ -628,11 +626,12 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     return createResponse(201, {
         success: true,
         applet: {
-            appletId,
-            name,
-            embedUrl,
-            createdAt: now,
-            updatedAt: now
+            appletId: created.appletId,
+            name: created.name,
+            embedUrl: created.embedUrl,
+            deepLinkSlug: created.deepLinkSlug,
+            createdAt: created.createdAt,
+            updatedAt: created.updatedAt
         }
     });
 }
@@ -649,6 +648,7 @@ async function handleListApplets(userId: string): Promise<any> {
         name: item.name,
         embedUrl: item.embedUrl,
         secretName: item.secretName, // Include secretName for reference
+        deepLinkSlug: item.deepLinkSlug,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt
     }));
@@ -744,7 +744,9 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         embedUrl,
         secretName,
     });
-    
+
+    const refreshed = await getApplet(userId, appletId);
+
     // Log activity
     const ipAddress = getIpAddress(event);
     await logActivityAndUpdateLastActive(
@@ -755,15 +757,16 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         deviceId,
         ipAddress
     );
-    
+
     return createResponse(200, {
         success: true,
         applet: {
             appletId,
             name,
             embedUrl,
+            deepLinkSlug: refreshed?.deepLinkSlug ?? existing.deepLinkSlug,
             createdAt: existing.createdAt,
-            updatedAt: existing.updatedAt
+            updatedAt: refreshed?.updatedAt ?? existing.updatedAt
         }
     });
 }

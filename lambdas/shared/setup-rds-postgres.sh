@@ -411,9 +411,11 @@ CREATE TABLE IF NOT EXISTS applets (
     name VARCHAR(255) NOT NULL,
     embed_url TEXT NOT NULL,
     secret_name VARCHAR(255),
+    deep_link_slug VARCHAR(512) NOT NULL,
     created_at BIGINT NOT NULL,
     updated_at BIGINT NOT NULL,
-    PRIMARY KEY (user_id, applet_id)
+    PRIMARY KEY (user_id, applet_id),
+    UNIQUE (deep_link_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_applets_user_id_created_at ON applets(user_id, created_at DESC);
