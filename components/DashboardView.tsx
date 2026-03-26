@@ -23,9 +23,6 @@ function getEmbedTargetOrigin(embedUrl: string | null): string {
   }
 }
 
-/** Page node to select in the embed after a successful QR scan. */
-const QR_SCAN_SUCCESS_PAGE_NODE_ID = 'ceSTFJP91E';
-
 interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
   appletId?: string; // Optional applet ID for activity logging
@@ -120,6 +117,8 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const webViewRef = useRef<WebView>(null);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const qrControlIdRef = useRef<string | null>(null);
+  /** Optional page node id from Sigma `values.navigateToPage` (or direct `navigateToPage`); if unset, scan success does not send workbook:selectednodeid:update. */
+  const qrNavigateToPageRef = useRef<string | null>(null);
 
   /**
    * Check if a URL is an "ask" URL that doesn't send workbook:loaded events
@@ -525,9 +524,16 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           // Sigma sends QR as action:outbound with values.controlId (cannot change embed side)
           const raw = data.values?.controlId;
           const cid = typeof raw === 'string' ? raw.trim() : '';
+          const navRaw = data.values?.navigateToPage;
+          const nav =
+            typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
           if (cid) {
             console.log('📷 QR scanner requested (action:outbound) for control:', cid);
+            if (nav) {
+              console.log('📷 navigateToPage:', nav);
+            }
             qrControlIdRef.current = cid;
+            qrNavigateToPageRef.current = nav;
             setQrScannerVisible(true);
           } else {
             console.warn('📷 invokeQRscanner (action:outbound) missing or empty values.controlId');
@@ -535,9 +541,13 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         }
       } else if (data.type === 'invokeQRscanner') {
         const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
+        const navRaw = (data as { navigateToPage?: unknown }).navigateToPage;
+        const nav =
+          typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
         if (cid) {
           console.log('📷 QR scanner requested for control:', cid);
           qrControlIdRef.current = cid;
+          qrNavigateToPageRef.current = nav;
           setQrScannerVisible(true);
         } else {
           console.warn('📷 invokeQRscanner missing or empty controlId');
@@ -710,6 +720,7 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         visible={qrScannerVisible}
         onClose={() => {
           qrControlIdRef.current = null;
+          qrNavigateToPageRef.current = null;
           setQrScannerVisible(false);
         }}
         onScanned={(payload) => {
@@ -722,12 +733,16 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
             type: 'workbook:variables:update',
             variables: { [id]: payload },
           });
-          sendMessage({
-            type: 'workbook:selectednodeid:update',
-            selectedNodeId: QR_SCAN_SUCCESS_PAGE_NODE_ID,
-            nodeType: 'page',
-          });
+          const navigateTo = qrNavigateToPageRef.current;
+          if (navigateTo) {
+            sendMessage({
+              type: 'workbook:selectednodeid:update',
+              selectedNodeId: navigateTo,
+              nodeType: 'page',
+            });
+          }
           qrControlIdRef.current = null;
+          qrNavigateToPageRef.current = null;
           setQrScannerVisible(false);
         }}
       />
