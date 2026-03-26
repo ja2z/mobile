@@ -8,6 +8,23 @@ import { EmbedUrlService } from '../services/EmbedUrlService';
 import { AuthService } from '../services/AuthService';
 import { colors, spacing, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
+import * as Haptics from 'expo-haptics';
+import { QrScannerModal } from './QrScannerModal';
+
+/** Fallback when embed URL is missing or invalid; matches historical hardcoded postMessage target. */
+const DEFAULT_SIGMA_EMBED_ORIGIN = 'https://app.sigmacomputing.com';
+
+function getEmbedTargetOrigin(embedUrl: string | null): string {
+  if (!embedUrl) return DEFAULT_SIGMA_EMBED_ORIGIN;
+  try {
+    return new URL(embedUrl).origin;
+  } catch {
+    return DEFAULT_SIGMA_EMBED_ORIGIN;
+  }
+}
+
+/** Page node to select in the embed after a successful QR scan. */
+const QR_SCAN_SUCCESS_PAGE_NODE_ID = 'ceSTFJP91E';
 
 interface DashboardViewProps {
   workbookId?: string; // Optional workbook ID to load specific workbook
@@ -101,7 +118,9 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const [isAskUrl, setIsAskUrl] = useState(false); // Track if URL is an "ask" URL that doesn't send workbook:loaded
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webViewRef = useRef<WebView>(null);
-  
+  const [qrScannerVisible, setQrScannerVisible] = useState(false);
+  const qrControlIdRef = useRef<string | null>(null);
+
   /**
    * Check if a URL is an "ask" URL that doesn't send workbook:loaded events
    * Examples:
@@ -151,13 +170,15 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
     }
     
     console.log('✅ webViewRef.current exists, injecting JavaScript...');
-    
+
     const messageStr = JSON.stringify(message);
-    const escapedMessageStr = messageStr.replace(/'/g, "\\'");
-    
+    const targetOrigin = getEmbedTargetOrigin(url);
+    const originLiteral = JSON.stringify(targetOrigin);
+
     // Note: iOS WKWebView requires the injected script to return a primitive value
     // Using void(0) ensures we return undefined which is a valid primitive
-    const js = `(function(){try{var iframe=document.getElementById('sigma-embed');if(iframe&&iframe.contentWindow){iframe.contentWindow.postMessage(${messageStr},'https://app.sigmacomputing.com');}}catch(e){}})();void(0);`;
+    // targetOrigin must match the iframe document origin (production, staging, etc.)
+    const js = `(function(){try{var iframe=document.getElementById('sigma-embed');if(iframe&&iframe.contentWindow){iframe.contentWindow.postMessage(${messageStr},${originLiteral});}}catch(e){}})();void(0);`;
     
     console.log('📝 Injecting JavaScript...');
     webViewRef.current.injectJavaScript(js);
@@ -500,6 +521,26 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           if (inventoryVerificationCallbackRef.current && data.values) {
             inventoryVerificationCallbackRef.current(data.values);
           }
+        } else if (data.name === 'invokeQRscanner') {
+          // Sigma sends QR as action:outbound with values.controlId (cannot change embed side)
+          const raw = data.values?.controlId;
+          const cid = typeof raw === 'string' ? raw.trim() : '';
+          if (cid) {
+            console.log('📷 QR scanner requested (action:outbound) for control:', cid);
+            qrControlIdRef.current = cid;
+            setQrScannerVisible(true);
+          } else {
+            console.warn('📷 invokeQRscanner (action:outbound) missing or empty values.controlId');
+          }
+        }
+      } else if (data.type === 'invokeQRscanner') {
+        const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
+        if (cid) {
+          console.log('📷 QR scanner requested for control:', cid);
+          qrControlIdRef.current = cid;
+          setQrScannerVisible(true);
+        } else {
+          console.warn('📷 invokeQRscanner missing or empty controlId');
         }
       } else if (data.type === 'workbook:variables:onchange') {
         // Handle variable changes - check for sessionId and chat response
@@ -663,6 +704,32 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
         // Allow navigation to Sigma domains for embedded content
         originWhitelist={['*']}
         mixedContentMode="always"
+      />
+
+      <QrScannerModal
+        visible={qrScannerVisible}
+        onClose={() => {
+          qrControlIdRef.current = null;
+          setQrScannerVisible(false);
+        }}
+        onScanned={(payload) => {
+          const id = qrControlIdRef.current;
+          if (!id) return;
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {
+            // Haptics not available on this device
+          });
+          sendMessage({
+            type: 'workbook:variables:update',
+            variables: { [id]: payload },
+          });
+          sendMessage({
+            type: 'workbook:selectednodeid:update',
+            selectedNodeId: QR_SCAN_SUCCESS_PAGE_NODE_ID,
+            nodeType: 'page',
+          });
+          qrControlIdRef.current = null;
+          setQrScannerVisible(false);
+        }}
       />
     </View>
   );
