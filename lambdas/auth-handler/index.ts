@@ -106,6 +106,8 @@ export const handler = async (event: any) => {
       return await handleRefreshToken(body, event);
     } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
       return await handleAuthenticateBackdoor(body, event);
+    } else if (path === '/v1/auth/me' && method === 'GET') {
+      return await handleGetMe(event);
     } else if (path.startsWith('/s/') && method === 'GET') {
       // Handle /s/{shortId} (API Gateway strips /v1/ prefix in AWS_PROXY mode when accessed via CloudFront)
       const shortId = path.replace('/s/', '');
@@ -202,6 +204,47 @@ async function checkUserStatusByEmail(email: string): Promise<{
   }
   
   return { blocked: false, userId: user.userId };
+}
+
+/**
+ * GET /v1/auth/me — return the authenticated user's profile from Postgres.
+ * Requires Authorization: Bearer <session JWT>.
+ * Phone number is returned as-is; masking is applied client-side.
+ */
+async function handleGetMe(event: any) {
+  const headers = event.headers || {};
+  const authHeader = headers['Authorization'] || headers['authorization'];
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return createResponse(401, { error: 'Authorization header with Bearer token is required' });
+  }
+
+  let decoded: any;
+  try {
+    const secret = await getJWTSecret();
+    decoded = jwt.verify(token, secret, { algorithms: ['HS256'] });
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return createResponse(401, { error: 'Session expired. Please sign in again.' });
+    }
+    return createResponse(401, { error: 'Invalid session token' });
+  }
+
+  const user = await getUserProfile(decoded.userId);
+  if (!user) {
+    return createResponse(404, { error: 'User not found' });
+  }
+
+  return createResponse(200, {
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
+    phoneNumber: user.phoneNumber || null,
+    phoneNumberVerifiedAt: user.phoneNumberVerifiedAt ?? null,
+    expirationDate: user.expirationDate || null,
+    isDeactivated: user.isDeactivated || false,
+  });
 }
 
 /**
@@ -505,28 +548,9 @@ async function handleSendToMobile(body: any, event: any) {
     return createResponse(400, { error: 'Email is required' });
   }
 
-  // Validate email hash (required for security)
-  if (!emailhash) {
-    return createResponse(400, { error: 'Email hash is required' });
-  }
-
-  // Get the secret key (same as API key secret) for hash verification
-  const secretKey = await getApiKey();
-  
-  // Compute expected hash: SHA256(secretKey + email)
-  const hashInput = secretKey + email;
-  const expectedHash = createHash('sha256').update(hashInput).digest('hex');
-  
-  // Compare hashes (case-insensitive for safety)
-  if (emailhash.toLowerCase() !== expectedHash.toLowerCase()) {
-    console.warn(`Email hash verification failed for email: ${email}`);
-    return createResponse(401, { 
-      error: 'Invalid email signature',
-      message: 'The email signature is invalid. This request may have been tampered with.'
-    });
-  }
-
-  console.log(`Email hash verified successfully for email: ${email}`);
+  // emailhash is accepted in the body for backward compat but intentionally ignored:
+  // SMS goes to the phone number on file for the given email; spoofing only misdirects the SMS.
+  console.log(`[handleSendToMobile] Proceeding with email: ${email}`);
 
   // Validate linkType
   if (linkType !== 'direct' && linkType !== 'universal') {
@@ -580,7 +604,8 @@ async function handleSendToMobile(body: any, event: any) {
     console.log('[handleSendToMobile] User does not have a verified phone number');
     return createResponse(400, {
       error: 'Phone number not verified',
-      message: 'You must verify your phone number before using the send-to-mobile feature. Please verify your phone number first.'
+      message:
+        'You must verify your phone number before using the send-to-mobile feature. In the Big Buys mobile app, open Profile (from the home screen) and use Verify phone number to complete verification.',
     });
   }
 

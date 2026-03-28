@@ -16,6 +16,8 @@ export interface UserProfile {
   lastActiveAt?: number;
   registrationMethod?: string;
   phoneNumber?: string;
+  /** Unix seconds when phone was last set via successful SMS verify (null = never / legacy) */
+  phoneNumberVerifiedAt?: number | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -30,6 +32,8 @@ interface UserRow {
   last_active_at: number | null;
   registration_method: string | null;
   phone_number: string | null;
+  /** node-pg may return BIGINT as string */
+  phone_number_verified_at: number | string | null;
   created_at: number;
   updated_at: number;
 }
@@ -48,6 +52,11 @@ function rowToUserProfile(row: UserRow): UserProfile {
     lastActiveAt: row.last_active_at || undefined,
     registrationMethod: row.registration_method || undefined,
     phoneNumber: row.phone_number || undefined,
+    phoneNumberVerifiedAt: (() => {
+      if (row.phone_number_verified_at == null) return undefined;
+      const n = Number(row.phone_number_verified_at);
+      return Number.isFinite(n) ? n : undefined;
+    })(),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -118,14 +127,15 @@ export async function createUser(user: {
   await query(
     `INSERT INTO users (
       user_id, email, role, expiration_date, registration_method, 
-      phone_number, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      phone_number, phone_number_verified_at, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     ON CONFLICT (user_id) DO UPDATE SET
       email = EXCLUDED.email,
       role = EXCLUDED.role,
       expiration_date = EXCLUDED.expiration_date,
       registration_method = EXCLUDED.registration_method,
       phone_number = EXCLUDED.phone_number,
+      phone_number_verified_at = EXCLUDED.phone_number_verified_at,
       updated_at = EXCLUDED.updated_at`,
     [
       user.userId,
@@ -134,6 +144,7 @@ export async function createUser(user: {
       user.expirationDate || null,
       user.registrationMethod || null,
       user.phoneNumber || null,
+      null,
       now,
       now,
     ]
@@ -161,6 +172,8 @@ export async function updateUser(
     lastActiveAt?: number | null;
     registrationMethod?: string;
     phoneNumber?: string;
+    /** Set together with phoneNumber when recording a new verification timestamp */
+    phoneNumberVerifiedAt?: number;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -200,6 +213,10 @@ export async function updateUser(
   if (updates.phoneNumber !== undefined) {
     setParts.push(`phone_number = $${paramIndex++}`);
     values.push(updates.phoneNumber);
+  }
+  if (updates.phoneNumberVerifiedAt !== undefined) {
+    setParts.push(`phone_number_verified_at = $${paramIndex++}`);
+    values.push(updates.phoneNumberVerifiedAt);
   }
 
   if (setParts.length === 0) {

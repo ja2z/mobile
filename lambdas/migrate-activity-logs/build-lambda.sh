@@ -32,7 +32,7 @@ cp dist/index.js index.js
 
 echo ""
 echo "🗜️  Creating migrate-activity-logs.zip..."
-zip -r migrate-activity-logs.zip node_modules index.js
+zip -rq migrate-activity-logs.zip node_modules index.js
 
 echo ""
 echo "🧹 Cleaning up temporary files..."

@@ -16,9 +16,13 @@ The SMS magic link flow is already implemented in the Lambda function. When a bu
 The endpoint expects:
 - `email`: User's email address (validated against approved emails)
 - `phoneNumber`: Phone number in E.164 format (e.g., `+14155551234`)
-- `apiKey`: API key from Secrets Manager (for authentication)
+- `apiKey`: API key from Secrets Manager (for authentication via `X-API-Key` header or body field)
 - `dashboardId`: (Optional) Dashboard ID for deep linking
 - `linkType`: (Optional) `'direct'` or `'universal'` (defaults to `'universal'`)
+
+> **Note (2026-03):** The `emailhash` field (SHA256 of `apiKey + email`) is **no longer required** and is
+> silently ignored if present. Authentication relies on the `X-API-Key` header + `email` only.
+> This simplifies Sigma workbook button configurations — remove the `emailhash` computation if present.
 
 ## AWS CLI Commands
 

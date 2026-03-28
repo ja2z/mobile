@@ -24,6 +24,7 @@ import Sigmanauts from './(tabs)/Sigmanauts';
 import AI from './(tabs)/AI';
 import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
+import PhoneVerification from './(tabs)/PhoneVerification';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
@@ -53,6 +54,7 @@ export type RootStackParamList = {
   AI: undefined;
   Dashboards: undefined;
   Apps: undefined;
+  PhoneVerification: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -737,6 +739,23 @@ export default function RootLayout() {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            headerTransparent: false,
+          }}
+        />
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerification}
+          options={{
+            title: 'Phone Verification',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.primary,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: 'bold' },
             headerTransparent: false,
           }}
         />

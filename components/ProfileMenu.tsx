@@ -23,6 +23,49 @@ interface ProfileMenuProps {
 
 type ProfileMenuNavigationProp = StackNavigationProp<RootStackParamList>;
 
+/** Groups a string into chunks of 3 for readability (e.g. bullet runs). */
+function groupByThree(s: string): string {
+  const chunks = s.match(/.{1,3}/g);
+  return chunks ? chunks.join(' ') : s;
+}
+
+/**
+ * Mask all but last 4 digits. One bullet (•) per hidden digit.
+ * US +1 NANP: 10 national digits → +1 ••• ••• 1234 (6 bullets = area + exchange).
+ */
+function maskPhone(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/\D/g, '');
+  if (digits.length < 4) return phoneNumber;
+
+  const last4 = digits.slice(-4);
+
+  // US: E.164 +1XXXXXXXXXX (11 digits) or 10-digit national
+  let national: string | null = null;
+  if (digits.length === 11 && digits[0] === '1') {
+    national = digits.slice(1);
+  } else if (digits.length === 10) {
+    national = digits;
+  }
+  if (national && national.length === 10) {
+    const hidden = national.slice(0, -4);
+    const mask = groupByThree('•'.repeat(hidden.length));
+    return `+1 ${mask} ${last4}`;
+  }
+
+  // Other E.164: show +CC then one • per remaining digit before the last 4 (no double-masking CC)
+  const ccMatch = phoneNumber.trim().match(/^\+(\d{1,3})/);
+  if (ccMatch && digits.length > ccMatch[1].length + 4) {
+    const cc = ccMatch[1];
+    const afterCcLen = digits.length - cc.length - 4;
+    const mask = groupByThree('•'.repeat(afterCcLen));
+    return `+${cc} ${mask} ${last4}`;
+  }
+
+  const hidden = digits.slice(0, -4);
+  const mask = groupByThree('•'.repeat(hidden.length));
+  return `${mask} ${last4}`;
+}
+
 /**
  * Profile Menu Component
  * Displays user profile information and logout option
@@ -30,6 +73,7 @@ type ProfileMenuNavigationProp = StackNavigationProp<RootStackParamList>;
 export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
   const navigation = useNavigation<ProfileMenuNavigationProp>();
   const [email, setEmail] = useState<string>('');
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [sessionStartDate, setSessionStartDate] = useState<Date | null>(null);
   const [sessionExpirationDate, setSessionExpirationDate] = useState<Date | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -47,20 +91,20 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
       const session = await AuthService.getSession();
       const startDate = await AuthService.getSessionStartDate();
       const adminStatus = await AuthService.isAdmin();
+      // Fetch phone number from Postgres via /auth/me
+      const profile = await AuthService.getMe();
 
       if (session) {
         setEmail(session.user.email);
         setIsAdmin(adminStatus);
-        
-        // Session start date (from JWT iat)
         setSessionStartDate(startDate);
 
-        // Session expiration date (from JWT exp)
         if (session.expiresAt && session.expiresAt > 0) {
-          // expiresAt is in seconds, convert to milliseconds
           setSessionExpirationDate(new Date(session.expiresAt * 1000));
         }
       }
+
+      setPhoneNumber(profile?.phoneNumber ?? null);
     } catch (error) {
       console.error('Error loading session data:', error);
     } finally {
@@ -71,6 +115,11 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
   const handleAdminPress = () => {
     onClose();
     navigation.navigate('Admin' as never);
+  };
+
+  const handleVerifyPhone = () => {
+    onClose();
+    navigation.navigate('PhoneVerification' as never);
   };
 
   const formatDate = (date: Date | null): string => {
@@ -122,6 +171,28 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Email</Text>
                       <Text style={styles.infoValue}>{email || 'Not available'}</Text>
+                    </View>
+                  </View>
+
+                  {/* Phone */}
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIconContainer}>
+                      <Ionicons name="phone-portrait-outline" size={20} color={colors.primary} />
+                    </View>
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Phone</Text>
+                      {phoneNumber ? (
+                        <View style={styles.phoneRow}>
+                          <Text style={styles.infoValue}>{maskPhone(phoneNumber)}</Text>
+                          <TouchableOpacity onPress={handleVerifyPhone} style={styles.changePhoneButton}>
+                            <Text style={styles.changePhoneText}>Change</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity onPress={handleVerifyPhone} activeOpacity={0.7}>
+                          <Text style={styles.verifyPhoneLink}>Verify phone number</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
 
@@ -257,6 +328,25 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '500',
   },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  verifyPhoneLink: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  changePhoneButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  changePhoneText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
+  },
   adminButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,4 +382,3 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
 });
-

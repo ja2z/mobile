@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -35,7 +35,8 @@ export default function Home() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
   const [isSigmaEmployee, setIsSigmaEmployee] = useState(false);
-  
+  const [phoneNudgeVisible, setPhoneNudgeVisible] = useState(false);
+
   // State for selected tile
   const [selectedTile, setSelectedTile] = useState<AppTile | null>(null);
   
@@ -62,6 +63,32 @@ export default function Home() {
     };
 
     checkEmailDomain();
+  }, []);
+
+  // Post-login phone nudge: show once per login instance if no verified phone and not backdoor
+  useEffect(() => {
+    const checkPhoneNudge = async () => {
+      try {
+        const session = await AuthService.getSession();
+        if (!session) return;
+
+        // Decode JWT to check isBackdoor flag — never show nudge for backdoor sessions
+        const decoded = AuthService.decodeJWT(session.jwt);
+        if (decoded?.isBackdoor) return;
+
+        const shouldShow = await AuthService.shouldShowPhoneNudge();
+        if (!shouldShow) return;
+
+        const profile = await AuthService.getMe();
+        if (!profile?.phoneNumber) {
+          setPhoneNudgeVisible(true);
+        }
+      } catch (error) {
+        console.error('[Home] Error checking phone nudge:', error);
+      }
+    };
+
+    checkPhoneNudge();
   }, []);
 
   const handleNavigateToMyBuys = () => {
@@ -429,6 +456,49 @@ export default function Home() {
         onClose={() => setProfileMenuVisible(false)}
         onLogout={handleLogout}
       />
+
+      {/* Phone verification nudge modal */}
+      <Modal
+        visible={phoneNudgeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          AuthService.dismissPhoneNudge();
+          setPhoneNudgeVisible(false);
+        }}
+      >
+        <View style={styles.nudgeOverlay}>
+          <View style={styles.nudgeCard}>
+            <View style={styles.nudgeIconCircle}>
+              <Ionicons name="phone-portrait-outline" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.nudgeTitle}>Verify Your Phone Number</Text>
+            <Text style={styles.nudgeBody}>
+              Add a verified phone number to receive SMS notifications directly from Sigma workbooks — right on your mobile device.
+            </Text>
+            <TouchableOpacity
+              style={styles.nudgePrimaryButton}
+              activeOpacity={0.8}
+              onPress={() => {
+                AuthService.dismissPhoneNudge();
+                setPhoneNudgeVisible(false);
+                navigation.navigate('PhoneVerification' as never);
+              }}
+            >
+              <Text style={styles.nudgePrimaryButtonText}>Verify Now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.nudgeSecondaryButton}
+              onPress={() => {
+                AuthService.dismissPhoneNudge();
+                setPhoneNudgeVisible(false);
+              }}
+            >
+              <Text style={styles.nudgeSecondaryButtonText}>Maybe Later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -640,5 +710,69 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     // Remove tintColor - display logo in original black color
+  },
+  // Phone nudge modal
+  nudgeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  nudgeCard: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    ...shadows.medium,
+  },
+  nudgeIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  nudgeTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  nudgeBody: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.xl,
+  },
+  nudgePrimaryButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    minHeight: 52,
+    justifyContent: 'center',
+  },
+  nudgePrimaryButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  nudgeSecondaryButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    width: '100%',
+  },
+  nudgeSecondaryButtonText: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
 });

@@ -11,7 +11,7 @@ export PYTHONHTTPSVERIFY=0
 
 # AWS CLI wrapper to filter warnings
 aws_cmd() {
-    aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning" >&2)
+    aws "$@" --no-verify-ssl 2> >(grep -v "InsecureRequestWarning\|warnings.warn(" >&2)
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

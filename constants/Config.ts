@@ -10,6 +10,7 @@ export const Config = {
     AUTH_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/auth',
     ADMIN_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/admin',
     MY_BUYS_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/my-buys',
+    PHONE_BASE_URL: 'https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1/phone',
   },
   
   // App configuration

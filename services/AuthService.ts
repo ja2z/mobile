@@ -3,13 +3,27 @@ import * as Device from 'expo-device';
 import { Config } from '../constants/Config';
 
 const AUTH_BASE_URL = Config.API.AUTH_BASE_URL;
+const PHONE_BASE_URL = Config.API.PHONE_BASE_URL;
 const JWT_STORAGE_KEY = 'auth_jwt';
 const USER_STORAGE_KEY = 'auth_user';
+const LOGIN_INSTANCE_KEY = 'current_login_instance_id';
+const NUDGE_DISMISSED_KEY = 'phone_nudge_dismissed_for_instance';
 
 export interface User {
   email: string;
   userId: string;
   role?: 'basic' | 'admin';
+}
+
+export interface UserProfile {
+  userId: string;
+  email: string;
+  role: string;
+  phoneNumber: string | null;
+  /** Unix seconds when phone was last set via SMS verify; used for change cooldown */
+  phoneNumberVerifiedAt: number | null;
+  expirationDate: number | null;
+  isDeactivated: boolean;
 }
 
 export interface AuthSession {
@@ -139,6 +153,9 @@ export class AuthService {
       },
       expiresAt: data.expiresAt || 0,
     });
+
+    // Set a new login instance ID so the phone nudge shows on this login (not for backdoor)
+    await this.setNewLoginInstance();
 
     return {
       jwt: sessionToken,
@@ -375,6 +392,7 @@ export class AuthService {
   static async clearSession(): Promise<void> {
     await SecureStore.deleteItemAsync(JWT_STORAGE_KEY);
     await SecureStore.deleteItemAsync(USER_STORAGE_KEY);
+    await this.clearLoginInstance();
   }
 
   /**
@@ -415,6 +433,155 @@ export class AuthService {
   static async isAdmin(): Promise<boolean> {
     const role = await this.getUserRole();
     return role === 'admin';
+  }
+
+  // ─── /auth/me ────────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch the authenticated user's profile from Postgres via GET /auth/me.
+   * Returns null if not authenticated or request fails.
+   */
+  static async getMe(): Promise<UserProfile | null> {
+    const session = await this.getSession();
+    if (!session) return null;
+
+    try {
+      const response = await fetch(`${AUTH_BASE_URL}/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.jwt}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data as UserProfile;
+    } catch (error) {
+      console.error('[AuthService.getMe] Error:', error);
+      return null;
+    }
+  }
+
+  // ─── Login instance / nudge ───────────────────────────────────────────────
+
+  /**
+   * Set a new login instance ID in SecureStore.
+   * Called only on successful magic-link verification (not backdoor).
+   */
+  static async setNewLoginInstance(): Promise<void> {
+    // Generate a unique ID using timestamp + random suffix
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    await SecureStore.setItemAsync(LOGIN_INSTANCE_KEY, id);
+  }
+
+  static async getLoginInstanceId(): Promise<string | null> {
+    return SecureStore.getItemAsync(LOGIN_INSTANCE_KEY);
+  }
+
+  /**
+   * Returns true if the phone-nudge has NOT been dismissed for the current login instance.
+   */
+  static async shouldShowPhoneNudge(): Promise<boolean> {
+    const currentInstance = await this.getLoginInstanceId();
+    if (!currentInstance) return false;
+    const dismissedFor = await SecureStore.getItemAsync(NUDGE_DISMISSED_KEY);
+    return dismissedFor !== currentInstance;
+  }
+
+  /**
+   * Mark the phone nudge as dismissed for the current login instance.
+   * Stores the instance ID into NUDGE_DISMISSED_KEY so we can compare on next check.
+   */
+  static async dismissPhoneNudge(): Promise<void> {
+    const currentInstance = await this.getLoginInstanceId();
+    if (currentInstance) {
+      await SecureStore.setItemAsync(NUDGE_DISMISSED_KEY, currentInstance);
+    }
+  }
+
+  /**
+   * Clear login instance and nudge keys on logout.
+   */
+  static async clearLoginInstance(): Promise<void> {
+    await SecureStore.deleteItemAsync(LOGIN_INSTANCE_KEY);
+    await SecureStore.deleteItemAsync(NUDGE_DISMISSED_KEY);
+  }
+
+  // ─── Phone verification ───────────────────────────────────────────────────
+
+  /**
+   * Send SMS verification code to the given phone number.
+   * Requires active session JWT.
+   */
+  static async validatePhone(phoneNumber: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) throw new Error('Not authenticated');
+
+    const response = await fetch(`${PHONE_BASE_URL}/validate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.jwt}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ phoneNumber }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const err = new Error(
+        data.message || data.error || 'Failed to send verification code'
+      ) as Error & { code?: string; nextAllowedAt?: number; cooldownSecondsRemaining?: number };
+      if (data.error === 'phone_change_cooldown') err.code = 'phone_change_cooldown';
+      if (data.nextAllowedAt != null) {
+        const n =
+          typeof data.nextAllowedAt === 'number'
+            ? data.nextAllowedAt
+            : parseInt(String(data.nextAllowedAt), 10);
+        if (!Number.isNaN(n)) err.nextAllowedAt = n;
+      }
+      if (typeof data.cooldownSecondsRemaining === 'number') {
+        err.cooldownSecondsRemaining = data.cooldownSecondsRemaining;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Verify the SMS code entered by the user.
+   * Requires active session JWT.
+   */
+  static async verifyPhone(phoneNumber: string, verificationCode: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) throw new Error('Not authenticated');
+
+    const response = await fetch(`${PHONE_BASE_URL}/verify`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.jwt}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ phoneNumber, verificationCode }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const err = new Error(
+        data.message || data.error || 'Failed to verify code'
+      ) as Error & { code?: string; nextAllowedAt?: number; cooldownSecondsRemaining?: number };
+      if (data.error === 'phone_change_cooldown') err.code = 'phone_change_cooldown';
+      if (data.nextAllowedAt != null) {
+        const n =
+          typeof data.nextAllowedAt === 'number'
+            ? data.nextAllowedAt
+            : parseInt(String(data.nextAllowedAt), 10);
+        if (!Number.isNaN(n)) err.nextAllowedAt = n;
+      }
+      if (typeof data.cooldownSecondsRemaining === 'number') {
+        err.cooldownSecondsRemaining = data.cooldownSecondsRemaining;
+      }
+      throw err;
+    }
   }
 
   /**

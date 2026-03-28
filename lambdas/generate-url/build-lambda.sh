@@ -112,7 +112,7 @@ if [ ! -f "index.js" ]; then
   echo "❌ Error: index.js not found! Cannot create zip."
   exit 1
 fi
-zip -r generateSigmaEmbedURL.zip node_modules index.js shared
+zip -rq generateSigmaEmbedURL.zip node_modules index.js shared
 
 echo ""
 echo "🧹 Cleaning up temporary files..."

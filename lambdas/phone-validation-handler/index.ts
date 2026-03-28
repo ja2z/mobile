@@ -1,33 +1,31 @@
 /**
  * Phone Number Validation Lambda Handler
- * Handles phone number validation via SMS verification codes
+ * Handles phone number validation via SMS verification codes.
+ * Requires Bearer session JWT (from magic link auth) — does NOT accept API key / emailhash.
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { randomBytes, createHash } from 'crypto';
-import { validateRole, getUserProfileByEmail } from '../shared/user-validation';
-import { isEmailApproved as checkEmailApproved, getApprovedEmail, setRegisteredAtIfNotExists } from '../shared/approved-emails-service';
-import { createUser, updateUser } from '../shared/user-service';
+import { randomBytes } from 'crypto';
+import { verifySessionJWT, extractBearerToken, SessionPayload } from '../shared/session-jwt';
+import { getUserProfile, updateUser } from '../shared/user-service';
 
-// Initialize AWS clients
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const secretsClient = new SecretsManagerClient({});
 
-// Environment variables
 const VERIFICATIONS_TABLE = process.env.VERIFICATIONS_TABLE || 'mobile-phone-verifications';
-// APPROVED_EMAILS_TABLE and USERS_TABLE removed - now using Postgres services
-const API_KEY_SECRET_NAME = process.env.API_KEY_SECRET_NAME || 'mobile-app/api-key';
 const TELNYX_API_KEY_SECRET_NAME = process.env.TELNYX_API_KEY_SECRET_NAME || 'mobile-app/telnyx-api-key';
 
-// Cache for secrets (reduces Secrets Manager calls)
-let apiKey: string | null = null;
+/** Cooldown only when replacing an existing verified number (14 days). */
+const PHONE_CHANGE_COOLDOWN_SECONDS =
+  parseInt(process.env.PHONE_CHANGE_COOLDOWN_SECONDS || '', 10) || 14 * 24 * 60 * 60;
+
 let telnyxApiKey: string | null = null;
 
 /**
- * Main Lambda handler - routes to appropriate function based on path
+ * Main Lambda handler
  */
 export const handler = async (event: any) => {
   console.log('[handler] ========== PHONE VALIDATION LAMBDA INVOCATION START ==========');
@@ -37,9 +35,6 @@ export const handler = async (event: any) => {
     let path = event.path || event.rawPath;
     const method = event.httpMethod || event.requestContext?.http?.method;
 
-    console.log('[handler] Path:', path, 'Method:', method);
-
-    // Normalize path
     if (path.startsWith('/v1/v1/')) {
       path = path.replace('/v1/v1/', '/v1/');
     } else if (path.startsWith('/phone/')) {
@@ -48,104 +43,133 @@ export const handler = async (event: any) => {
 
     console.log(`[handler] Final path for routing: ${path}, method: ${method}`);
 
-    // Parse body for POST requests
-    let body = {};
+    let body: any = {};
     if (method === 'POST' && event.body) {
       try {
         body = JSON.parse(event.body);
-        console.log('[handler] Parsed body:', JSON.stringify(body));
-      } catch (parseError) {
-        console.error('[handler] Error parsing body:', parseError);
-        console.error('[handler] Body content:', event.body);
+      } catch {
         return createResponse(400, { error: 'Invalid JSON in request body' });
       }
     }
 
-    // Route to appropriate handler
     if (path === '/v1/phone/validate' && method === 'POST') {
       return await handleValidatePhone(body, event);
     } else if (path === '/v1/phone/verify' && method === 'POST') {
       return await handleVerifyPhoneCode(body, event);
     } else {
-      console.log('[handler] No matching route found');
       return createResponse(404, { error: 'Not found' });
     }
   } catch (error: any) {
     console.error('[handler] Unexpected error:', error);
-    console.error('[handler] Error stack:', error instanceof Error ? error.stack : 'No stack');
-    return createResponse(500, { 
+    return createResponse(500, {
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'An unexpected error occurred'
     });
   }
 };
 
+// ─── Auth helper ───────────────────────────────────────────────────────────────
+
+async function authenticateRequest(event: any): Promise<SessionPayload | { error: ReturnType<typeof createResponse> }> {
+  const headers = event.headers || {};
+  const authHeader = headers['Authorization'] || headers['authorization'];
+  const token = extractBearerToken(authHeader);
+
+  if (!token) {
+    return { error: createResponse(401, { error: 'Authorization header with Bearer token is required' }) };
+  }
+
+  try {
+    return await verifySessionJWT(token);
+  } catch (err: any) {
+    console.warn('[authenticateRequest] JWT verification failed:', err.message);
+    if (err.name === 'TokenExpiredError') {
+      return { error: createResponse(401, { error: 'Session expired. Please sign in again.' }) };
+    }
+    return { error: createResponse(401, { error: 'Invalid session token' }) };
+  }
+}
+
+function isAuthError(result: any): result is { error: ReturnType<typeof createResponse> } {
+  return result && 'error' in result && result.error?.statusCode !== undefined;
+}
+
+function normalizeE164Phone(p: string): string {
+  return p.trim();
+}
+
+/** True when user already has a verified phone and the new value is different. */
+function isChangingPhoneNumber(
+  existing: string | undefined | null,
+  requested: string
+): boolean {
+  const e = existing?.trim();
+  if (!e) return false;
+  return normalizeE164Phone(e) !== normalizeE164Phone(requested);
+}
+
 /**
- * Handle phone number validation and send verification code
+ * If changing numbers too soon after last verification, return 403 JSON; otherwise null.
  */
+function phoneChangeCooldownResponse(
+  verifiedAt: number | string | undefined | null
+): ReturnType<typeof createResponse> | null {
+  // Postgres BIGINT often arrives as a string; + must be numeric or JS string-concats (wrong).
+  const v =
+    verifiedAt == null || verifiedAt === ''
+      ? NaN
+      : typeof verifiedAt === 'string'
+        ? Number(verifiedAt)
+        : Number(verifiedAt);
+  if (!Number.isFinite(v) || v <= 0) {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const nextAllowedAt = v + PHONE_CHANGE_COOLDOWN_SECONDS;
+  if (now >= nextAllowedAt) {
+    return null;
+  }
+  return createResponse(403, {
+    error: 'phone_change_cooldown',
+    message: `You can change your phone number again after ${PHONE_CHANGE_COOLDOWN_SECONDS / 86400} days from the last verification.`,
+    nextAllowedAt,
+    cooldownSecondsRemaining: nextAllowedAt - now,
+  });
+}
+
+// ─── Validate ──────────────────────────────────────────────────────────────────
+
 async function handleValidatePhone(body: any, event: any) {
   console.log('[handleValidatePhone] Starting phone validation');
-  const { phoneNumber, email, emailhash } = body;
 
-  // Get API key from header (API Gateway may lowercase headers)
-  const headers = event.headers || {};
-  const providedApiKey = headers['X-API-Key'] || headers['x-api-key'] || headers['X-Api-Key'];
-  
-  if (!providedApiKey) {
-    return createResponse(401, { error: 'API key required in X-API-Key header' });
+  const authResult = await authenticateRequest(event);
+  if (isAuthError(authResult)) return authResult.error;
+  const session: SessionPayload = authResult;
+
+  const { phoneNumber } = body;
+  if (!phoneNumber) {
+    return createResponse(400, { error: 'Phone number is required' });
   }
 
-  // Validate API key
-  const validApiKey = await getApiKey();
-  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
-  const trimmedProvided = (providedApiKey || '').trim();
-  const trimmedValid = (validApiKey || '').trim();
-  
-  // Debug logging (remove in production if sensitive)
-  console.log(`[handleValidatePhone] API key validation: provided length=${trimmedProvided.length}, valid length=${trimmedValid.length}, match=${trimmedProvided === trimmedValid}`);
-  
-  if (trimmedProvided !== trimmedValid) {
-    return createResponse(401, { error: 'Invalid API key' });
-  }
-
-  // Validate input
-  if (!phoneNumber || !email) {
-    return createResponse(400, { error: 'Phone number and email are required' });
-  }
-
-  if (!emailhash) {
-    return createResponse(400, { error: 'Email hash is required' });
-  }
-
-  // Validate email format
-  if (!isValidEmail(email)) {
-    return createResponse(400, { error: 'Invalid email format' });
-  }
-
-  // Validate email hash
-  const secretKey = await getApiKey();
-  const hashInput = secretKey + email;
-  const expectedHash = createHash('sha256').update(hashInput).digest('hex');
-
-  if (emailhash.toLowerCase() !== expectedHash.toLowerCase()) {
-    console.warn(`[handleValidatePhone] Email hash verification failed for email: ${email}`);
-    return createResponse(401, { 
-      error: 'Invalid email signature',
-      message: 'The email signature is invalid. This request may have been tampered with.'
-    });
-  }
-
-  console.log(`[handleValidatePhone] Email hash verified successfully for email: ${email}`);
-
-  // Validate phone number format (E.164)
   if (!isValidPhoneNumber(phoneNumber)) {
     return createResponse(400, { error: 'Invalid phone number format. Use E.164 format (e.g., +14155551234)' });
   }
 
-  const emailLower = email.toLowerCase();
+  const user = await getUserProfile(session.userId);
+  if (!user) {
+    return createResponse(403, { error: 'User account not found. Please sign in with your email first.' });
+  }
 
-  // Invalidate any existing verification codes for this phone/email combination
-  // This ensures only the latest code is valid
+  if (isChangingPhoneNumber(user.phoneNumber, phoneNumber)) {
+    const blocked = phoneChangeCooldownResponse(user.phoneNumberVerifiedAt ?? null);
+    if (blocked) {
+      return blocked;
+    }
+  }
+
+  const emailLower = session.email.toLowerCase();
+
+  // Invalidate any existing verification codes for this phone/email
   try {
     const existingCodes = await docClient.send(new QueryCommand({
       TableName: VERIFICATIONS_TABLE,
@@ -157,39 +181,28 @@ async function handleValidatePhone(body: any, event: any) {
       }
     }));
 
-    // Mark all existing codes as used (invalidated)
     if (existingCodes.Items && existingCodes.Items.length > 0) {
-      console.log(`[handleValidatePhone] Found ${existingCodes.Items.length} existing verification code(s), invalidating...`);
+      console.log(`[handleValidatePhone] Invalidating ${existingCodes.Items.length} previous code(s)`);
       const now = Math.floor(Date.now() / 1000);
-      
-      // Update all existing codes to mark as used
-      const updatePromises = existingCodes.Items.map(item => 
+
+      await Promise.all(existingCodes.Items.map(item =>
         docClient.send(new UpdateCommand({
           TableName: VERIFICATIONS_TABLE,
           Key: { verificationId: item.verificationId },
           UpdateExpression: 'SET used = :used, invalidatedAt = :now',
-          ExpressionAttributeValues: {
-            ':used': true,
-            ':now': now
-          }
+          ExpressionAttributeValues: { ':used': true, ':now': now }
         }))
-      );
-      
-      await Promise.all(updatePromises);
-      console.log(`[handleValidatePhone] Invalidated ${existingCodes.Items.length} previous verification code(s)`);
+      ));
     }
   } catch (error) {
     console.error('[handleValidatePhone] Error invalidating previous codes:', error);
-    // Continue anyway - don't fail the request if we can't invalidate old codes
   }
 
-  // Generate 5-digit verification code
   const verificationCode = generateVerificationCode();
   const verificationId = `ver_${randomBytes(16).toString('hex')}`;
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + 300; // 5 minutes
 
-  // Store verification code in DynamoDB
   try {
     await docClient.send(new PutCommand({
       TableName: VERIFICATIONS_TABLE,
@@ -209,14 +222,12 @@ async function handleValidatePhone(body: any, event: any) {
     return createResponse(500, { error: 'Failed to store verification code' });
   }
 
-  // Send SMS via Telnyx (this also validates the phone number)
   try {
     await sendVerificationCodeSMS(phoneNumber, verificationCode);
     console.log(`[handleValidatePhone] SMS sent successfully to ${phoneNumber}`);
   } catch (error: any) {
     console.error('[handleValidatePhone] Error sending SMS:', error);
-    
-    // Check if it's an invalid phone number error from Telnyx
+
     if (error.message && (
       error.message.includes('Invalid phone number') ||
       error.message.includes('422') ||
@@ -224,85 +235,34 @@ async function handleValidatePhone(body: any, event: any) {
     )) {
       return createResponse(400, { error: 'Invalid phone number format' });
     }
-    
+
     return createResponse(500, { error: 'Failed to send verification code' });
   }
 
-  return createResponse(200, {
-    success: true,
-    message: 'Verification code sent'
-  });
+  return createResponse(200, { success: true, message: 'Verification code sent' });
 }
 
-/**
- * Handle verification code verification and user creation/update
- */
+// ─── Verify ────────────────────────────────────────────────────────────────────
+
 async function handleVerifyPhoneCode(body: any, event: any) {
   console.log('[handleVerifyPhoneCode] Starting code verification');
-  const { phoneNumber, email, emailhash, verificationCode } = body;
 
-  // Get API key from header (API Gateway may lowercase headers)
-  const headers = event.headers || {};
-  const providedApiKey = headers['X-API-Key'] || headers['x-api-key'] || headers['X-Api-Key'];
-  
-  if (!providedApiKey) {
-    return createResponse(401, { error: 'API key required in X-API-Key header' });
+  const authResult = await authenticateRequest(event);
+  if (isAuthError(authResult)) return authResult.error;
+  const session: SessionPayload = authResult;
+
+  const { phoneNumber, verificationCode } = body;
+  if (!phoneNumber || !verificationCode) {
+    return createResponse(400, { error: 'Phone number and verification code are required' });
   }
 
-  // Validate API key
-  const validApiKey = await getApiKey();
-  // Trim whitespace (Secrets Manager sometimes includes trailing newlines)
-  const trimmedProvided = (providedApiKey || '').trim();
-  const trimmedValid = (validApiKey || '').trim();
-  
-  // Debug logging (remove in production if sensitive)
-  console.log(`[handleVerifyPhoneCode] API key validation: provided length=${trimmedProvided.length}, valid length=${trimmedValid.length}, match=${trimmedProvided === trimmedValid}`);
-  
-  if (trimmedProvided !== trimmedValid) {
-    return createResponse(401, { error: 'Invalid API key' });
-  }
-
-  // Validate input
-  if (!phoneNumber || !email || !verificationCode) {
-    return createResponse(400, { error: 'Phone number, email, and verification code are required' });
-  }
-
-  if (!emailhash) {
-    return createResponse(400, { error: 'Email hash is required' });
-  }
-
-  // Validate email format
-  if (!isValidEmail(email)) {
-    return createResponse(400, { error: 'Invalid email format' });
-  }
-
-  // Validate email hash
-  const secretKey = await getApiKey();
-  const hashInput = secretKey + email;
-  const expectedHash = createHash('sha256').update(hashInput).digest('hex');
-
-  if (emailhash.toLowerCase() !== expectedHash.toLowerCase()) {
-    console.warn(`[handleVerifyPhoneCode] Email hash verification failed for email: ${email}`);
-    return createResponse(401, { 
-      error: 'Invalid email signature',
-      message: 'The email signature is invalid. This request may have been tampered with.'
-    });
-  }
-
-  console.log(`[handleVerifyPhoneCode] Email hash verified successfully for email: ${email}`);
-
-  // Validate phone number format
   if (!isValidPhoneNumber(phoneNumber)) {
     return createResponse(400, { error: 'Invalid phone number format. Use E.164 format (e.g., +14155551234)' });
   }
 
-  const emailLower = email.toLowerCase();
+  const emailLower = session.email.toLowerCase();
 
-  // Look up verification code
   try {
-    // Query without FilterExpression first to get all codes, then filter in code
-    // This avoids FilterExpression issues with boolean values
-    // No limit - query all codes for this phone/email combo to ensure we don't miss the correct code
     const result = await docClient.send(new QueryCommand({
       TableName: VERIFICATIONS_TABLE,
       IndexName: 'phone-email-index',
@@ -311,349 +271,133 @@ async function handleVerifyPhoneCode(body: any, event: any) {
         ':phone': phoneNumber,
         ':email': emailLower
       },
-      ScanIndexForward: false // Most recent first
+      ScanIndexForward: false
     }));
 
-    console.log(`[handleVerifyPhoneCode] Query returned ${result.Items?.length || 0} item(s) for ${phoneNumber} / ${emailLower}`);
-
     if (!result.Items || result.Items.length === 0) {
-      console.log(`[handleVerifyPhoneCode] No verification code found for ${phoneNumber} / ${emailLower}`);
       return createResponse(404, { error: 'Verification code not found or expired' });
     }
 
-    // Find the matching verification code (check most recent first)
     let verification = null;
     const now = Math.floor(Date.now() / 1000);
-    
+
     for (const item of result.Items) {
-      // Skip expired codes
-      if (now >= item.expiresAt) {
-        console.log(`[handleVerifyPhoneCode] Skipping expired code (expiresAt: ${item.expiresAt}, now: ${now})`);
-        continue;
-      }
-      
-      // Skip used codes
-      if (item.used) {
-        console.log(`[handleVerifyPhoneCode] Skipping used code`);
-        continue;
-      }
-      
-      // Check if code matches
+      if (now >= item.expiresAt) continue;
+      if (item.used) continue;
       if (item.verificationCode === verificationCode) {
         verification = item;
-        console.log(`[handleVerifyPhoneCode] Found matching verification code: ${verificationCode}`);
         break;
       }
     }
 
     if (!verification) {
-      console.log(`[handleVerifyPhoneCode] No valid verification code found matching ${verificationCode}`);
       return createResponse(404, { error: 'Verification code not found or expired' });
     }
 
-    // Check if code is expired (double-check)
-    if (now >= verification.expiresAt) {
-      console.log(`[handleVerifyPhoneCode] Verification code expired (expiresAt: ${verification.expiresAt}, now: ${now})`);
-      return createResponse(404, { error: 'Verification code expired' });
+    // User must already exist (created at magic link time)
+    const user = await getUserProfile(session.userId);
+    if (!user) {
+      console.error(`[handleVerifyPhoneCode] No user found for userId ${session.userId}`);
+      return createResponse(403, { error: 'User account not found. Please sign in with your email first.' });
     }
 
-    // Check if code already used (double-check)
-    if (verification.used) {
-      console.log(`[handleVerifyPhoneCode] Verification code already used`);
-      return createResponse(400, { error: 'Verification code already used' });
+    if (isChangingPhoneNumber(user.phoneNumber, phoneNumber)) {
+      const blocked = phoneChangeCooldownResponse(user.phoneNumberVerifiedAt ?? null);
+      if (blocked) {
+        return blocked;
+      }
     }
 
-    console.log(`[handleVerifyPhoneCode] Verification code validated successfully`);
+    const sameNumberReverify =
+      !!user.phoneNumber?.trim() &&
+      normalizeE164Phone(user.phoneNumber) === normalizeE164Phone(phoneNumber);
 
-    // Check whitelist before creating/updating user
-    const isApproved = await isEmailApproved(emailLower);
-    if (!isApproved) {
-      console.log(`[handleVerifyPhoneCode] Email not approved: ${emailLower}`);
-      return createResponse(403, { 
-        error: 'Not whitelisted',
-        message: 'User is not whitelisted for Big Buys Mobile'
+    if (!sameNumberReverify) {
+      await updateUser(session.userId, {
+        phoneNumber,
+        phoneNumberVerifiedAt: now,
       });
+      console.log(`[handleVerifyPhoneCode] Updated user ${session.userId} with phone number ${phoneNumber}`);
+    } else {
+      console.log(`[handleVerifyPhoneCode] Same number re-verified for ${session.userId}; skipping profile update`);
     }
 
-    // Create or update user profile with phone number
-    const user = await getOrCreateUserProfile(emailLower, 'phone');
-    
-    // Update user record to add phoneNumber using Postgres service
-    await updateUser(user.userId, { phoneNumber });
-
-    console.log(`[handleVerifyPhoneCode] Updated user ${user.userId} with phone number ${phoneNumber}`);
-
-    // Mark verification code as used
     await docClient.send(new UpdateCommand({
       TableName: VERIFICATIONS_TABLE,
       Key: { verificationId: verification.verificationId },
       UpdateExpression: 'SET used = :used, usedAt = :now',
-      ExpressionAttributeValues: {
-        ':used': true,
-        ':now': now
-      }
+      ExpressionAttributeValues: { ':used': true, ':now': now }
     }));
 
-    console.log(`[handleVerifyPhoneCode] Marked verification code as used`);
-
-    return createResponse(200, {
-      success: true,
-      message: 'Phone number verified'
-    });
+    return createResponse(200, { success: true, message: 'Phone number verified' });
   } catch (error: any) {
     console.error('[handleVerifyPhoneCode] Error verifying code:', error);
-    
-    // Handle whitelist validation errors
-    if (error instanceof Error && (
-      error.message.includes('not approved') || 
-      error.message.includes('not on the whitelist') ||
-      error.message.includes('expired')
-    )) {
-      return createResponse(403, { 
-        error: 'Not whitelisted',
-        message: 'User is not whitelisted for Big Buys Mobile'
-      });
-    }
-    
     return createResponse(500, { error: 'Failed to verify code' });
   }
 }
 
-/**
- * Get or create user profile with lazy provisioning
- * Similar to auth-handler's getOrCreateUserProfile but adapted for phone validation
- */
-async function getOrCreateUserProfile(email: string, registrationMethod: string = 'phone'): Promise<{ userId: string; email: string; role: string }> {
-  const emailLower = email.toLowerCase();
-  
-  // First, try to find existing user by email using Postgres service
-  const existingUser = await getUserProfileByEmail(emailLower);
-  
-  if (existingUser) {
-    // User exists, return their profile
-    const role = validateRole(existingUser.role) || 'basic';
-    
-    // Update registration method if not set
-    if (!existingUser.registrationMethod) {
-      await updateUser(existingUser.userId, { registrationMethod });
-    }
-    
-    return {
-      userId: existingUser.userId,
-      email: existingUser.email,
-      role: role
-    };
-  }
+// ─── Utilities ─────────────────────────────────────────────────────────────────
 
-  // User doesn't exist - create new user profile
-  // Check whitelist for role and expiration
-  let userRole = 'basic';
-  let expirationDate: number | undefined = undefined;
-  
-  // Check whitelist if not a Sigma email (Sigma emails bypass whitelist)
-  if (!emailLower.endsWith('@sigmacomputing.com')) {
-    try {
-      const whitelistEmail = await getApprovedEmail(emailLower);
-
-      // Block registration if not actively whitelisted
-      if (!whitelistEmail) {
-        console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} is not whitelisted`);
-        throw new Error('Email not approved for registration. This email is not on the whitelist.');
-      }
-
-      // Check if whitelist entry has expired
-      if (whitelistEmail.expirationDate) {
-        const now = Math.floor(Date.now() / 1000);
-        if (now >= whitelistEmail.expirationDate) {
-          console.log(`[getOrCreateUserProfile] Registration blocked: ${emailLower} whitelist entry has expired`);
-          throw new Error('Whitelist entry has expired. This email is no longer approved for access.');
-        }
-        expirationDate = whitelistEmail.expirationDate;
-      }
-      
-      // Use role from whitelist if specified
-      if (whitelistEmail.role) {
-        userRole = validateRole(whitelistEmail.role) || 'basic';
-      }
-      
-      // Mark user as registered in whitelist
-      const now = Math.floor(Date.now() / 1000);
-      await setRegisteredAtIfNotExists(emailLower, now);
-    } catch (error) {
-      // Re-throw whitelist validation errors
-      if (error instanceof Error && (
-        error.message.includes('not approved') || 
-        error.message.includes('expired')
-      )) {
-        throw error;
-      }
-      // For other errors, log and re-throw
-      console.error('[getOrCreateUserProfile] Error checking whitelist:', error);
-      throw new Error('Unable to verify email approval. Registration blocked for security.');
-    }
-  }
-
-  const userId = `usr_${randomBytes(8).toString('hex')}`;
-
-  await createUser({
-    userId,
-    email: emailLower,
-    role: userRole,
-    expirationDate,
-    registrationMethod,
-  });
-
-  console.log(`Created new user profile: ${userId} (${emailLower}) with role: ${userRole}${expirationDate ? `, expires: ${expirationDate}` : ''}`);
-
-  return {
-    userId,
-    email: emailLower,
-    role: userRole
-  };
-}
-
-/**
- * Check if email is approved (whitelisted or Sigma email)
- */
-async function isEmailApproved(email: string): Promise<boolean> {
-  const emailLower = email.toLowerCase();
-
-  // Auto-approve Sigma emails
-  if (emailLower.endsWith('@sigmacomputing.com')) {
-    return true;
-  }
-
-  // Check approved emails table using Postgres service
-  try {
-    return await checkEmailApproved(emailLower);
-  } catch (error) {
-    console.error('[isEmailApproved] Error checking email approval:', error);
-    return false;
-  }
-}
-
-/**
- * Send verification code via SMS using Telnyx API
- */
 async function sendVerificationCodeSMS(phoneNumber: string, verificationCode: string): Promise<void> {
   const message = `Your Big Buys Mobile verification code is: ${verificationCode}\n\nExpires in 5 minutes.`;
+  const apiKey = await getTelnyxApiKey();
 
-  try {
-    // Get Telnyx API key from Secrets Manager
-    const apiKey = await getTelnyxApiKey();
+  const response = await fetch('https://api.telnyx.com/v2/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      from: '+16505013151',
+      to: phoneNumber,
+      text: message
+    })
+  });
 
-    // Send SMS via Telnyx API
-    const response = await fetch('https://api.telnyx.com/v2/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        from: '+16505013151',
-        to: phoneNumber,
-        text: message
-      })
-    });
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorData;
+    try { errorData = JSON.parse(errorText); } catch { /* ignore */ }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        // If not JSON, use text as error message
-      }
-      
-      console.error(`[sendVerificationCodeSMS] Telnyx API error: ${response.status} ${response.statusText}`, errorText);
-      
-      // Check for invalid phone number errors
-      if (response.status === 422 || (response.status === 400 && errorData?.errors?.[0]?.code === 'invalid_phone_number')) {
-        throw new Error('Invalid phone number format');
-      }
-      
-      throw new Error(`Failed to send SMS via Telnyx: ${response.status} ${response.statusText}`);
+    console.error(`[sendVerificationCodeSMS] Telnyx API error: ${response.status} ${response.statusText}`, errorText);
+
+    if (response.status === 422 || (response.status === 400 && errorData?.errors?.[0]?.code === 'invalid_phone_number')) {
+      throw new Error('Invalid phone number format');
     }
-
-    const result = await response.json();
-    console.log(`[sendVerificationCodeSMS] Verification code SMS sent to ${phoneNumber} via Telnyx`, result);
-  } catch (error: any) {
-    console.error(`[sendVerificationCodeSMS] Error sending SMS to ${phoneNumber}:`, error);
-    throw error;
+    throw new Error(`Failed to send SMS via Telnyx: ${response.status} ${response.statusText}`);
   }
+
+  const result = await response.json();
+  console.log(`[sendVerificationCodeSMS] Verification code SMS sent to ${phoneNumber} via Telnyx`, result);
 }
 
-/**
- * Generate random 5-digit verification code (10000-99999)
- */
 function generateVerificationCode(): string {
   const min = 10000;
   const max = 99999;
-  const code = Math.floor(Math.random() * (max - min + 1)) + min;
-  return code.toString();
+  return (Math.floor(Math.random() * (max - min + 1)) + min).toString();
 }
 
-/**
- * Validate email format
- */
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-/**
- * Validate phone number format (E.164)
- */
 function isValidPhoneNumber(phoneNumber: string): boolean {
-  const phoneRegex = /^\+[1-9]\d{1,14}$/;
-  return phoneRegex.test(phoneNumber);
+  return /^\+[1-9]\d{1,14}$/.test(phoneNumber);
 }
 
-/**
- * Create HTTP response
- */
 function createResponse(statusCode: number, body: any) {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
       'Access-Control-Allow-Methods': 'POST, OPTIONS'
     },
     body: JSON.stringify(body)
   };
 }
 
-/**
- * Get API key from Secrets Manager (cached)
- */
-async function getApiKey(): Promise<string> {
-  if (apiKey) {
-    return apiKey;
-  }
-
-  const result = await secretsClient.send(new GetSecretValueCommand({
-    SecretId: API_KEY_SECRET_NAME
-  }));
-
-  apiKey = (result.SecretString || '').trim();
-  return apiKey;
-}
-
-/**
- * Get Telnyx API key from Secrets Manager (cached)
- */
 async function getTelnyxApiKey(): Promise<string> {
-  if (telnyxApiKey) {
-    return telnyxApiKey;
-  }
-
-  const result = await secretsClient.send(new GetSecretValueCommand({
-    SecretId: TELNYX_API_KEY_SECRET_NAME
-  }));
-
+  if (telnyxApiKey) return telnyxApiKey;
+  const result = await secretsClient.send(new GetSecretValueCommand({ SecretId: TELNYX_API_KEY_SECRET_NAME }));
   telnyxApiKey = (result.SecretString || '').trim();
   return telnyxApiKey;
 }
-
