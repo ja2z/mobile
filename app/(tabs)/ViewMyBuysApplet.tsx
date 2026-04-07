@@ -13,6 +13,7 @@ import { MyBuysPageFooter, MyBuysPage } from '../../components/MyBuysPageFooter'
 import { colors, spacing, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
 import type { Applet } from '../../types/mybuys.types';
+import { appendPageToSigmaEmbedUrl } from '../../utils/sigmaEmbedUrl';
 
 type ViewMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ViewMyBuysApplet'>;
 type ViewMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'ViewMyBuysApplet'>;
@@ -20,7 +21,8 @@ type ViewMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'ViewMyBuys
 export default function ViewMyBuysApplet() {
   const navigation = useNavigation<ViewMyBuysAppletScreenNavigationProp>();
   const route = useRoute<ViewMyBuysAppletScreenRouteProp>();
-  const { appletId } = route.params;
+  const { appletId, pageId: deepLinkPageIdRaw, variables: deepLinkVariables } = route.params;
+  const deepLinkPageId = deepLinkPageIdRaw?.trim() ?? '';
 
   const dashboardRef = useRef<DashboardViewRef>(null);
   const [appletName, setAppletName] = useState<string>('');
@@ -33,6 +35,9 @@ export default function ViewMyBuysApplet() {
   const [footerPages, setFooterPages] = useState<MyBuysPage[]>([]);
   const [selectedPage, setSelectedPage] = useState<string>('');
   const [workbookLoaded, setWorkbookLoaded] = useState(false);
+  const variablesAppliedRef = useRef(false);
+  const deepLinkVariablesRef = useRef(deepLinkVariables);
+  deepLinkVariablesRef.current = deepLinkVariables;
 
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
 
@@ -65,13 +70,20 @@ export default function ViewMyBuysApplet() {
             .filter(p => p.showInFooter)
             .map(p => ({ pageId: p.pageId, name: p.name, emoji: p.emoji }));
           setFooterPages(visiblePages);
-          if (visiblePages.length > 0) {
+          if (deepLinkPageId) {
+            setSelectedPage(deepLinkPageId);
+          } else if (visiblePages.length > 0) {
             setSelectedPage(visiblePages[0].pageId);
           }
+        } else if (deepLinkPageId) {
+          setSelectedPage(deepLinkPageId);
         }
 
         const result = await MyBuysService.getRegeneratedUrl(appletId);
-        setEmbedUrl(result.url);
+        const urlWithPage = deepLinkPageId
+          ? appendPageToSigmaEmbedUrl(result.url, deepLinkPageId)
+          : result.url;
+        setEmbedUrl(urlWithPage);
         setEmbedJwt(result.jwt || null);
         setLoading(false);
       } catch (error: any) {
@@ -88,16 +100,45 @@ export default function ViewMyBuysApplet() {
       }
     };
     loadApplet();
-  }, [appletId, navigation]);
+  }, [appletId, navigation, deepLinkPageId]);
 
-  // Register workbook loaded callback
   useEffect(() => {
-    if (dashboardRef.current) {
-      dashboardRef.current.onWorkbookLoaded(() => {
-        console.log('[ViewMyBuysApplet] Workbook loaded, showing footer');
-        setWorkbookLoaded(true);
-      });
-    }
+    variablesAppliedRef.current = false;
+  }, [embedUrl]);
+
+  // Register workbook loaded callback (ref may not exist on first paint)
+  useEffect(() => {
+    if (!embedUrl) return;
+    let cancelled = false;
+    const register = () => {
+      if (cancelled) return;
+      if (dashboardRef.current) {
+        dashboardRef.current.onWorkbookLoaded(() => {
+          if (cancelled) return;
+          console.log('[ViewMyBuysApplet] Workbook loaded, showing footer');
+          setWorkbookLoaded(true);
+          const vars = deepLinkVariablesRef.current;
+          if (
+            vars &&
+            Object.keys(vars).length > 0 &&
+            !variablesAppliedRef.current &&
+            dashboardRef.current
+          ) {
+            dashboardRef.current.sendMessage({
+              type: 'workbook:variables:update',
+              variables: vars,
+            });
+            variablesAppliedRef.current = true;
+          }
+        });
+      } else {
+        requestAnimationFrame(register);
+      }
+    };
+    register();
+    return () => {
+      cancelled = true;
+    };
   }, [embedUrl]);
 
   const handlePageSelect = useCallback((pageId: string, pageName: string) => {
@@ -119,14 +160,15 @@ export default function ViewMyBuysApplet() {
       if (applet) {
         setAppletName(applet.name);
         const result = await MyBuysService.getRegeneratedUrl(appletId);
-        setEmbedUrl(result.url);
+        setEmbedUrl(deepLinkPageId ? appendPageToSigmaEmbedUrl(result.url, deepLinkPageId) : result.url);
+        setEmbedJwt(result.jwt || null);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load applet');
     } finally {
       setLoading(false);
     }
-  }, [appletId]);
+  }, [appletId, deepLinkPageId]);
 
   if (loading) {
     return (

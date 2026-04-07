@@ -49,7 +49,7 @@ export type RootStackParamList = {
   MyBuys: undefined;
   AddMyBuysApplet: undefined;
   EditMyBuysApplet: { appletId: string };
-  ViewMyBuysApplet: { appletId: string };
+  ViewMyBuysApplet: { appletId: string; pageId?: string; variables?: Record<string, string> };
   Sigmanauts: undefined;
   AI: undefined;
   Dashboards: undefined;
@@ -222,7 +222,11 @@ export default function RootLayout() {
                 const match = userApplets.find((a) => a.deepLinkSlug === app);
                 if (match) {
                   targetScreen = 'ViewMyBuysApplet';
-                  screenParams = { appletId: match.appletId };
+                  screenParams = {
+                    appletId: match.appletId,
+                    ...(pageId ? { pageId } : {}),
+                    ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
+                  };
                 } else {
                   console.warn(`⚠️ No My Buys applet for deep link slug: ${app}`);
                   Toast.show({
