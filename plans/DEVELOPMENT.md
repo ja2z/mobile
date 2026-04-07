@@ -4,7 +4,7 @@ This document provides development guidelines and context for the Mobile Dashboa
 
 ## 📋 Project Rules & Context
 
-**Primary Reference**: [`.cursor/rules/project-specific-rule.mdc`](.cursor/rules/project-specific-rule.mdc)
+**Primary Reference**: [`../.cursor/rules/project-specific-rule.mdc`](../.cursor/rules/project-specific-rule.mdc)
 
 This file contains the complete project context including:
 - Project overview and tech stack
@@ -62,7 +62,7 @@ This file contains the complete project context including:
 
 ## Getting Started
 
-1. Review the project rules: [`.cursor/rules/project-specific-rule.mdc`](.cursor/rules/project-specific-rule.mdc)
+1. Review the project rules: [`../.cursor/rules/project-specific-rule.mdc`](../.cursor/rules/project-specific-rule.mdc)
 2. Install dependencies: `npm install`
 3. Start development server: `npm start`
 4. Test on device using Expo Go app

@@ -76,8 +76,8 @@ Successfully refactored the conversational AI experience from a Sigma plugin-bas
 ## Files Created
 - `/types/chat.types.ts` - Type definitions
 - `/components/ChatModal.tsx` - Native chat UI component
-- `/NATIVE_CHAT_SETUP.md` - Setup documentation
-- `/NATIVE_CHAT_IMPLEMENTATION_SUMMARY.md` - This file
+- `NATIVE_CHAT_SETUP.md` - Setup documentation
+- `NATIVE_CHAT_IMPLEMENTATION_SUMMARY.md` - This file
 
 ## Files Modified
 - `/components/DashboardView.tsx` - Added chat communication

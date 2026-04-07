@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 # Project-Specific Rules for React Native Demo App
 
-> **📖 Quick Reference**: See [`DEVELOPMENT.md`](../DEVELOPMENT.md) for a condensed development guide that references these rules.
+> **📖 Quick Reference**: See [`plans/DEVELOPMENT.md`](../plans/DEVELOPMENT.md) for a condensed development guide that references these rules.
 
 ## Project Overview
 This is a simple React Native mobile app built with Expo for internal company demos. The app embeds an iframe displaying charts/dashboards with minimal native UI interactions.

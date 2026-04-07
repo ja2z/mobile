@@ -1,0 +1,11 @@
+---
+description: Where to put planning docs and long-form markdown so the repo root stays tidy
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Documentation and planning files
+
+- **Planning notes, implementation writeups, setup guides, checklists, and similar markdown** belong in **`plans/`** at the repository root (same directory level as `app/`, `components/`, etc.).
+- **Do not add** those files to the project root; keep the root limited to **`README.md`** and essential config.
+- When creating or updating a plan document, prefer **`plans/<descriptive-name>.md`** and link to it from code comments or PRs as needed.
