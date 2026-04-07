@@ -534,7 +534,9 @@ function handleOptions(): any {
  */
 async function handleCreateApplet(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
     const body = JSON.parse(event.body || '{}');
-    const { name, embedUrl, embedClientId, embedSecretKey } = body;
+    const { name, embedUrl, embedClientId, embedSecretKey,
+            sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
+            restApiClientId, restApiSecretKey } = body;
     
     // Validate required fields
     if (!name || !embedUrl || !embedClientId || !embedSecretKey) {
@@ -601,6 +603,12 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     // Save secret to secrets table (will create or update) - row-level security per user
     await saveSecret(userId, secretName, embedClientId, embedSecretKey);
     
+    // Save REST API secret if provided and not same as embed
+    const sameAsEmbed = restApiSameAsEmbed !== false; // default true
+    if (!sameAsEmbed && restApiClientId && restApiSecretKey) {
+        await saveSecret(userId, secretName + '__sigma_rest', restApiClientId, restApiSecretKey);
+    }
+    
     // Create applet using Postgres service (store reference to secret name instead of encrypted secret)
     const appletId = generateUUID();
 
@@ -609,7 +617,10 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         appletId,
         name,
         embedUrl,
-        secretName, // Store reference to secret instead of encryptedSecret and embedClientId
+        secretName,
+        sigmaApiBaseUrl: sigmaApiBaseUrl || null,
+        restApiSameAsEmbed: sameAsEmbed,
+        pageFooterConfig: pageFooterConfig || null,
     });
 
     // Log activity
@@ -630,6 +641,9 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
             name: created.name,
             embedUrl: created.embedUrl,
             deepLinkSlug: created.deepLinkSlug,
+            sigmaApiBaseUrl: created.sigmaApiBaseUrl,
+            restApiSameAsEmbed: created.restApiSameAsEmbed,
+            pageFooterConfig: created.pageFooterConfig,
             createdAt: created.createdAt,
             updatedAt: created.updatedAt
         }
@@ -647,8 +661,11 @@ async function handleListApplets(userId: string): Promise<any> {
         appletId: item.appletId,
         name: item.name,
         embedUrl: item.embedUrl,
-        secretName: item.secretName, // Include secretName for reference
+        secretName: item.secretName,
         deepLinkSlug: item.deepLinkSlug,
+        sigmaApiBaseUrl: item.sigmaApiBaseUrl,
+        restApiSameAsEmbed: item.restApiSameAsEmbed,
+        pageFooterConfig: item.pageFooterConfig,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt
     }));
@@ -682,7 +699,9 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     }
     
     const body = JSON.parse(event.body || '{}');
-    const { name, embedUrl, embedClientId, embedSecretKey } = body;
+    const { name, embedUrl, embedClientId, embedSecretKey,
+            sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
+            restApiClientId, restApiSecretKey } = body;
     
     // Validate required fields
     if (!name || !embedUrl || !embedClientId || !embedSecretKey) {
@@ -738,11 +757,20 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     // Save secret to secrets table (will create or update) - row-level security per user
     await saveSecret(userId, secretName, embedClientId, embedSecretKey);
     
+    // Save REST API secret if provided and not same as embed
+    const sameAsEmbed = restApiSameAsEmbed !== false;
+    if (!sameAsEmbed && restApiClientId && restApiSecretKey) {
+        await saveSecret(userId, secretName + '__sigma_rest', restApiClientId, restApiSecretKey);
+    }
+    
     // Update applet using Postgres service (store reference to secret name instead of encrypted secret)
     await updateApplet(userId, appletId, {
         name,
         embedUrl,
         secretName,
+        sigmaApiBaseUrl: sigmaApiBaseUrl || null,
+        restApiSameAsEmbed: sameAsEmbed,
+        pageFooterConfig: pageFooterConfig || null,
     });
 
     const refreshed = await getApplet(userId, appletId);
@@ -765,6 +793,9 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             name,
             embedUrl,
             deepLinkSlug: refreshed?.deepLinkSlug ?? existing.deepLinkSlug,
+            sigmaApiBaseUrl: refreshed?.sigmaApiBaseUrl,
+            restApiSameAsEmbed: refreshed?.restApiSameAsEmbed ?? true,
+            pageFooterConfig: refreshed?.pageFooterConfig,
             createdAt: existing.createdAt,
             updatedAt: refreshed?.updatedAt ?? existing.updatedAt
         }

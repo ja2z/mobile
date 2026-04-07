@@ -9,6 +9,17 @@ import { generateMyBuysDeepLinkSlug } from './deep-link-slug';
 
 const MAX_SLUG_ATTEMPTS = 50;
 
+export interface PageFooterPageConfig {
+  pageId: string;
+  name: string;
+  showInFooter: boolean;
+  emoji: string;
+}
+
+export interface PageFooterConfig {
+  pages: PageFooterPageConfig[];
+}
+
 export interface Applet {
   userId: string;
   appletId: string;
@@ -17,6 +28,9 @@ export interface Applet {
   secretName?: string;
   /** Globally unique mybuys:word-word-word slug for deep links */
   deepLinkSlug?: string;
+  sigmaApiBaseUrl?: string;
+  restApiSameAsEmbed: boolean;
+  pageFooterConfig?: PageFooterConfig;
   createdAt: number;
   updatedAt: number;
 }
@@ -28,6 +42,9 @@ interface AppletRow {
   embed_url: string;
   secret_name: string | null;
   deep_link_slug: string | null;
+  sigma_api_base_url: string | null;
+  rest_api_same_as_embed: boolean;
+  page_footer_config: any | null;
   created_at: number;
   updated_at: number;
 }
@@ -43,6 +60,9 @@ function rowToApplet(row: AppletRow): Applet {
     embedUrl: row.embed_url,
     secretName: row.secret_name || undefined,
     deepLinkSlug: row.deep_link_slug || undefined,
+    sigmaApiBaseUrl: row.sigma_api_base_url || undefined,
+    restApiSameAsEmbed: row.rest_api_same_as_embed ?? true,
+    pageFooterConfig: row.page_footer_config || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -178,18 +198,26 @@ export async function createApplet(applet: {
   name: string;
   embedUrl: string;
   secretName?: string;
+  sigmaApiBaseUrl?: string;
+  restApiSameAsEmbed?: boolean;
+  pageFooterConfig?: PageFooterConfig;
 }): Promise<Applet> {
   const now = Math.floor(Date.now() / 1000);
   const deepLinkSlug = await allocateUniqueDeepLinkSlug();
 
   await query(
     `INSERT INTO applets (
-      user_id, applet_id, name, embed_url, secret_name, deep_link_slug, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      user_id, applet_id, name, embed_url, secret_name, deep_link_slug,
+      sigma_api_base_url, rest_api_same_as_embed, page_footer_config,
+      created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (user_id, applet_id) DO UPDATE SET
       name = EXCLUDED.name,
       embed_url = EXCLUDED.embed_url,
       secret_name = EXCLUDED.secret_name,
+      sigma_api_base_url = EXCLUDED.sigma_api_base_url,
+      rest_api_same_as_embed = EXCLUDED.rest_api_same_as_embed,
+      page_footer_config = EXCLUDED.page_footer_config,
       updated_at = EXCLUDED.updated_at`,
     [
       applet.userId,
@@ -198,6 +226,9 @@ export async function createApplet(applet: {
       applet.embedUrl,
       applet.secretName || null,
       deepLinkSlug,
+      applet.sigmaApiBaseUrl || null,
+      applet.restApiSameAsEmbed ?? true,
+      applet.pageFooterConfig ? JSON.stringify(applet.pageFooterConfig) : null,
       now,
       now,
     ]
@@ -223,6 +254,9 @@ export async function updateApplet(
     name?: string;
     embedUrl?: string;
     secretName?: string;
+    sigmaApiBaseUrl?: string | null;
+    restApiSameAsEmbed?: boolean;
+    pageFooterConfig?: PageFooterConfig | null;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -242,15 +276,27 @@ export async function updateApplet(
     setParts.push(`secret_name = $${paramIndex++}`);
     values.push(updates.secretName);
   }
+  if (updates.sigmaApiBaseUrl !== undefined) {
+    setParts.push(`sigma_api_base_url = $${paramIndex++}`);
+    values.push(updates.sigmaApiBaseUrl);
+  }
+  if (updates.restApiSameAsEmbed !== undefined) {
+    setParts.push(`rest_api_same_as_embed = $${paramIndex++}`);
+    values.push(updates.restApiSameAsEmbed);
+  }
+  if (updates.pageFooterConfig !== undefined) {
+    setParts.push(`page_footer_config = $${paramIndex++}`);
+    values.push(updates.pageFooterConfig ? JSON.stringify(updates.pageFooterConfig) : null);
+  }
 
   if (setParts.length === 0) {
-    return; // Nothing to update
+    return;
   }
 
   setParts.push(`updated_at = $${paramIndex++}`);
   values.push(now);
-  values.push(userId); // For WHERE clause
-  values.push(appletId); // For WHERE clause
+  values.push(userId);
+  values.push(appletId);
 
   await query(
     `UPDATE applets SET ${setParts.join(', ')} WHERE user_id = $${paramIndex} AND applet_id = $${paramIndex + 1}`,

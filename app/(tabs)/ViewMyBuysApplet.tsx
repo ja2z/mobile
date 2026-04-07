@@ -1,24 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp, RouteProp } from '@react-navigation/stack';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { MyBuysService } from '../../services/MyBuysService';
-import { AuthService } from '../../services/AuthService';
 import { DashboardView, DashboardViewRef, SkeletonPlaceholder } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
+import { MyBuysPageFooter, MyBuysPage } from '../../components/MyBuysPageFooter';
 import { colors, spacing, typography } from '../../constants/Theme';
 import type { RootStackParamList } from '../_layout';
+import type { Applet } from '../../types/mybuys.types';
 
 type ViewMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ViewMyBuysApplet'>;
 type ViewMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'ViewMyBuysApplet'>;
 
-/**
- * View My Buys Applet Screen Component
- * Displays the applet in an iframe using DashboardView (same as Dashboard.tsx and AINewsletter.tsx)
- */
 export default function ViewMyBuysApplet() {
   const navigation = useNavigation<ViewMyBuysAppletScreenNavigationProp>();
   const route = useRoute<ViewMyBuysAppletScreenRouteProp>();
@@ -31,97 +29,104 @@ export default function ViewMyBuysApplet() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Use custom hook for embed URL info modal and header button
+  // Footer state
+  const [footerPages, setFooterPages] = useState<MyBuysPage[]>([]);
+  const [selectedPage, setSelectedPage] = useState<string>('');
+  const [workbookLoaded, setWorkbookLoaded] = useState(false);
+
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
 
   useEffect(() => {
     navigation.setOptions({
-      title: appletName || '', // Show applet name in header, empty string if not loaded yet
+      title: appletName || '',
       headerLeft: () => (
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.headerButton}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ),
     });
   }, [navigation, appletName]);
 
-  /**
-   * Load applet and get regenerated URL
-   */
   useEffect(() => {
     const loadApplet = async () => {
-      const startTime = Date.now();
-      console.log('[ViewMyBuysApplet] Starting loadApplet for appletId:', appletId);
-      
       try {
         setLoading(true);
         setError(null);
 
-        console.log('[ViewMyBuysApplet] Step 1: Loading applets list...');
-        const listStartTime = Date.now();
         const applets = await MyBuysService.listApplets();
-        const listDuration = Date.now() - listStartTime;
-        console.log('[ViewMyBuysApplet] Step 1 complete: Loaded', applets.length, 'applets in', listDuration, 'ms');
-        
-        const applet = applets.find(a => a.appletId === appletId);
-        if (!applet) {
-          throw new Error('Applet not found');
-        }
-        setAppletName(applet.name);
-        console.log('[ViewMyBuysApplet] Found applet:', applet.name);
+        const applet: Applet | undefined = applets.find(a => a.appletId === appletId);
+        if (!applet) throw new Error('Applet not found');
 
-        console.log('[ViewMyBuysApplet] Step 2: Getting regenerated URL...');
-        const regenerateStartTime = Date.now();
+        setAppletName(applet.name);
+
+        // Build footer pages from config
+        if (applet.pageFooterConfig?.pages) {
+          const visiblePages = applet.pageFooterConfig.pages
+            .filter(p => p.showInFooter)
+            .map(p => ({ pageId: p.pageId, name: p.name, emoji: p.emoji }));
+          setFooterPages(visiblePages);
+          if (visiblePages.length > 0) {
+            setSelectedPage(visiblePages[0].pageId);
+          }
+        }
+
         const result = await MyBuysService.getRegeneratedUrl(appletId);
-        const regenerateDuration = Date.now() - regenerateStartTime;
-        console.log('[ViewMyBuysApplet] Step 2 complete: Got regenerated URL in', regenerateDuration, 'ms');
-        
         setEmbedUrl(result.url);
         setEmbedJwt(result.jwt || null);
         setLoading(false);
-        const totalDuration = Date.now() - startTime;
-        console.log('[ViewMyBuysApplet] loadApplet completed successfully in', totalDuration, 'ms');
-        console.log('[ViewMyBuysApplet] embedUrl set, WebView should render now');
       } catch (error: any) {
-        const totalDuration = Date.now() - startTime;
-        console.error('[ViewMyBuysApplet] Error loading applet after', totalDuration, 'ms:', {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-          appletId,
-        });
-        
         if (error.isSessionExpired) {
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         } else if (error.isExpirationError) {
-          Alert.alert(
-            'Account Expired',
-            error.message || 'Your account has expired. You can no longer use the app.',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
-              },
-            ]
-          );
+          Alert.alert('Account Expired', error.message || 'Your account has expired.', [
+            { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }) },
+          ]);
         } else {
-          // Show more detailed error message
-          const errorMessage = error.message || 'Failed to load applet';
-          console.error('[ViewMyBuysApplet] Setting error:', errorMessage);
-          setError(errorMessage);
+          setError(error.message || 'Failed to load applet');
           setLoading(false);
         }
       }
-      // Note: Don't set loading to false here - wait for workbook:loaded message
-      // The WebView will start loading after embedUrl is set
     };
-
     loadApplet();
   }, [appletId, navigation]);
+
+  // Register workbook loaded callback
+  useEffect(() => {
+    if (dashboardRef.current) {
+      dashboardRef.current.onWorkbookLoaded(() => {
+        console.log('[ViewMyBuysApplet] Workbook loaded, showing footer');
+        setWorkbookLoaded(true);
+      });
+    }
+  }, [embedUrl]);
+
+  const handlePageSelect = useCallback((pageId: string, pageName: string) => {
+    console.log(`[ViewMyBuysApplet] Navigating to page: ${pageName} (${pageId})`);
+    setSelectedPage(pageId);
+    dashboardRef.current?.sendMessage({
+      type: 'workbook:selectednodeid:update',
+      selectedNodeId: pageId,
+      nodeType: 'page',
+    });
+  }, []);
+
+  const handleRetry = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const applets = await MyBuysService.listApplets();
+      const applet = applets.find(a => a.appletId === appletId);
+      if (applet) {
+        setAppletName(applet.name);
+        const result = await MyBuysService.getRegeneratedUrl(appletId);
+        setEmbedUrl(result.url);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load applet');
+    } finally {
+      setLoading(false);
+    }
+  }, [appletId]);
 
   if (loading) {
     return (
@@ -138,31 +143,7 @@ export default function ViewMyBuysApplet() {
           <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
           <Text style={styles.errorTitle}>Failed to Load</Text>
           <Text style={styles.errorMessage}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => {
-              setLoading(true);
-              setError(null);
-              // Reload
-              const loadApplet = async () => {
-                try {
-                  const applets = await MyBuysService.listApplets();
-                  const applet = applets.find(a => a.appletId === appletId);
-                  if (applet) {
-                    setAppletName(applet.name);
-                    const result = await MyBuysService.getRegeneratedUrl(appletId);
-                    setEmbedUrl(result.url);
-                  }
-                } catch (err: any) {
-                  setError(err.message || 'Failed to load applet');
-                } finally {
-                  setLoading(false);
-                }
-              };
-              loadApplet();
-            }}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry} activeOpacity={0.7}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -170,11 +151,11 @@ export default function ViewMyBuysApplet() {
     );
   }
 
+  const showFooter = workbookLoaded && footerPages.length > 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.content}>
-        {/* Use DashboardView component - same as Dashboard.tsx and AINewsletter.tsx */}
-        {/* DashboardView takes up all available space below the orange header */}
         {embedUrl ? (
           <DashboardView
             ref={dashboardRef}
@@ -187,6 +168,13 @@ export default function ViewMyBuysApplet() {
           <SkeletonPlaceholder />
         )}
       </View>
+      {showFooter && (
+        <MyBuysPageFooter
+          pages={footerPages}
+          selectedPage={selectedPage}
+          onPageSelect={handlePageSelect}
+        />
+      )}
       <EmbedUrlInfoModal
         visible={infoModalVisible}
         onClose={() => setInfoModalVisible(false)}
@@ -207,11 +195,6 @@ const styles = StyleSheet.create({
     flex: 1,
     margin: 0,
     padding: 0,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   errorContainer: {
     flex: 1,
@@ -247,4 +230,3 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
 });
-

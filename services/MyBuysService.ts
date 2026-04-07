@@ -1,6 +1,6 @@
 import { Config } from '../constants/Config';
 import { AuthService } from './AuthService';
-import type { Applet, CreateAppletData, UpdateAppletData, TestResult, RegeneratedUrlResponse } from '../types/mybuys.types';
+import type { Applet, CreateAppletData, UpdateAppletData, TestResult, RegeneratedUrlResponse, PageFooterConfig } from '../types/mybuys.types';
 
 const MY_BUYS_BASE_URL = Config.API.MY_BUYS_BASE_URL;
 

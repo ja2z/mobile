@@ -2,13 +2,27 @@
  * Type definitions for My Buys feature
  */
 
+export interface PageFooterPageConfig {
+  pageId: string;
+  name: string;
+  showInFooter: boolean;
+  emoji: string;
+}
+
+export interface PageFooterConfig {
+  pages: PageFooterPageConfig[];
+}
+
 export interface Applet {
   appletId: string;
   name: string;
   embedUrl: string;
-  secretName?: string; // Reference to secret in secrets table
+  secretName?: string;
   /** Globally unique mybuys:word-word-word value for magic link `app` param */
   deepLinkSlug?: string;
+  sigmaApiBaseUrl?: string;
+  restApiSameAsEmbed?: boolean;
+  pageFooterConfig?: PageFooterConfig;
   createdAt: number;
   updatedAt: number;
 }
@@ -18,6 +32,11 @@ export interface CreateAppletData {
   embedUrl: string;
   embedClientId: string;
   embedSecretKey: string;
+  sigmaApiBaseUrl?: string;
+  restApiSameAsEmbed?: boolean;
+  pageFooterConfig?: PageFooterConfig;
+  restApiClientId?: string;
+  restApiSecretKey?: string;
 }
 
 export interface UpdateAppletData {
@@ -25,6 +44,11 @@ export interface UpdateAppletData {
   embedUrl: string;
   embedClientId: string;
   embedSecretKey: string;
+  sigmaApiBaseUrl?: string;
+  restApiSameAsEmbed?: boolean;
+  pageFooterConfig?: PageFooterConfig;
+  restApiClientId?: string;
+  restApiSecretKey?: string;
 }
 
 export interface TestResult {
@@ -40,4 +64,3 @@ export interface RegeneratedUrlResponse {
   jwt: string;
   expiresAt: number;
 }
-
