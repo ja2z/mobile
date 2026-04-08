@@ -25,6 +25,7 @@ import AI from './(tabs)/AI';
 import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
 import PhoneVerification from './(tabs)/PhoneVerification';
+import CollectName from './(tabs)/CollectName';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
@@ -55,6 +56,14 @@ export type RootStackParamList = {
   Dashboards: undefined;
   Apps: undefined;
   PhoneVerification: undefined;
+  CollectName:
+    | {
+        pendingDeepLink?: {
+          screen: keyof RootStackParamList;
+          params: Record<string, unknown>;
+        };
+      }
+    | undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -73,6 +82,9 @@ export default function RootLayout() {
     screen: keyof RootStackParamList;
     params: Record<string, unknown>;
   } | null>(null);
+  const [collectNameInitialParams, setCollectNameInitialParams] = useState<
+    RootStackParamList['CollectName'] | undefined
+  >(undefined);
   const navigationRef = useRef<any>(null);
 
   useEffect(() => {
@@ -81,7 +93,21 @@ export default function RootLayout() {
       try {
         const isAuthenticated = await AuthService.isAuthenticated();
         if (isAuthenticated) {
-          setInitialRoute('Home');
+          const session = await AuthService.getSession();
+          const decoded = session ? AuthService.decodeJWT(session.jwt) : null;
+          if (decoded?.isBackdoor) {
+            setCollectNameInitialParams(undefined);
+            setInitialRoute('Home');
+          } else {
+            const profile = await AuthService.getMe();
+            if (profile && AuthService.needsProfileName(profile)) {
+              setCollectNameInitialParams(undefined);
+              setInitialRoute('CollectName');
+            } else {
+              setCollectNameInitialParams(undefined);
+              setInitialRoute('Home');
+            }
+          }
           // Log app launch
           await ActivityService.logActivity('app_launch', {
             source: 'cold_start',
@@ -210,7 +236,14 @@ export default function RootLayout() {
           
           const session = await AuthService.verifyMagicLink(token);
           console.log('✅ Authentication successful!', { email: session.user.email });
-          
+
+          const decoded = AuthService.decodeJWT(session.jwt);
+          const profileAfterVerify = await AuthService.getMe();
+          const needsProfileName =
+            !!profileAfterVerify &&
+            AuthService.needsProfileName(profileAfterVerify) &&
+            !decoded?.isBackdoor;
+
           // Map app query param to screen (My Buys slugs, built-in applets, or hardcoded fallbacks)
           let targetScreen: keyof RootStackParamList = 'Home';
           let screenParams: Record<string, unknown> = {};
@@ -288,25 +321,42 @@ export default function RootLayout() {
               }
             }
           }
-          
-          // Update initial route if it hasn't been set yet (for when deep link comes before initial auth check)
-          // ViewMyBuysApplet requires route.params (appletId) on first paint; mounting it as
-          // initialRouteName leaves route.params undefined and crashes. Use Home first; onReady
-          // applies pendingDeepLinkNav to navigate there with params.
-          const initialRouteForStack =
-            targetScreen === 'ViewMyBuysApplet' ? 'Home' : targetScreen;
-          setInitialRoute(initialRouteForStack);
-          setIsCheckingAuth(false);
-          
-          // Store deep link params for navigation once container is ready
-          if (targetScreen !== 'Home') {
-            setPendingDeepLinkNav({
-              screen: targetScreen,
-              params: screenParams,
-            });
-            console.log('🔗 Stored pending navigation:', { screen: targetScreen, params: screenParams });
+
+          if (needsProfileName) {
+            setCollectNameInitialParams(
+              targetScreen !== 'Home'
+                ? {
+                    pendingDeepLink: {
+                      screen: targetScreen,
+                      params: screenParams,
+                    },
+                  }
+                : undefined
+            );
+            setInitialRoute('CollectName');
+            setIsCheckingAuth(false);
+            setPendingDeepLinkNav(null);
+          } else {
+            // ViewMyBuysApplet requires route.params (appletId) on first paint; mounting it as
+            // initialRouteName leaves route.params undefined and crashes. Use Home first; onReady
+            // applies pendingDeepLinkNav to navigate there with params.
+            const initialRouteForStack =
+              targetScreen === 'ViewMyBuysApplet' ? 'Home' : targetScreen;
+            setCollectNameInitialParams(undefined);
+            setInitialRoute(initialRouteForStack);
+            setIsCheckingAuth(false);
+
+            if (targetScreen !== 'Home') {
+              setPendingDeepLinkNav({
+                screen: targetScreen,
+                params: screenParams,
+              });
+              console.log('🔗 Stored pending navigation:', { screen: targetScreen, params: screenParams });
+            } else {
+              setPendingDeepLinkNav(null);
+            }
           }
-          
+
           // Log app launch (from deep link)
           await ActivityService.logActivity('app_launch', {
             source: 'deep_link',
@@ -531,6 +581,15 @@ export default function RootLayout() {
           options={{
             title: 'Link Expired',
             headerShown: false, // Full-screen branded experience
+          }}
+        />
+        <Stack.Screen
+          name="CollectName"
+          component={CollectName}
+          initialParams={collectNameInitialParams}
+          options={{
+            title: 'Your name',
+            headerShown: false,
           }}
         />
         <Stack.Screen 

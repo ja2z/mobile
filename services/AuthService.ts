@@ -24,6 +24,8 @@ export interface UserProfile {
   phoneNumberVerifiedAt: number | null;
   expirationDate: number | null;
   isDeactivated: boolean;
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 export interface AuthSession {
@@ -77,9 +79,19 @@ export class AuthService {
   }
 
   /**
+   * True when first or last name is missing (trimmed); used to gate CollectName for non-backdoor users.
+   */
+  static needsProfileName(profile: UserProfile | null): boolean {
+    if (!profile) return false;
+    const f = (profile.firstName ?? '').trim();
+    const l = (profile.lastName ?? '').trim();
+    return f.length === 0 || l.length === 0;
+  }
+
+  /**
    * Verify magic link token and get session JWT
    */
-  static async verifyMagicLink(token: string): Promise<AuthSession> {
+  static async verifyMagicLink(token: string): Promise<AuthSession & { isNewRegistration?: boolean }> {
     // Get device ID - create a persistent identifier for this device
     let deviceId = 'unknown';
     try {
@@ -165,6 +177,7 @@ export class AuthService {
         role: userRole as 'basic' | 'admin',
       },
       expiresAt: data.expiresAt || 0,
+      isNewRegistration: data.isNewRegistration === true,
     };
   }
 
@@ -461,6 +474,27 @@ export class AuthService {
       console.error('[AuthService.getMe] Error:', error);
       return null;
     }
+  }
+
+  /**
+   * Save first and last name via PATCH /auth/me (session JWT required).
+   */
+  static async updateProfileName(firstName: string, lastName: string): Promise<UserProfile> {
+    const session = await this.getSession();
+    if (!session) throw new Error('Not authenticated');
+
+    const response = await fetch(`${AUTH_BASE_URL}/me`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${session.jwt}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ firstName, lastName }),
+    });
+
+    await this.handleApiResponse(response);
+    const data = await response.json();
+    return data as UserProfile;
   }
 
   // ─── Login instance / nudge ───────────────────────────────────────────────

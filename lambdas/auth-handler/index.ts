@@ -32,7 +32,6 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
 const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
 const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
-const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 const SHORT_URLS_TABLE = process.env.SHORT_URLS_TABLE || 'mobile-short-urls';
 
 // Cache for secrets (reduces Secrets Manager calls)
@@ -72,9 +71,9 @@ export const handler = async (event: any) => {
 
     console.log(`Final path for routing: ${path}, method: ${method}`);
 
-    // Parse body for POST requests
+    // Parse body for POST / PATCH requests
     let body = {};
-    if (method === 'POST' && event.body) {
+    if ((method === 'POST' || method === 'PATCH') && event.body) {
       console.log('[handler] Parsing request body, body type:', typeof event.body);
       try {
         body = JSON.parse(event.body);
@@ -108,6 +107,8 @@ export const handler = async (event: any) => {
       return await handleAuthenticateBackdoor(body, event);
     } else if (path === '/v1/auth/me' && method === 'GET') {
       return await handleGetMe(event);
+    } else if (path === '/v1/auth/me' && method === 'PATCH') {
+      return await handlePatchMe(event, body);
     } else if (path.startsWith('/s/') && method === 'GET') {
       // Handle /s/{shortId} (API Gateway strips /v1/ prefix in AWS_PROXY mode when accessed via CloudFront)
       const shortId = path.replace('/s/', '');
@@ -244,6 +245,69 @@ async function handleGetMe(event: any) {
     phoneNumberVerifiedAt: user.phoneNumberVerifiedAt ?? null,
     expirationDate: user.expirationDate || null,
     isDeactivated: user.isDeactivated || false,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
+  });
+}
+
+const NAME_MAX_LEN = 100;
+
+/**
+ * PATCH /v1/auth/me — set first and last name (required for new registrations).
+ * Body: { firstName: string, lastName: string }
+ */
+async function handlePatchMe(event: any, body: any) {
+  const headers = event.headers || {};
+  const authHeader = headers['Authorization'] || headers['authorization'];
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return createResponse(401, { error: 'Authorization header with Bearer token is required' });
+  }
+
+  let decoded: any;
+  try {
+    const secret = await getJWTSecret();
+    decoded = jwt.verify(token, secret, { algorithms: ['HS256'] });
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return createResponse(401, { error: 'Session expired. Please sign in again.' });
+    }
+    return createResponse(401, { error: 'Invalid session token' });
+  }
+
+  const rawFirst = body?.firstName;
+  const rawLast = body?.lastName;
+  if (typeof rawFirst !== 'string' || typeof rawLast !== 'string') {
+    return createResponse(400, { error: 'firstName and lastName are required' });
+  }
+
+  const firstName = rawFirst.trim();
+  const lastName = rawLast.trim();
+  if (!firstName.length || !lastName.length) {
+    return createResponse(400, { error: 'First and last name cannot be empty' });
+  }
+  if (firstName.length > NAME_MAX_LEN || lastName.length > NAME_MAX_LEN) {
+    return createResponse(400, { error: `Each name must be at most ${NAME_MAX_LEN} characters` });
+  }
+
+  await updateUser(decoded.userId, { firstName, lastName });
+
+  const user = await getUserProfile(decoded.userId);
+  if (!user) {
+    return createResponse(404, { error: 'User not found' });
+  }
+
+  return createResponse(200, {
+    userId: user.userId,
+    email: user.email,
+    role: user.role,
+    phoneNumber: user.phoneNumber || null,
+    phoneNumberVerifiedAt: user.phoneNumberVerifiedAt ?? null,
+    expirationDate: user.expirationDate || null,
+    isDeactivated: user.isDeactivated || false,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
   });
 }
 
@@ -924,6 +988,7 @@ async function handleVerifyMagicLink(body: any, event: any) {
       email: user.email,
       role: user.role
     },
+    isNewRegistration: user.isNewRegistration,
     app: tokenData.metadata?.app || null
   });
 }
@@ -1270,7 +1335,8 @@ async function handleAuthenticateBackdoor(body: any, event: any) {
       userId: user.userId,
       email: user.email,
       role: user.role
-    }
+    },
+    isNewRegistration: user.isNewRegistration
   });
 }
 
@@ -1307,7 +1373,7 @@ async function isEmailApproved(email: string): Promise<boolean> {
  * Returns user object with userId, email, and role
  * Only call this after successful authentication (token verification)
  */
-async function getOrCreateUserProfile(email: string, registrationMethod: string = 'email'): Promise<{ userId: string; email: string; role: string }> {
+async function getOrCreateUserProfile(email: string, registrationMethod: string = 'email'): Promise<{ userId: string; email: string; role: string; isNewRegistration: boolean }> {
   const emailLower = email.toLowerCase();
   
   // First, try to find existing user by email using Postgres service
@@ -1343,7 +1409,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
     return {
       userId: existingUser.userId,
       email: existingUser.email,
-      role: role
+      role: role,
+      isNewRegistration: false,
     };
   }
 
@@ -1413,7 +1480,8 @@ async function getOrCreateUserProfile(email: string, registrationMethod: string 
   return {
     userId,
     email: emailLower,
-    role: userRole
+    role: userRole,
+    isNewRegistration: true,
   };
 }
 
