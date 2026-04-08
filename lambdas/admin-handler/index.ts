@@ -5,14 +5,15 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import * as jwt from 'jsonwebtoken';
 import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/user-validation';
 import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
-import { listUsers, updateUser, deleteUser } from '../shared/user-service';
+import { listUsers, updateUser, purgeUserFromPostgres } from '../shared/user-service';
 import { listApprovedEmails, createOrUpdateApprovedEmail, deleteApprovedEmail, getApprovedEmail } from '../shared/approved-emails-service';
 import { listBuiltInApplets } from '../shared/built-in-applets-service';
+import { listUserActivity, listDistinctEventTypes } from '../shared/admin-user-activity-queries';
 
 // CRITICAL: Log module initialization immediately after imports
 // This helps us verify the Lambda is loading the module at all
@@ -63,8 +64,9 @@ console.log('Initial memory usage:', {
 
 // Environment variables
 // USERS_TABLE and APPROVED_EMAILS_TABLE removed - now using Postgres services
-const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
+// Activity log reads use Postgres user_activity (see admin-user-activity-queries)
 const TOKENS_TABLE = process.env.TOKENS_TABLE || 'mobile-auth-tokens';
+const MY_BUYS_SECRETS_TABLE = process.env.MY_BUYS_SECRETS_TABLE || 'mobile-my-buys-secrets';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 
 // Cache for secrets
@@ -321,6 +323,13 @@ const handlerImpl = async (event: any) => {
         return await handleUpdateUser(userId!, body, decoded);
       } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
         const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
+        const purge =
+          queryParams.purge === 'true' ||
+          queryParams.permanent === 'true' ||
+          queryParams.hardDelete === 'true';
+        if (purge) {
+          return await handlePurgeUser(userId!, decoded);
+        }
         return await handleDeactivateUser(userId!, decoded);
       } else if (path === '/v1/applets/built-in' && method === 'GET') {
         return await handleListBuiltInApplets(decoded);
@@ -458,10 +467,6 @@ const handlerImpl = async (event: any) => {
           console.error('DELETE request does not match whitelist or users');
           return createResponse(404, { error: 'DELETE endpoint not found' });
         }
-      } else if (path.match(/^\/v1\/admin\/users\/([^/]+)$/) && method === 'DELETE') {
-        // User delete handler (existing)
-        const userId = path.match(/^\/v1\/admin\/users\/([^/]+)$/)?.[1];
-        return await handleDeactivateUser(userId!, decoded);
       } else if ((path === '/v1/admin/activity/types' || path === '/admin/activity/types') && method === 'GET') {
         console.log('========== MATCHED ACTIVITY TYPES ROUTE ==========');
         console.log('Path matches /v1/admin/activity/types or /admin/activity/types');
@@ -926,6 +931,96 @@ async function handleDeactivateUser(userId: string, adminUser: any) {
 }
 
 /**
+ * Permanently delete a user: Postgres (applets, activity, users row), whitelist entry,
+ * DynamoDB sessions, and My Buys secrets. Cannot delete self.
+ */
+async function handlePurgeUser(userId: string, adminUser: any) {
+  try {
+    if (userId === adminUser.userId) {
+      return createResponse(400, { error: 'You cannot permanently delete your own account' });
+    }
+
+    const user = await getUserProfile(userId);
+    if (!user) {
+      return createResponse(404, { error: 'User not found' });
+    }
+
+    const targetEmail = user.email;
+
+    await logActivity(
+      'user_purged',
+      adminUser.userId,
+      getActivityLogEmail(adminUser.email, adminUser.isBackdoor),
+      {
+        purgedUserId: userId,
+        purgedEmail: targetEmail,
+      }
+    );
+
+    await deleteApprovedEmail(targetEmail);
+
+    await purgeUserFromPostgres(userId);
+
+    try {
+      const sessionsResult = await docClient.send(new QueryCommand({
+        TableName: TOKENS_TABLE,
+        IndexName: 'userId-tokenType-index',
+        KeyConditionExpression: 'userId = :userId AND tokenType = :tokenType',
+        ExpressionAttributeValues: {
+          ':userId': userId,
+          ':tokenType': 'session',
+        },
+      }));
+
+      if (sessionsResult.Items) {
+        for (const session of sessionsResult.Items) {
+          await docClient.send(new DeleteCommand({
+            TableName: TOKENS_TABLE,
+            Key: { tokenId: session.tokenId },
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting user sessions during purge:', error);
+    }
+
+    try {
+      const secretsResult = await docClient.send(new QueryCommand({
+        TableName: MY_BUYS_SECRETS_TABLE,
+        KeyConditionExpression: 'userId = :userId',
+        ExpressionAttributeValues: { ':userId': userId },
+      }));
+      if (secretsResult.Items) {
+        for (const item of secretsResult.Items) {
+          await docClient.send(
+            new DeleteCommand({
+              TableName: MY_BUYS_SECRETS_TABLE,
+              Key: {
+                userId: item.userId as string,
+                secretName: item.secretName as string,
+              },
+            })
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting My Buys secrets during purge:', error);
+    }
+
+    return createResponse(200, {
+      success: true,
+      message: 'User and all related data were permanently deleted',
+    });
+  } catch (error) {
+    console.error('Error purging user:', error);
+    return createResponse(500, {
+      error: 'Failed to permanently delete user',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * List whitelist users
  * SIMPLIFIED VERSION - Minimal operations to isolate the crash
  */
@@ -1236,223 +1331,64 @@ async function handleLogActivity(body: any, adminUser: any, event: any) {
 }
 
 /**
- * Get activity logs with pagination and filtering
- * SIMPLIFIED VERSION - Minimal operations to isolate the crash
+ * Get activity logs with pagination and filtering (Postgres user_activity)
  */
 async function handleGetActivityLogs(params: any, adminUser: any) {
-  // CRITICAL: Log immediately with try-catch to ensure logging works
-  try {
-    console.log('========== handleGetActivityLogs FUNCTION ENTERED ==========');
-    console.log('Function called at:', new Date().toISOString());
-    console.log('Function exists check:', typeof handleGetActivityLogs);
-  } catch (logErr) {
-    // Even logging failed - return error immediately
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({ error: 'Failed to log in handler', details: String(logErr) })
-    };
-  }
-  
-  // Validate inputs first
   if (!adminUser) {
-    console.error('adminUser is null/undefined');
     return createResponse(500, { error: 'Invalid admin user' });
   }
-  
-  console.log('Admin user validated:', { userId: adminUser.userId, email: adminUser.email });
-  console.log('Params:', params);
-  
-  // Check table name exists
-  if (!ACTIVITY_TABLE) {
-    console.error('ACTIVITY_TABLE is not set');
-    return createResponse(500, { error: 'Table name not configured' });
-  }
-  
-  console.log('Table name:', ACTIVITY_TABLE);
-  
-  // Check docClient exists
-  if (!docClient) {
-    console.error('docClient is null/undefined');
-    return createResponse(500, { error: 'DynamoDB client not initialized' });
-  }
-  
-  console.log('docClient validated');
-  
-  // Parse pagination parameters
-  const page = parseInt(params.page || '1', 10);
-  const limit = parseInt(params.limit || '50', 10);
+
+  const pageRaw = parseInt(params.page || '1', 10);
+  const limitRaw = parseInt(params.limit || '50', 10);
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 50;
   const emailFilter = params.emailFilter || '';
-  
-  // Parse eventTypeFilter - single value
   const eventTypeFilter = params.eventTypeFilter || '';
-  
-  const offset = (page - 1) * limit;
-  
-  console.log('Pagination params:', { page, limit, emailFilter, eventTypeFilter, offset });
-  
+
   try {
-    console.log('Attempting to scan ACTIVITY_TABLE...');
-    const scanCommand = new ScanCommand({
-      TableName: ACTIVITY_TABLE,
-    });
-    console.log('ScanCommand created successfully');
-    
-    const scanResult = await docClient.send(scanCommand);
-    console.log('Scan successful, items found:', scanResult.Items?.length || 0);
-
-    let activities = scanResult.Items || [];
-
-    // Filter by email if provided
-    if (emailFilter) {
-      const filterLower = emailFilter.toLowerCase();
-      activities = activities.filter((a: any) => 
-        a.email?.toLowerCase().includes(filterLower)
-      );
-      console.log('After email filter, activities count:', activities.length);
-    }
-
-    // Filter by event type if provided
-    if (eventTypeFilter) {
-      activities = activities.filter((a: any) => 
-        a.eventType === eventTypeFilter
-      );
-      console.log('After eventType filter, activities count:', activities.length);
-      console.log('Filtered by event type:', eventTypeFilter);
-    }
-
-    // Sort by timestamp (most recent first)
-    activities.sort((a: any, b: any) => {
-      const aVal = a.timestamp || 0;
-      const bVal = b.timestamp || 0;
-      return bVal - aVal;
-    });
-
-    // Paginate
-    const total = activities.length;
-    const paginatedActivities = activities.slice(offset, offset + limit);
-    
-    console.log('Pagination result:', {
-      total,
-      offset,
+    const { activities, total, page: p, limit: lim } = await listUserActivity({
+      page,
       limit,
-      returned: paginatedActivities.length,
-      totalPages: Math.ceil(total / limit)
+      emailFilter,
+      eventTypeFilter,
     });
 
-    // Format activities to match expected response structure
-    const formattedActivities = paginatedActivities.map((item: any) => ({
-      activityId: item.activityId || item.userId + '_' + item.timestamp,
-      userId: item.userId,
-      email: item.email,
-      eventType: item.eventType,
-      timestamp: item.timestamp,
-      deviceId: item.deviceId,
-      ipAddress: item.ipAddress,
-      metadata: item.metadata || {},
-    }));
+    const totalPages = Math.ceil(total / lim);
 
     return createResponse(200, {
-      activities: formattedActivities,
+      activities,
       pagination: {
-        page,
-        limit,
+        page: p,
+        limit: lim,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages,
       },
     });
   } catch (error) {
-    console.error('========== handleGetActivityLogs ERROR ==========');
-    console.error('Error:', error);
-    console.error('Error message:', error instanceof Error ? error.message : String(error));
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
-    return createResponse(500, { 
-      error: 'Failed to get activity logs', 
-      details: error instanceof Error ? error.message : String(error)
+    console.error('handleGetActivityLogs error:', error);
+    return createResponse(500, {
+      error: 'Failed to get activity logs',
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
 /**
- * Get unique activity types from DynamoDB
- * Scans the activity table and returns all unique eventType values
+ * Distinct event_type values from Postgres user_activity
  */
 async function handleGetActivityTypes(adminUser: any) {
+  if (!adminUser) {
+    return createResponse(500, { error: 'Invalid admin user' });
+  }
+
   try {
-    console.log('========== handleGetActivityTypes FUNCTION ENTERED ==========');
-    console.log('Admin user:', { userId: adminUser.userId, email: adminUser.email });
-    
-    if (!ACTIVITY_TABLE) {
-      console.error('ACTIVITY_TABLE is not set');
-      return createResponse(500, { error: 'Table name not configured' });
-    }
-    
-    if (!docClient) {
-      console.error('docClient is null/undefined');
-      return createResponse(500, { error: 'DynamoDB client not initialized' });
-    }
-    
-    console.log('Scanning ACTIVITY_TABLE for unique event types...');
-    
-    // Scan the table to get unique event types
-    // Use pagination to handle large tables efficiently
-    // Only fetch eventType to reduce data transfer
-    const eventTypes = new Set<string>();
-    let lastEvaluatedKey: any = undefined;
-    let scanCount = 0;
-    const maxScans = 10; // Limit to 10 pages to prevent excessive scanning
-    
-    do {
-      const scanCommand = new ScanCommand({
-        TableName: ACTIVITY_TABLE,
-        ProjectionExpression: 'eventType', // Only fetch eventType to reduce data transfer
-        ExclusiveStartKey: lastEvaluatedKey,
-        Limit: 1000, // Process in batches of 1000
-      });
-      
-      const scanResult = await docClient.send(scanCommand);
-      const items = scanResult.Items || [];
-      scanCount++;
-      
-      console.log(`Scan page ${scanCount}: ${items.length} items`);
-      
-      // Extract unique event types from this page
-      for (const item of items) {
-        if (item.eventType && typeof item.eventType === 'string') {
-          eventTypes.add(item.eventType);
-        }
-      }
-      
-      lastEvaluatedKey = scanResult.LastEvaluatedKey;
-      
-      // Safety limit: stop after maxScans pages to prevent timeout
-      // Most activity types should be found in the first few pages
-      if (scanCount >= maxScans) {
-        console.log(`Reached max scan limit (${maxScans} pages). Found ${eventTypes.size} unique types so far.`);
-        break;
-      }
-    } while (lastEvaluatedKey);
-    
-    // Convert to sorted array for consistent ordering
-    const uniqueTypes = Array.from(eventTypes).sort();
-    
-    console.log(`Scan complete after ${scanCount} pages. Unique activity types found: ${uniqueTypes.length}`);
-    console.log('Types:', uniqueTypes);
-    
-    return createResponse(200, {
-      activityTypes: uniqueTypes,
-    });
+    const activityTypes = await listDistinctEventTypes();
+    return createResponse(200, { activityTypes });
   } catch (error) {
-    console.error('========== handleGetActivityTypes ERROR ==========');
-    console.error('Error:', error);
-    console.error('Error message:', error instanceof Error ? error.message : String(error));
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
-    return createResponse(500, { 
-      error: 'Failed to get activity types', 
-      details: error instanceof Error ? error.message : String(error)
+    console.error('handleGetActivityTypes error:', error);
+    return createResponse(500, {
+      error: 'Failed to get activity types',
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 }

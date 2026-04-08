@@ -134,6 +134,46 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
     navigation.navigate('EditUser' as never, { user } as never);
   };
 
+  const handlePurge = (user: User) => {
+    Alert.alert(
+      'Permanently delete user?',
+      `This will permanently delete ${user.email} and all traces of this account: My Buys applets, activity logs for this user, their whitelist entry, and sign-in data. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete permanently',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AdminService.purgeUserPermanently(user.userId);
+              Alert.alert('Success', 'User was permanently deleted.');
+              loadUsers();
+            } catch (error: any) {
+              console.error('Error purging user:', error);
+              if (error.isSessionExpired) {
+                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              } else if (error.isExpirationError) {
+                Alert.alert(
+                  'Account Expired',
+                  error.message || 'Your account has expired. You can no longer use the app.',
+                  [{
+                    text: 'OK',
+                    onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }),
+                  }]
+                );
+              } else {
+                Alert.alert(
+                  'Error',
+                  error.message || 'Failed to permanently delete user. Please try again.'
+                );
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeactivate = (user: User) => {
     Alert.alert(
       'Deactivate User',
@@ -248,6 +288,13 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
             <Ionicons name="ban-outline" size={20} color={colors.error} />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handlePurge(item)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={20} color={colors.error} />
+        </TouchableOpacity>
       </View>
     </View>
     );

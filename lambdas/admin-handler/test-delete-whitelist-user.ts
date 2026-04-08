@@ -11,7 +11,6 @@ import { handler } from './index';
 process.env.USERS_TABLE = 'mobile-users';
 process.env.APPROVED_EMAILS_TABLE = 'mobile-approved-emails';
 process.env.TOKENS_TABLE = 'mobile-auth-tokens';
-process.env.ACTIVITY_TABLE = 'mobile-user-activity';
 process.env.JWT_SECRET_NAME = 'mobile-app/jwt-secret';
 
 // You'll need to get a valid JWT token - replace this with an actual admin token

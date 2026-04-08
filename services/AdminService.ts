@@ -246,6 +246,15 @@ export class AdminService {
   }
 
   /**
+   * Permanently delete user and all related data (Postgres, whitelist, sessions, My Buys secrets).
+   */
+  static async purgeUserPermanently(userId: string): Promise<{ success: boolean; message: string }> {
+    return this.apiCall(`/users/${encodeURIComponent(userId)}?purge=true`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
    * List whitelist users
    */
   static async listWhitelistUsers(): Promise<{ whitelistUsers: WhitelistUser[] }> {
@@ -298,7 +307,7 @@ export class AdminService {
   }
 
   /**
-   * Get unique activity types from DynamoDB
+   * Get distinct activity types (from Postgres via admin API)
    */
   static async getActivityTypes(): Promise<{ activityTypes: string[] }> {
     return this.apiCall<{ activityTypes: string[] }>('/activity/types');
