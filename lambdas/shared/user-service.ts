@@ -18,6 +18,8 @@ export interface UserProfile {
   phoneNumber?: string;
   /** Unix seconds when phone was last set via successful SMS verify (null = never / legacy) */
   phoneNumberVerifiedAt?: number | null;
+  firstName?: string | null;
+  lastName?: string | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -34,6 +36,8 @@ interface UserRow {
   phone_number: string | null;
   /** node-pg may return BIGINT as string */
   phone_number_verified_at: number | string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -57,6 +61,8 @@ function rowToUserProfile(row: UserRow): UserProfile {
       const n = Number(row.phone_number_verified_at);
       return Number.isFinite(n) ? n : undefined;
     })(),
+    firstName: row.first_name != null ? row.first_name : null,
+    lastName: row.last_name != null ? row.last_name : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -127,8 +133,8 @@ export async function createUser(user: {
   await query(
     `INSERT INTO users (
       user_id, email, role, expiration_date, registration_method, 
-      phone_number, phone_number_verified_at, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      phone_number, phone_number_verified_at, first_name, last_name, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (user_id) DO UPDATE SET
       email = EXCLUDED.email,
       role = EXCLUDED.role,
@@ -144,6 +150,8 @@ export async function createUser(user: {
       user.expirationDate || null,
       user.registrationMethod || null,
       user.phoneNumber || null,
+      null,
+      null,
       null,
       now,
       now,
@@ -174,6 +182,8 @@ export async function updateUser(
     phoneNumber?: string;
     /** Set together with phoneNumber when recording a new verification timestamp */
     phoneNumberVerifiedAt?: number;
+    firstName?: string | null;
+    lastName?: string | null;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -217,6 +227,14 @@ export async function updateUser(
   if (updates.phoneNumberVerifiedAt !== undefined) {
     setParts.push(`phone_number_verified_at = $${paramIndex++}`);
     values.push(updates.phoneNumberVerifiedAt);
+  }
+  if (updates.firstName !== undefined) {
+    setParts.push(`first_name = $${paramIndex++}`);
+    values.push(updates.firstName);
+  }
+  if (updates.lastName !== undefined) {
+    setParts.push(`last_name = $${paramIndex++}`);
+    values.push(updates.lastName);
   }
 
   if (setParts.length === 0) {
@@ -281,6 +299,16 @@ export async function listUsers(limit: number = 100, offset: number = 0): Promis
  * @param userId - User ID to delete
  */
 export async function deleteUser(userId: string): Promise<void> {
+  await query('DELETE FROM users WHERE user_id = $1', [userId]);
+}
+
+/**
+ * Permanently remove a user and dependent Postgres rows (applets, activity).
+ * Order is safe with or without FK CASCADE (children first, then users).
+ */
+export async function purgeUserFromPostgres(userId: string): Promise<void> {
+  await query('DELETE FROM applets WHERE user_id = $1', [userId]);
+  await query('DELETE FROM user_activity WHERE user_id = $1', [userId]);
   await query('DELETE FROM users WHERE user_id = $1', [userId]);
 }
 
