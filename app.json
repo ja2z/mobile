@@ -72,18 +72,18 @@
         }
       ],
       [
-        "@react-native-voice/voice",
-        {
-          "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",
-          "speechRecognitionPermission": "Allow Big Buys to use speech recognition to convert your voice to text."
-        }
-      ],
-      [
         "expo-camera",
         {
           "cameraPermission": "Allow Big Buys to access your camera to scan QR codes.",
           "microphonePermission": "Allow Big Buys to access your microphone when recording video with the camera.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",
+          "speechRecognitionPermission": "Allow Big Buys to use speech recognition to convert your voice to text."
         }
       ]
     ],
