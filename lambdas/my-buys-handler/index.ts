@@ -28,6 +28,9 @@ const KMS_KEY_ALIAS = process.env.KMS_KEY_ALIAS || 'alias/mobile-my-buys-secrets
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
 const MAX_APPLETS_PER_USER = 50;
 
+/** Sigma embed query params after JWT (colon-prefixed Sigma style). */
+const SIGMA_EMBED_AFTER_JWT = '&:embed=true&:menu_position=none&:hide_element_interactions=true';
+
 // Cache for session JWT secret
 let cachedSessionSecret: string | null = null;
 
@@ -908,7 +911,7 @@ async function handleTestApplet(event: any, userId: string, email: string, devic
     }
     
     // Construct test URL
-    const testUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}&:embed=true&:menu_position=none`;
+    const testUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}${SIGMA_EMBED_AFTER_JWT}`;
     
     // Test URL
     const testResult = await testEmbedUrl(testUrl);
@@ -981,7 +984,7 @@ async function handleTestConfiguration(event: any, userId: string, email: string
     }
     
     // Construct test URL
-    const testUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}&:embed=true&:menu_position=none`;
+    const testUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}${SIGMA_EMBED_AFTER_JWT}`;
     
     // Test URL
     const testResult = await testEmbedUrl(testUrl);
@@ -1059,7 +1062,7 @@ async function handleRegenerateUrl(event: any, userId: string, email: string, de
     }
     
     // Construct regenerated URL
-    const regeneratedUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}&:embed=true&:menu_position=none`;
+    const regeneratedUrl = `${parsedUrl.baseUrl}?:jwt=${regeneratedJWT}${SIGMA_EMBED_AFTER_JWT}`;
     
     // Log activity
     const ipAddress = getIpAddress(event);

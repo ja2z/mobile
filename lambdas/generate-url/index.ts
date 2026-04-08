@@ -640,7 +640,11 @@ export const handler = async (event: any) => {
             } else {
                 console.log('🔧 No variables provided or variables is not an object');
             }
-            
+
+            if (matchedBuiltInApplet) {
+                queryParams.append(':hide_element_interactions', 'true');
+            }
+
             embeddingUrl = `${baseUrl}?${queryParams.toString()}`;
         } else {
             // Build query string manually without encoding
@@ -662,7 +666,11 @@ export const handler = async (event: any) => {
             } else {
                 console.log('🔧 No variables provided or variables is not an object');
             }
-            
+
+            if (matchedBuiltInApplet) {
+                queryParts.push(':hide_element_interactions=true');
+            }
+
             embeddingUrl = `${baseUrl}?${queryParts.join('&')}`;
         }
         
