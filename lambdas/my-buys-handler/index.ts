@@ -26,7 +26,6 @@ const secretsManager = new SecretsManagerClient({ region: AWS_REGION });
 const MY_BUYS_SECRETS_TABLE = process.env.MY_BUYS_SECRETS_TABLE || 'mobile-my-buys-secrets';
 const KMS_KEY_ALIAS = process.env.KMS_KEY_ALIAS || 'alias/mobile-my-buys-secrets';
 const JWT_SECRET_NAME = process.env.JWT_SECRET_NAME || 'mobile-app/jwt-secret';
-const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE || 'mobile-user-activity';
 const MAX_APPLETS_PER_USER = 50;
 
 // Cache for session JWT secret
