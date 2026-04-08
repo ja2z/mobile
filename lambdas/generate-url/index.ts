@@ -4,6 +4,7 @@ import { validateUserExpiration, checkUserDeactivated } from '../shared/user-val
 import { logActivityAndUpdateLastActive, getActivityLogEmail } from '../shared/activity-logger';
 import { getSigmaOrgConfigBySlug } from '../shared/sigma-org-config-service';
 import { getBuiltInAppletByIdOrName } from '../shared/built-in-applets-service';
+import { getUserProfile } from '../shared/user-service';
 import * as jwt from 'jsonwebtoken';
 
 // Get AWS region from environment or default to us-west-2
@@ -203,7 +204,7 @@ async function getJWTConfig(
     orgJwtConfig: JWTPayloadConfig,
     appletId?: string,
     appletName?: string
-): Promise<JWTPayloadConfig> {
+): Promise<{ config: JWTPayloadConfig; matchedBuiltInApplet: boolean }> {
     // Start with org-level defaults (only include keys with non-null values)
     const config: JWTPayloadConfig = {};
     if (orgJwtConfig.teams) config.teams = orgJwtConfig.teams;
@@ -221,7 +222,7 @@ async function getJWTConfig(
         if (applet.account_type != null) config.account_type = applet.account_type;
     }
     
-    return config;
+    return { config, matchedBuiltInApplet: applet != null };
 }
 
 function base64UrlEncode(str: string): string {
@@ -540,8 +541,19 @@ export const handler = async (event: any) => {
         
         // Get JWT configuration (org defaults + applet overrides from Postgres)
         console.log('🔧 Getting JWT config - appletId:', appletId, 'appletName:', appletName);
-        const jwtConfig = await getJWTConfig(orgConfig.jwtConfig, appletId, appletName);
+        const { config: jwtConfig, matchedBuiltInApplet } = await getJWTConfig(orgConfig.jwtConfig, appletId, appletName);
         console.log('🔧 JWT config result:', JSON.stringify(jwtConfig, null, 2));
+        console.log('🔧 matchedBuiltInApplet:', matchedBuiltInApplet);
+
+        // first_name / last_name only for built-in applets when org uses +embed email suffix (sigma_org_config.add_embed_suffix)
+        const includeNameClaims = orgConfig.addEmbedSuffix === true && matchedBuiltInApplet;
+        let firstNameFromDb = '';
+        let lastNameFromDb = '';
+        if (includeNameClaims) {
+            const userProfile = await getUserProfile(userId);
+            firstNameFromDb = userProfile?.firstName ?? '';
+            lastNameFromDb = userProfile?.lastName ?? '';
+        }
         
         // Create JWT payload
         const payload: any = {
@@ -553,6 +565,11 @@ export const handler = async (event: any) => {
             exp: now + 3600, // Token expires in 1 hour
             iss: orgConfig.clientId, // Use clientId from config
         };
+
+        if (includeNameClaims) {
+            payload.first_name = firstNameFromDb;
+            payload.last_name = lastNameFromDb;
+        }
         
         // Add teams if configured
         if (jwtConfig.teams !== undefined) {

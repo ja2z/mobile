@@ -137,12 +137,10 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
 
   useEffect(() => {
     if (visible && embedUrl) {
-      // Get JWT from prop or extract from URL
-      let jwtToDecode = jwt;
-      if (!jwtToDecode) {
-        jwtToDecode = extractJWTFromUrl(embedUrl);
-      }
-      
+      // Prefer JWT embedded in the URL so JWT DATA matches what is actually loaded (avoids stale jwt prop).
+      const jwtFromUrl = extractJWTFromUrl(embedUrl);
+      const jwtToDecode = jwtFromUrl || jwt || null;
+
       if (jwtToDecode) {
         setJwtString(jwtToDecode);
         const decoded = decodeJWT(jwtToDecode);
