@@ -1,6 +1,9 @@
 /**
  * Lambda function to migrate DynamoDB activity logs to PostgreSQL
  * This is a one-time migration function
+ *
+ * Historical: read from DynamoDB `mobile-user-activity`. That table may be removed after
+ * migration; keep this Lambda only for archival reruns against a restored table/export.
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';

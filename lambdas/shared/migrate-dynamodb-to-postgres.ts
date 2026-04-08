@@ -2,6 +2,10 @@
  * DynamoDB to PostgreSQL Migration Script
  * Migrates activity logs from DynamoDB to PostgreSQL
  * Idempotent: Uses INSERT ... ON CONFLICT DO NOTHING to skip duplicates
+ *
+ * Historical: targeted table `mobile-user-activity`. That DynamoDB table may be deleted
+ * after a successful migration; this script is only for one-time backfill from an export
+ * or if the table is temporarily restored.
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
