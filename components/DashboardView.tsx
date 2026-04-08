@@ -10,6 +10,7 @@ import { colors, spacing, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import * as Haptics from 'expo-haptics';
 import { QrScannerModal } from './QrScannerModal';
+import { VoiceRecorderModal } from './VoiceRecorderModal';
 
 /** Fallback when embed URL is missing or invalid; matches historical hardcoded postMessage target. */
 const DEFAULT_SIGMA_EMBED_ORIGIN = 'https://app.sigmacomputing.com';
@@ -119,6 +120,10 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const qrControlIdRef = useRef<string | null>(null);
   /** Optional page node id from Sigma `values.navigateToPage` (or direct `navigateToPage`); if unset, scan success does not send workbook:selectednodeid:update. */
   const qrNavigateToPageRef = useRef<string | null>(null);
+
+  const [recorderVisible, setRecorderVisible] = useState(false);
+  const recorderControlIdRef = useRef<string | null>(null);
+  const recorderNavigateToPageRef = useRef<string | null>(null);
 
   /**
    * Check if a URL is an "ask" URL that doesn't send workbook:loaded events
@@ -538,6 +543,23 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           } else {
             console.warn('📷 invokeQRscanner (action:outbound) missing or empty values.controlId');
           }
+        } else if (data.name === 'invokeRecorder') {
+          const raw = data.values?.controlId;
+          const cid = typeof raw === 'string' ? raw.trim() : '';
+          const navRaw = data.values?.navigateToPage;
+          const nav =
+            typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
+          if (cid) {
+            console.log('🎤 Voice recorder requested (action:outbound) for control:', cid);
+            if (nav) {
+              console.log('🎤 navigateToPage:', nav);
+            }
+            recorderControlIdRef.current = cid;
+            recorderNavigateToPageRef.current = nav;
+            setRecorderVisible(true);
+          } else {
+            console.warn('🎤 invokeRecorder (action:outbound) missing or empty values.controlId');
+          }
         }
       } else if (data.type === 'invokeQRscanner') {
         const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
@@ -551,6 +573,19 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           setQrScannerVisible(true);
         } else {
           console.warn('📷 invokeQRscanner missing or empty controlId');
+        }
+      } else if (data.type === 'invokeRecorder') {
+        const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
+        const navRaw = (data as { navigateToPage?: unknown }).navigateToPage;
+        const nav =
+          typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
+        if (cid) {
+          console.log('🎤 Voice recorder requested for control:', cid);
+          recorderControlIdRef.current = cid;
+          recorderNavigateToPageRef.current = nav;
+          setRecorderVisible(true);
+        } else {
+          console.warn('🎤 invokeRecorder missing or empty controlId');
         }
       } else if (data.type === 'workbook:variables:onchange') {
         // Handle variable changes - check for sessionId and chat response
@@ -744,6 +779,37 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           qrControlIdRef.current = null;
           qrNavigateToPageRef.current = null;
           setQrScannerVisible(false);
+        }}
+      />
+
+      <VoiceRecorderModal
+        visible={recorderVisible}
+        onClose={() => {
+          recorderControlIdRef.current = null;
+          recorderNavigateToPageRef.current = null;
+          setRecorderVisible(false);
+        }}
+        onComplete={(text) => {
+          const id = recorderControlIdRef.current;
+          if (!id) return;
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {
+            // Haptics not available on this device
+          });
+          sendMessage({
+            type: 'workbook:variables:update',
+            variables: { [id]: text },
+          });
+          const navigateTo = recorderNavigateToPageRef.current;
+          if (navigateTo) {
+            sendMessage({
+              type: 'workbook:selectednodeid:update',
+              selectedNodeId: navigateTo,
+              nodeType: 'page',
+            });
+          }
+          recorderControlIdRef.current = null;
+          recorderNavigateToPageRef.current = null;
+          setRecorderVisible(false);
         }}
       />
     </View>
