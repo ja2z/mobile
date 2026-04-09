@@ -52,6 +52,8 @@ export default function AddMyBuysApplet() {
   const [activeTab, setActiveTab] = useState<TabName>('basic');
   const [sigmaApiBaseUrl, setSigmaApiBaseUrl] = useState(DEFAULT_SIGMA_API_SERVER);
   const [showServerPicker, setShowServerPicker] = useState(false);
+  /** When false, Test only validates embed; REST API / footer UI is hidden. */
+  const [useRestApiFeatures, setUseRestApiFeatures] = useState(false);
   const [sameAsEmbed, setSameAsEmbed] = useState(true);
   const [restApiClientId, setRestApiClientId] = useState('');
   const [restApiSecretKey, setRestApiSecretKey] = useState('');
@@ -104,7 +106,7 @@ export default function AddMyBuysApplet() {
           if (!embedSecretKey.trim()) setEmbedSecretKey(secretData.secretKey);
         }
         // Also try to populate REST API creds (from __sigma_rest secret)
-        if (!sameAsEmbed) {
+        if (useRestApiFeatures && !sameAsEmbed) {
           const restSecret = await MyBuysService.getSecretByName(secretName + '__sigma_rest');
           if (restSecret) {
             if (!restApiClientId.trim()) setRestApiClientId(restSecret.clientId);
@@ -118,7 +120,7 @@ export default function AddMyBuysApplet() {
 
     const timeoutId = setTimeout(autoPopulateCredentials, 500);
     return () => clearTimeout(timeoutId);
-  }, [embedUrl]);
+  }, [embedUrl, useRestApiFeatures, sameAsEmbed]);
 
   // --- Derived state ---
   const isFormValid = name.trim() && embedUrl.trim() && embedClientId.trim() && embedSecretKey.trim();
@@ -129,8 +131,9 @@ export default function AddMyBuysApplet() {
 
   const resolvedRestClientId = sameAsEmbed ? embedClientId : restApiClientId;
   const resolvedRestSecret = sameAsEmbed ? embedSecretKey : restApiSecretKey;
-  const hasRestCreds = !!resolvedRestClientId.trim() && !!resolvedRestSecret.trim();
-  const canGetPages = !!workbookId && hasRestCreds;
+  const hasRestCreds =
+    useRestApiFeatures && !!resolvedRestClientId.trim() && !!resolvedRestSecret.trim();
+  const canGetPages = useRestApiFeatures && !!workbookId && hasRestCreds;
 
   // --- Handlers ---
   const handleTest = async () => {
@@ -154,8 +157,8 @@ export default function AddMyBuysApplet() {
         return;
       }
 
-      // 2) If REST API creds are available, verify via whoami
-      if (hasRestCreds) {
+      // 2) Optional: REST whoami when Advanced is enabled and creds resolve
+      if (useRestApiFeatures && hasRestCreds) {
         const whoami = await SigmaRestApiService.whoami(
           resolvedRestClientId,
           resolvedRestSecret,
@@ -185,6 +188,13 @@ export default function AddMyBuysApplet() {
   };
 
   const handleDetectApiServer = async () => {
+    if (!useRestApiFeatures) {
+      Alert.alert(
+        'REST API disabled',
+        'Turn on "REST API & page footer" below to configure and detect the Sigma REST API server.',
+      );
+      return;
+    }
     if (!hasRestCreds) {
       Alert.alert(
         'Credentials required',
@@ -274,18 +284,18 @@ export default function AddMyBuysApplet() {
   const performSave = async () => {
     try {
       setSaving(true);
-      const footerPages = pages.length > 0 ? pages : undefined;
+      const footerPages = useRestApiFeatures && pages.length > 0 ? pages : undefined;
 
       const created = await MyBuysService.createApplet({
         name,
         embedUrl,
         embedClientId,
         embedSecretKey,
-        sigmaApiBaseUrl: hasRestCreds ? sigmaApiBaseUrl : undefined,
-        restApiSameAsEmbed: sameAsEmbed,
+        sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
+        restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
-        restApiClientId: !sameAsEmbed ? restApiClientId : undefined,
-        restApiSecretKey: !sameAsEmbed ? restApiSecretKey : undefined,
+        restApiClientId: useRestApiFeatures && !sameAsEmbed ? restApiClientId : undefined,
+        restApiSecretKey: useRestApiFeatures && !sameAsEmbed ? restApiSecretKey : undefined,
       });
 
       if (created.deepLinkSlug) {
@@ -481,6 +491,28 @@ export default function AddMyBuysApplet() {
 
   const renderAdvancedTab = () => (
     <>
+      <View style={[styles.switchRow, styles.switchRowMulti]}>
+        <View style={styles.switchLabelBlock}>
+          <Text style={styles.switchLabel}>REST API & page footer</Text>
+          <Text style={styles.switchSubLabel}>
+            Enable to use Sigma REST API (native footer, separate API keys). Test only checks the embed until this is on.
+          </Text>
+        </View>
+        <Switch
+          style={styles.switchAlignTop}
+          value={useRestApiFeatures}
+          onValueChange={setUseRestApiFeatures}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
+
+      {!useRestApiFeatures ? (
+        <Text style={styles.hintText}>
+          Optional. Leave off if you only need the embedded workbook and your embed keys differ from REST API keys.
+        </Text>
+      ) : (
+        <>
       {/* API Server Dropdown + Detect */}
       <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
@@ -630,6 +662,8 @@ export default function AddMyBuysApplet() {
             </View>
           ))}
         </View>
+      )}
+        </>
       )}
     </>
   );
@@ -914,10 +948,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  switchRowMulti: {
+    alignItems: 'flex-start',
+  },
+  switchLabelBlock: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  switchAlignTop: {
+    marginTop: 2,
+  },
   switchLabel: {
     ...typography.body,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  switchSubLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
 
   // --- Get Pages ---

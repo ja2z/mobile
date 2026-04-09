@@ -62,6 +62,8 @@ export default function EditMyBuysApplet() {
   const [activeTab, setActiveTab] = useState<TabName>('basic');
   const [sigmaApiBaseUrl, setSigmaApiBaseUrl] = useState(DEFAULT_SIGMA_API_SERVER);
   const [showServerPicker, setShowServerPicker] = useState(false);
+  /** When false, Test only validates embed; REST API / footer UI is hidden. */
+  const [useRestApiFeatures, setUseRestApiFeatures] = useState(false);
   const [sameAsEmbed, setSameAsEmbed] = useState(true);
   const [restApiClientId, setRestApiClientId] = useState('');
   const [restApiSecretKey, setRestApiSecretKey] = useState('');
@@ -110,6 +112,10 @@ export default function EditMyBuysApplet() {
         setEmbedUrl(found.embedUrl);
         setSigmaApiBaseUrl(found.sigmaApiBaseUrl || DEFAULT_SIGMA_API_SERVER);
         setSameAsEmbed(found.restApiSameAsEmbed !== false);
+        setUseRestApiFeatures(
+          found.restApiSameAsEmbed === false ||
+            (found.pageFooterConfig?.pages?.length ?? 0) > 0,
+        );
         if (found.pageFooterConfig?.pages) {
           setPages(found.pageFooterConfig.pages);
         }
@@ -177,8 +183,9 @@ export default function EditMyBuysApplet() {
   const workbookId = parsedEmbed?.workbookId ?? null;
   const resolvedRestClientId = sameAsEmbed ? embedClientId : restApiClientId;
   const resolvedRestSecret = sameAsEmbed ? embedSecretKey : restApiSecretKey;
-  const hasRestCreds = !!resolvedRestClientId.trim() && !!resolvedRestSecret.trim();
-  const canGetPages = !!workbookId && hasRestCreds;
+  const hasRestCreds =
+    useRestApiFeatures && !!resolvedRestClientId.trim() && !!resolvedRestSecret.trim();
+  const canGetPages = useRestApiFeatures && !!workbookId && hasRestCreds;
 
   const handleCopyDeepLinkKey = async () => {
     if (!applet?.deepLinkSlug) return;
@@ -193,7 +200,7 @@ export default function EditMyBuysApplet() {
       setTestResult(null);
       const result = await MyBuysService.testConfiguration({ embedUrl, embedClientId, embedSecretKey });
       if (!result.success) { setTestResult({ success: false, message: `Embed: ${result.message}` }); return; }
-      if (hasRestCreds) {
+      if (useRestApiFeatures && hasRestCreds) {
         const whoami = await SigmaRestApiService.whoami(resolvedRestClientId, resolvedRestSecret, sigmaApiBaseUrl);
         if (!whoami.success) { setTestResult({ success: false, message: `Embed OK, REST API: ${whoami.message}` }); return; }
         setTestResult({ success: true, message: `Embed OK (HTTP ${result.statusCode}). REST API verified.` });
@@ -208,6 +215,13 @@ export default function EditMyBuysApplet() {
   };
 
   const handleDetectApiServer = async () => {
+    if (!useRestApiFeatures) {
+      Alert.alert(
+        'REST API disabled',
+        'Turn on "REST API & page footer" below to configure and detect the Sigma REST API server.',
+      );
+      return;
+    }
     if (!hasRestCreds) {
       Alert.alert(
         'Credentials required',
@@ -274,14 +288,14 @@ export default function EditMyBuysApplet() {
   const performSave = async () => {
     try {
       setSaving(true);
-      const footerPages = pages.length > 0 ? pages : undefined;
+      const footerPages = useRestApiFeatures && pages.length > 0 ? pages : undefined;
       await MyBuysService.updateApplet(appletId, {
         name, embedUrl, embedClientId, embedSecretKey,
-        sigmaApiBaseUrl: hasRestCreds ? sigmaApiBaseUrl : undefined,
-        restApiSameAsEmbed: sameAsEmbed,
+        sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
+        restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
-        restApiClientId: !sameAsEmbed ? restApiClientId : undefined,
-        restApiSecretKey: !sameAsEmbed ? restApiSecretKey : undefined,
+        restApiClientId: useRestApiFeatures && !sameAsEmbed ? restApiClientId : undefined,
+        restApiSecretKey: useRestApiFeatures && !sameAsEmbed ? restApiSecretKey : undefined,
       });
       navigation.goBack();
     } catch (error: any) {
@@ -413,6 +427,28 @@ export default function EditMyBuysApplet() {
 
   const renderAdvancedTab = () => (
     <>
+      <View style={[styles.switchRow, styles.switchRowMulti]}>
+        <View style={styles.switchLabelBlock}>
+          <Text style={styles.switchLabel}>REST API & page footer</Text>
+          <Text style={styles.switchSubLabel}>
+            Enable to use Sigma REST API (native footer, separate API keys). Test only checks the embed until this is on.
+          </Text>
+        </View>
+        <Switch
+          style={styles.switchAlignTop}
+          value={useRestApiFeatures}
+          onValueChange={setUseRestApiFeatures}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
+
+      {!useRestApiFeatures ? (
+        <Text style={styles.hintText}>
+          Optional. Leave off if you only need the embedded workbook and your embed keys differ from REST API keys.
+        </Text>
+      ) : (
+        <>
       <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
           <Text style={styles.label}>Sigma REST API Server</Text>
@@ -492,6 +528,8 @@ export default function EditMyBuysApplet() {
             </View>
           ))}
         </View>
+      )}
+        </>
       )}
     </>
   );
@@ -618,7 +656,11 @@ const styles = StyleSheet.create({
   pickerItemUrl: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
 
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg, paddingVertical: spacing.sm },
+  switchRowMulti: { alignItems: 'flex-start' },
+  switchLabelBlock: { flex: 1, marginRight: spacing.md },
+  switchAlignTop: { marginTop: 2 },
   switchLabel: { ...typography.body, fontWeight: '600', color: colors.textPrimary },
+  switchSubLabel: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
 
   getPagesButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 2, borderColor: colors.primary, gap: spacing.sm },
   getPagesButtonText: { ...typography.body, fontWeight: '600', color: colors.primary },
