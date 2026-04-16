@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
+import { appletAccentMutedBackground, getAppletAccentColor } from '../../constants/AppletThemes';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { useHubPersonalizations } from '../../hooks/useHubPersonalizations';
 import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
 import type { RootStackParamList } from '../_layout';
 
@@ -50,7 +53,23 @@ export default function Apps() {
     }
   }, [navigation]);
 
-  useAppletHeader(navigation, handleHomePress);
+  useAppletHeader(navigation, handleHomePress, colors.folderSections.apps);
+
+  const { getOverride } = useHubPersonalizations();
+
+  const handleEdit = useCallback(
+    (applet: BuiltInApplet) => {
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+      const ov = getOverride(applet.applet_id);
+      navigation.navigate('EditHubApplet', {
+        itemId: applet.applet_id,
+        currentName: ov?.displayName || applet.name,
+        currentThemeId: ov?.themeId,
+        currentThemeCustomHex: ov?.themeCustomHex,
+      });
+    },
+    [navigation, getOverride],
+  );
 
   const navigateToApplet = useCallback(
     (applet: BuiltInApplet) => {
@@ -69,39 +88,62 @@ export default function Apps() {
     [navigation]
   );
 
-  const renderAppletTile = (applet: BuiltInApplet) => (
-    <TouchableOpacity
-      key={applet.applet_id}
-      style={styles.tileButton}
-      onPress={() => navigateToApplet(applet)}
-      activeOpacity={0.7}
-      accessibilityLabel={`${applet.name} - ${applet.subtitle || ''}`}
-      accessibilityRole="button"
-    >
-      <View style={styles.tile}>
-        <View style={[styles.tileAccent, { backgroundColor: applet.color || colors.tileColors.orange1 }]} />
-        <View style={styles.tileContent}>
-          <View style={[styles.iconContainer, { backgroundColor: (applet.color || colors.tileColors.orange1) + '20' }]}>
-            <Ionicons name={(applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline'} size={24} color={applet.color || colors.tileColors.orange1} />
-          </View>
-          <View style={styles.tileTextContainer}>
-            <Text style={styles.tileTitle} numberOfLines={2}>
-              {applet.name}
-            </Text>
-            <Text style={styles.tileSubtitle} numberOfLines={1}>
-              {applet.subtitle || ''}
-            </Text>
+  const renderAppletTile = (applet: BuiltInApplet) => {
+    const ov = getOverride(applet.applet_id);
+    const accent = ov?.themeId
+      ? getAppletAccentColor(ov.themeId, ov.themeCustomHex)
+      : colors.accentBlue;
+    const displayName = ov?.displayName || applet.name;
+
+    return (
+      <TouchableOpacity
+        key={applet.applet_id}
+        style={styles.tileButton}
+        onPress={() => navigateToApplet(applet)}
+        activeOpacity={0.7}
+        accessibilityLabel={`${displayName} - ${applet.subtitle || ''}`}
+        accessibilityRole="button"
+      >
+        <View style={styles.tile}>
+          <View style={[styles.tileAccent, { backgroundColor: accent }]} />
+          <TouchableOpacity
+            style={styles.tileEditButton}
+            onPress={() => handleEdit(applet)}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            accessibilityLabel={`Personalize ${displayName}`}
+            accessibilityRole="button"
+          >
+            <Image
+              source={require('../../assets/pencil-edit.png')}
+              style={styles.tileEditPencilImage}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
+          </TouchableOpacity>
+          <View style={styles.tileContent}>
+            <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(accent, 0.18) }]}>
+              <Ionicons name={(applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline'} size={24} color={colors.primary} />
+            </View>
+            <View style={styles.tileTextContainer}>
+              <Text style={styles.tileTitle} numberOfLines={2} ellipsizeMode="tail">
+                {displayName}
+              </Text>
+              <Text style={styles.tileSubtitle} numberOfLines={1} ellipsizeMode="tail">
+                {applet.subtitle || ''}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   if (loading && showSpinner) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.accentBlue} />
         </View>
       </SafeAreaView>
     );
@@ -162,9 +204,23 @@ const styles = StyleSheet.create({
   tileAccent: {
     height: 6,
   },
+  tileEditButton: {
+    position: 'absolute',
+    top: 6 + spacing.md + spacing.xs,
+    right: spacing.sm,
+    zIndex: 2,
+  },
+  tileEditPencilImage: {
+    width: 36,
+    height: 36,
+    backgroundColor: 'transparent',
+  },
   tileContent: {
     flex: 1,
-    padding: spacing.md,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     justifyContent: 'space-between',
   },
   iconContainer: {
@@ -176,11 +232,18 @@ const styles = StyleSheet.create({
   },
   tileTextContainer: {
     marginTop: spacing.xs,
+    alignSelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
   },
   tileTitle: {
     ...typography.body,
     fontWeight: '600',
     color: colors.textPrimary,
+    alignSelf: 'stretch',
+    ...Platform.select({
+      android: { textBreakStrategy: 'simple' as const },
+    }),
   },
   tileSubtitle: {
     ...typography.caption,

@@ -21,7 +21,7 @@ interface MyBuysEmbedUrlInfoModalProps {
 }
 
 /**
- * My Buys Embed URL Info Modal Component
+ * My Apps embed URL info modal
  * Explains what an embed URL is and how to get one
  */
 export function MyBuysEmbedUrlInfoModal({ visible, onClose }: MyBuysEmbedUrlInfoModalProps) {

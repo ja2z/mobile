@@ -1,12 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  StatusBar,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  Image,
+  DeviceEventEmitter,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
+import { getAppletAccentColor, appletAccentMutedBackground } from '../../constants/AppletThemes';
+import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysService } from '../../services/MyBuysService';
 import type { Applet } from '../../types/mybuys.types';
 import type { RootStackParamList } from '../_layout';
@@ -14,7 +28,7 @@ import type { RootStackParamList } from '../_layout';
 type MyBuysScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MyBuys'>;
 
 /**
- * My Buys Page Component
+ * My Apps Page Component
  * Displays user's custom applets in a grid layout
  */
 export default function MyBuys() {
@@ -52,6 +66,34 @@ export default function MyBuys() {
   }, []);
 
   /**
+   * When another screen saves/creates/deletes an applet, immediately patch local state
+   * (bypasses AsyncStorage timing) then do a background refetch for full consistency.
+   */
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      MY_BUYS_APPLETS_CHANGED,
+      (payload?: MyBuysAppletsChangedPayload) => {
+        if (payload?.action === 'updated' && payload.themeId) {
+          setApplets((prev) =>
+            prev.map((a) => {
+              if (a.appletId !== payload.appletId) return a;
+              const { themeCustomHex: _drop, ...rest } = a;
+              if (payload.themeId === 'custom' && payload.themeCustomHex) {
+                return { ...rest, themeId: payload.themeId, themeCustomHex: payload.themeCustomHex };
+              }
+              return { ...rest, themeId: payload.themeId };
+            }),
+          );
+        } else if (payload?.action === 'deleted') {
+          setApplets((prev) => prev.filter((a) => a.appletId !== payload.appletId));
+        }
+        loadApplets();
+      },
+    );
+    return () => sub.remove();
+  }, [loadApplets]);
+
+  /**
    * Refresh applets on screen focus
    */
   useFocusEffect(
@@ -76,14 +118,13 @@ export default function MyBuys() {
   }, [navigation]);
 
   /**
-   * Handle applet long press - navigate to edit screen
+   * Open applet settings (modal) — explicit control from card
    */
-  const handleAppletLongPress = useCallback((applet: Applet) => {
-    // Provide haptic feedback to confirm long press
+  const handleAppletEdit = useCallback((applet: Applet) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch (error) {
-      // Haptics not available on this device, silently continue
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      /* haptics optional */
     }
     navigation.navigate('EditMyBuysApplet' as never, { appletId: applet.appletId } as never);
   }, [navigation]);
@@ -131,40 +172,55 @@ export default function MyBuys() {
   const renderAppletTile = (applet: Applet) => {
     // Get org name from secretName or extract from URL
     const orgName = applet.secretName || MyBuysService.extractSecretNameFromUrl(applet.embedUrl) || 'Custom Embed';
-    
-    return (
-      <TouchableOpacity
-        key={applet.appletId}
-        style={styles.tileButton}
-        onPress={() => handleAppletPress(applet)}
-        onLongPress={() => handleAppletLongPress(applet)}
-        activeOpacity={0.7}
-        accessibilityLabel={`${applet.name} - Long press to edit`}
-        accessibilityRole="button"
-      >
-        <View style={styles.tile}>
-          {/* Color accent bar */}
-          <View style={[styles.tileAccent, { backgroundColor: colors.primary }]} />
-          
-          {/* Tile content */}
-          <View style={styles.tileContent}>
-            {/* Icon */}
-            <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
-              <Ionicons name="layers-outline" size={24} color={colors.primary} />
-            </View>
+    const accent = getAppletAccentColor(applet.themeId, applet.themeCustomHex);
+    const iconBg = appletAccentMutedBackground(accent);
 
-            {/* Text content */}
-            <View style={styles.tileTextContainer}>
-              <Text style={styles.tileTitle} numberOfLines={2}>
-                {applet.name}
-              </Text>
-              <Text style={styles.tileSubtitle} numberOfLines={1}>
-                {orgName}
-              </Text>
+    return (
+      <View key={applet.appletId} style={styles.tileButton}>
+        <View style={styles.tile}>
+          <TouchableOpacity
+            style={styles.tileMainPress}
+            onPress={() => handleAppletPress(applet)}
+            activeOpacity={0.7}
+            accessibilityLabel={`Open ${applet.name}`}
+            accessibilityRole="button"
+          >
+            {/* RN often measures Text too narrow inside TouchableOpacity; inner View fixes full-tile width */}
+            <View style={styles.tileMainInner}>
+              <View style={[styles.tileAccent, { backgroundColor: accent }]} />
+              <View style={styles.tileContent}>
+                <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
+                  <Ionicons name="layers-outline" size={24} color={colors.primary} />
+                </View>
+                <View style={styles.tileTextContainer}>
+                  <Text style={styles.tileTitle} numberOfLines={2} ellipsizeMode="tail">
+                    {applet.name}
+                  </Text>
+                  <Text style={styles.tileSubtitle} numberOfLines={1} ellipsizeMode="tail">
+                    {orgName}
+                  </Text>
+                </View>
+              </View>
             </View>
-          </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tileEditButton}
+            onPress={() => handleAppletEdit(applet)}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            accessibilityLabel={`Settings for ${applet.name}`}
+            accessibilityRole="button"
+          >
+            <Image
+              source={require('../../assets/pencil-edit.png')}
+              style={styles.tileEditPencilImage}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -181,15 +237,11 @@ export default function MyBuys() {
         accessibilityRole="button"
       >
         <View style={[styles.tile, styles.addTile]}>
-          {/* Dashed border effect */}
-          <View style={styles.addTileBorder} />
-          
-          {/* Content */}
           <View style={styles.addTileContent}>
             <View style={styles.addIconContainer}>
-              <Ionicons name="add" size={32} color={colors.textSecondary} />
+              <Ionicons name="add" size={32} color={colors.primary} />
             </View>
-            <Text style={styles.addTileText}>Add Embed</Text>
+            <Text style={styles.addTileText}>Add Applet</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -203,7 +255,7 @@ export default function MyBuys() {
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.accentBlue} />
           <Text style={styles.loadingText}>Loading applets...</Text>
         </View>
       ) : (
@@ -215,7 +267,7 @@ export default function MyBuys() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={colors.primary}
+              tintColor={colors.accentBlue}
             />
           }
         >
@@ -289,13 +341,41 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.medium,
   },
+  tileMainPress: {
+    flex: 1,
+    alignSelf: 'stretch',
+    width: '100%',
+  },
+  tileMainInner: {
+    flex: 1,
+    width: '100%',
+    minWidth: 0,
+    minHeight: 0,
+  },
   tileAccent: {
     height: 6,
   },
   tileContent: {
     flex: 1,
-    padding: spacing.md,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
     justifyContent: 'space-between',
+  },
+  tileEditButton: {
+    position: 'absolute',
+    // Below prior position; inset more from right edge = reads farther left
+    top: 6 + spacing.md + spacing.xs,
+    right: spacing.sm,
+    zIndex: 2,
+  },
+  /** Transparent PNG — no chip; explicit transparency for RN compositing */
+  tileEditPencilImage: {
+    width: 36,
+    height: 36,
+    backgroundColor: 'transparent',
   },
   iconContainer: {
     width: 48,
@@ -303,14 +383,22 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: spacing.sm + 36,
   },
   tileTextContainer: {
     marginTop: spacing.xs,
+    alignSelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
   },
   tileTitle: {
     ...typography.body,
     fontWeight: '600',
     color: colors.textPrimary,
+    alignSelf: 'stretch',
+    ...Platform.select({
+      android: { textBreakStrategy: 'simple' as const },
+    }),
   },
   tileSubtitle: {
     ...typography.caption,
@@ -322,17 +410,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-  },
-  addTileBorder: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
   },
   addTileContent: {
     flex: 1,
@@ -371,7 +448,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   emptyButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accentBlue,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,

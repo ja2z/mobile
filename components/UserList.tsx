@@ -137,7 +137,7 @@ export function UserList({ initialEmailFilter, initialShowDeactivated }: UserLis
   const handlePurge = (user: User) => {
     Alert.alert(
       'Permanently delete user?',
-      `This will permanently delete ${user.email} and all traces of this account: My Buys applets, activity logs for this user, their whitelist entry, and sign-in data. This cannot be undone.`,
+      `This will permanently delete ${user.email} and all traces of this account: My Apps applets, activity logs for this user, their whitelist entry, and sign-in data. This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

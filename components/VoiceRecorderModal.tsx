@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
-  Modal,
   Pressable,
   StyleSheet,
   Text,
   View,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
-import { colors, spacing, typography } from '../constants/Theme';
+import { borderRadius, colors, shadows, spacing, typography } from '../constants/Theme';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 type VoiceRecorderModalProps = {
@@ -18,8 +18,9 @@ type VoiceRecorderModalProps = {
 };
 
 /**
- * Full-screen modal for voice input via expo-speech-recognition.
- * Shown when the embed requests `invokeRecorder` (same pattern as `invokeQRscanner`).
+ * Compact inline overlay for voice input via expo-speech-recognition.
+ * Renders as an absolutely-positioned card on top of the parent container
+ * (no Modal). Returns null when not visible.
  */
 export function VoiceRecorderModal({
   visible,
@@ -101,7 +102,6 @@ export function VoiceRecorderModal({
 
   const handleDone = useCallback(() => {
     void stopRecording();
-    // If the engine does not emit a final result, commit last partial / empty after a short delay.
     if (doneFallbackTimerRef.current) {
       clearTimeout(doneFallbackTimerRef.current);
     }
@@ -119,23 +119,13 @@ export function VoiceRecorderModal({
     };
   }, []);
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={handleCancel}
-    >
-      <View style={styles.root}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Voice input</Text>
-          <Text style={styles.hint}>
-            Speak clearly. Tap Done when finished, or Cancel to discard.
-          </Text>
-        </View>
+  if (!visible) return null;
 
+  return (
+    <View style={styles.overlay} pointerEvents="box-none">
+      <View style={styles.card}>
         <View style={styles.body}>
-          {!isRecording && !error && visible && (
+          {!isRecording && !error && (
             <ActivityIndicator size="large" color={colors.primary} />
           )}
           {error ? (
@@ -153,47 +143,47 @@ export function VoiceRecorderModal({
 
         <View style={styles.footer}>
           <Pressable
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}
             onPress={handleCancel}
           >
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
           <Pressable
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.doneButton, pressed && styles.pressed]}
             onPress={handleDone}
             disabled={!isRecording}
           >
-            <Text style={styles.primaryButtonText}>Done</Text>
+            <Text style={styles.doneButtonText}>Done</Text>
           </Pressable>
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  card: {
+    width: '85%',
+    maxHeight: '60%',
+    minHeight: 180,
     backgroundColor: colors.background,
-    paddingTop: spacing.xl,
-  },
-  header: {
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.lg,
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  title: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  hint: {
-    ...typography.body,
-    color: colors.textSecondary,
+    ...shadows.medium,
+    ...(Platform.OS === 'android' ? { elevation: 8 } : {}),
   },
   body: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    minHeight: 80,
   },
   transcript: {
     ...typography.body,
@@ -207,35 +197,38 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
     gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  primaryButton: {
+  doneButton: {
     flex: 1,
+    height: 48,
     backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: 8,
+    borderRadius: borderRadius.pill,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  primaryButtonText: {
+  doneButtonText: {
     ...typography.body,
     color: '#fff',
     fontWeight: '600',
   },
-  secondaryButton: {
+  cancelButton: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: borderRadius.pill,
     alignItems: 'center',
-    borderWidth: 1,
+    justifyContent: 'center',
+    borderWidth: 1.5,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  secondaryButtonText: {
+  cancelButtonText: {
     ...typography.body,
     color: colors.textPrimary,
+    fontWeight: '600',
   },
   pressed: {
     opacity: 0.85,

@@ -20,7 +20,7 @@ interface DeepLinkKeyInfoModalProps {
 }
 
 /**
- * Explains the My Buys deep link key for magic link / SMS flows.
+ * Explains the My Apps deep link key for magic link / SMS flows.
  */
 export function DeepLinkKeyInfoModal({ visible, onClose }: DeepLinkKeyInfoModalProps) {
   return (

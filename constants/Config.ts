@@ -14,7 +14,7 @@ export const Config = {
   },
   
   // App configuration
-  APP_NAME: 'Big Buys Mobile',
+  APP_NAME: 'Zambini',
   
   // Navigation configuration
   NAVIGATION: {

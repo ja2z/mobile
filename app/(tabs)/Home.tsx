@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Config } from '../../constants/Config';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
+import { appletAccentMutedBackground } from '../../constants/AppletThemes';
 import { AuthService } from '../../services/AuthService';
 import { ActivityService } from '../../services/ActivityService';
 import { ProfileMenu } from '../../components/ProfileMenu';
@@ -19,7 +20,6 @@ interface AppTile {
   title: string;
   subtitle: string;
   description: string;
-  color: string;
   iconName: keyof typeof Ionicons.glyphMap;
   isActive: boolean;
   onPress?: () => void;
@@ -114,10 +114,9 @@ export default function Home() {
   const appTiles: AppTile[] = [
     { 
       id: '9', 
-      title: 'My Buys', 
+      title: 'My Apps', 
       subtitle: 'Custom Embeds', 
       description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
-      color: colors.tileColors.orange1,
       iconName: 'layers-outline',
       isActive: true,
       onPress: handleNavigateToMyBuys,
@@ -127,7 +126,6 @@ export default function Home() {
       title: 'Sigmanauts', 
       subtitle: 'Sigma Tools', 
       description: 'Access Sigma employee tools and resources. Available only for @sigmacomputing.com email addresses.',
-      color: colors.tileColors.orange1,
       iconName: 'people-outline',
       isActive: true,
       onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
@@ -137,7 +135,6 @@ export default function Home() {
       title: 'AI', 
       subtitle: 'AI Tools', 
       description: 'Access AI-powered tools and assistants. Chat with AI, query data, read newsletters, and get intelligent insights.',
-      color: colors.tileColors.orange1,
       iconName: 'sparkles-outline',
       isActive: true,
       onPress: handleNavigateToAI,
@@ -147,7 +144,6 @@ export default function Home() {
       title: 'Dashboards', 
       subtitle: 'Data Views', 
       description: 'View executive dashboards and data visualizations. Get insights on the go with real-time data.',
-      color: colors.tileColors.orange1,
       iconName: 'bar-chart-outline',
       isActive: true,
       onPress: handleNavigateToDashboards,
@@ -157,7 +153,6 @@ export default function Home() {
       title: 'Apps', 
       subtitle: 'Applications', 
       description: 'Access workflow and operations applications. Streamline your work with powerful tools.',
-      color: colors.tileColors.orange1,
       iconName: 'apps-outline',
       isActive: true,
       onPress: handleNavigateToApps,
@@ -309,7 +304,7 @@ export default function Home() {
           </TouchableOpacity>
 
           {/* Icon header */}
-          <View style={[styles.detailIconContainer, { backgroundColor: selectedTile.color }]}>
+          <View style={[styles.detailIconContainer, { backgroundColor: appletAccentMutedBackground(colors.accentBlue, 0.22) }]}>
             {selectedTile.id === 'sigmanauts' ? (
               <Image
                 source={require('../../assets/sigma-logo-symbol-black.png')}
@@ -317,7 +312,7 @@ export default function Home() {
                 resizeMode="contain"
               />
             ) : (
-              <Ionicons name={selectedTile.iconName} size={64} color="#FFFFFF" />
+              <Ionicons name={selectedTile.iconName} size={64} color={colors.primary} />
             )}
           </View>
 
@@ -334,7 +329,7 @@ export default function Home() {
               style={[
                 styles.launchButton,
                 { 
-                  backgroundColor: selectedTile.isActive ? selectedTile.color : colors.border,
+                  backgroundColor: selectedTile.isActive ? colors.accentBlue : colors.border,
                   opacity: selectedTile.isActive ? 1 : 0.6,
                 },
               ]}
@@ -410,12 +405,12 @@ export default function Home() {
                   opacity: (tile.id === 'sigmanauts' && !isSigmaEmployee) ? 0.4 : (tile.isActive ? 1 : 0.4)
                 }]}>
                   {/* Color accent bar */}
-                  <View style={[styles.tileAccent, { backgroundColor: tile.color }]} />
+                  <View style={[styles.tileAccent, { backgroundColor: colors.accentBlue }]} />
                   
                   {/* Tile content */}
                   <View style={styles.tileContent}>
                     {/* Icon */}
-                    <View style={[styles.iconContainer, { backgroundColor: tile.color + '20' }]}>
+                    <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(colors.accentBlue, 0.18) }]}>
                       {tile.id === 'sigmanauts' ? (
                         <Image
                           source={require('../../assets/sigma-logo-symbol-black.png')}
@@ -423,7 +418,7 @@ export default function Home() {
                           resizeMode="contain"
                         />
                       ) : (
-                        <Ionicons name={tile.iconName} size={24} color={tile.color} />
+                        <Ionicons name={tile.iconName} size={24} color={colors.primary} />
                       )}
                     </View>
 

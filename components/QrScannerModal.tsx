@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { Config } from '../constants/Config';
 import { colors, spacing, typography } from '../constants/Theme';
 
 type QrScannerModalProps = {
@@ -61,7 +62,7 @@ export function QrScannerModal({ visible, onClose, onScanned }: QrScannerModalPr
           <View style={styles.centered}>
             <Text style={styles.title}>Camera required</Text>
             <Text style={styles.hint}>
-              Big Buys needs camera access to scan QR codes for this workbook.
+              {Config.APP_NAME} needs camera access to scan QR codes for this workbook.
             </Text>
             <Pressable
               style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}

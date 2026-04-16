@@ -246,7 +246,7 @@ export class AdminService {
   }
 
   /**
-   * Permanently delete user and all related data (Postgres, whitelist, sessions, My Buys secrets).
+   * Permanently delete user and all related data (Postgres, whitelist, sessions, My Apps secrets).
    */
   static async purgeUserPermanently(userId: string): Promise<{ success: boolean; message: string }> {
     return this.apiCall(`/users/${encodeURIComponent(userId)}?purge=true`, {

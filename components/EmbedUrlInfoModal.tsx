@@ -395,19 +395,18 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
                   )}
               </ScrollView>
 
-              {/* Action Buttons - Only show for My Buys applets */}
-              {appletId && (
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity
-                    style={styles.copyButton}
-                    onPress={handleCopyUrl}
-                    disabled={!embedUrl}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="copy-outline" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Copy</Text>
-                  </TouchableOpacity>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={styles.copyButton}
+                  onPress={handleCopyUrl}
+                  disabled={!embedUrl}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="copy-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.buttonText}>Copy</Text>
+                </TouchableOpacity>
 
+                {appletId && (
                   <TouchableOpacity
                     style={[styles.usableUrlButton, isGeneratingUsableUrl && styles.buttonDisabled]}
                     onPress={handleGenerateUsableUrl}
@@ -423,8 +422,8 @@ export function EmbedUrlInfoModal({ visible, onClose, embedUrl, jwt, appletId }:
                       Usable URL
                     </Text>
                   </TouchableOpacity>
-                </View>
-              )}
+                )}
+              </View>
         </View>
       </View>
       <View style={styles.toastContainer}>
@@ -513,7 +512,7 @@ const styles = StyleSheet.create({
   jwtPayloadInUrl: {
     ...typography.bodySmall,
     color: colors.primary,
-    backgroundColor: '#000000',
+    backgroundColor: '#DBEAFE',
     fontFamily: 'monospace',
     lineHeight: 20,
     paddingHorizontal: 2,

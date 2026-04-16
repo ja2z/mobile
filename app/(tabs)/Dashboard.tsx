@@ -10,6 +10,7 @@ import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { colors } from '../../constants/Theme';
 
 type DashboardRouteProp = RouteProp<RootStackParamList, 'Dashboard'>;
 type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Dashboard'>;
@@ -184,7 +185,7 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   content: {
     flex: 1,

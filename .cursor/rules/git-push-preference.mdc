@@ -1,0 +1,11 @@
+---
+description: Do not push to remote until the user explicitly asks (avoids unwanted deploys)
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Git push and deploy
+
+- **Do not run `git push`** (or equivalent: `gh repo sync`, force-push, etc.) unless the user **explicitly** asks you to push or deploy.
+- Local **`git commit`** is fine when it helps the task, but **stop before pushing** so services tied to the remote (e.g. Netlify auto-deploy) do not redeploy on every change.
+- When the user wants to ship, they will say so (e.g. “push to origin”, “deploy”, “push it”).

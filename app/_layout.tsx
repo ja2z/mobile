@@ -1,9 +1,25 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { NavigationContainer, CommonActions } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import type { RouteProp, Theme } from '@react-navigation/native';
+import {
+  createStackNavigator,
+  CardStyleInterpolators,
+  type StackNavigationOptions,
+  type StackNavigationProp,
+} from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  StyleSheet,
+  Animated,
+  Pressable,
+  Platform,
+  Alert,
+  Easing,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Login from './(tabs)/Login';
 import ExpiredLink from './(tabs)/ExpiredLink';
@@ -26,7 +42,7 @@ import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
 import PhoneVerification from './(tabs)/PhoneVerification';
 import CollectName from './(tabs)/CollectName';
-import { Alert } from 'react-native';
+import EditHubApplet from './(tabs)/EditHubApplet';
 import Toast from 'react-native-toast-message';
 import { colors, spacing, typography } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
@@ -55,6 +71,7 @@ export type RootStackParamList = {
   AI: undefined;
   Dashboards: undefined;
   Apps: undefined;
+  EditHubApplet: { itemId: string; currentName: string; currentThemeId?: string; currentThemeCustomHex?: string };
   PhoneVerification: undefined;
   CollectName:
     | {
@@ -65,6 +82,158 @@ export type RootStackParamList = {
       }
     | undefined;
 };
+
+type MyBuysAppletModalOptionsArgs =
+  | {
+      route: RouteProp<RootStackParamList, 'AddMyBuysApplet'>;
+      navigation: StackNavigationProp<RootStackParamList, 'AddMyBuysApplet'>;
+      theme: Theme;
+    }
+  | {
+      route: RouteProp<RootStackParamList, 'EditMyBuysApplet'>;
+      navigation: StackNavigationProp<RootStackParamList, 'EditMyBuysApplet'>;
+      theme: Theme;
+    };
+
+/** Same easing as scale-from-center stock preset; open quicker, close more leisurely (shared curve). */
+const MY_BUYS_APPLET_MODAL_TRANSITION_SPEC = {
+  open: {
+    animation: 'timing' as const,
+    config: {
+      duration: 280,
+      easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
+    },
+  },
+  close: {
+    animation: 'timing' as const,
+    config: {
+      duration: 480,
+      easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
+    },
+  },
+};
+
+/** Shared transparent card modal for Add / Edit My Apps applet (backdrop + scale animation). */
+function myBuysAppletModalScreenOptions(title: string) {
+  return ({ navigation }: MyBuysAppletModalOptionsArgs): StackNavigationOptions => ({
+    title,
+    headerShown: true,
+    presentation: 'transparentModal' as const,
+    animation: 'scale_from_center' as const,
+    transitionSpec: MY_BUYS_APPLET_MODAL_TRANSITION_SPEC,
+    cardStyleInterpolator: (props: Parameters<typeof CardStyleInterpolators.forScaleFromCenterAndroid>[0]) => {
+      const base = CardStyleInterpolators.forScaleFromCenterAndroid(props);
+      const overlayOpacity = props.current.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+      });
+      return {
+        ...base,
+        overlayStyle: { opacity: overlayOpacity },
+      };
+    },
+    gestureEnabled: true,
+    cardOverlayEnabled: true,
+    cardOverlay: ({ style }) => (
+      <Animated.View style={[style, StyleSheet.absoluteFill]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => navigation.goBack()}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} />
+        </Pressable>
+      </Animated.View>
+    ),
+    headerStatusBarHeight: 0,
+    headerStyle: {
+      backgroundColor: colors.folderSections.myBuys,
+      elevation: 0,
+      shadowOpacity: 0,
+      borderBottomWidth: 0,
+      height: Platform.OS === 'ios' ? 48 : 52,
+    },
+    headerTintColor: colors.background,
+    headerTitleStyle: {
+      fontSize: 17,
+      fontWeight: '600' as const,
+    },
+    headerLeftContainerStyle: { paddingLeft: 4 },
+    headerTitleContainerStyle: {
+      marginHorizontal: 0,
+    },
+    headerTransparent: false,
+    cardShadowEnabled: false,
+    cardStyle: {
+      marginHorizontal: 28 + spacing.sm,
+      marginTop: 92 + spacing.sm,
+      marginBottom: 72 + spacing.sm,
+      borderRadius: 20,
+      backgroundColor: colors.background,
+      overflow: 'hidden',
+      ...Platform.select({
+        ios: {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.28,
+          shadowRadius: 20,
+        },
+        default: {
+          elevation: 18,
+        },
+      }),
+    },
+  });
+}
+
+/** Compact transparent modal — header is inside the screen; card height follows content. */
+function hubPersonalizeModalScreenOptions() {
+  return ({
+    navigation,
+  }: {
+    navigation: StackNavigationProp<RootStackParamList, 'EditHubApplet'>;
+  }): StackNavigationOptions => ({
+    headerShown: false,
+    presentation: 'transparentModal' as const,
+    animation: 'scale_from_center' as const,
+    transitionSpec: MY_BUYS_APPLET_MODAL_TRANSITION_SPEC,
+    cardStyleInterpolator: (props: Parameters<typeof CardStyleInterpolators.forScaleFromCenterAndroid>[0]) => {
+      const base = CardStyleInterpolators.forScaleFromCenterAndroid(props);
+      const overlayOpacity = props.current.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+      });
+      return {
+        ...base,
+        overlayStyle: { opacity: overlayOpacity },
+      };
+    },
+    gestureEnabled: true,
+    cardOverlayEnabled: true,
+    cardOverlay: ({ style }) => (
+      <Animated.View style={[style, StyleSheet.absoluteFill]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => navigation.goBack()}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} />
+        </Pressable>
+      </Animated.View>
+    ),
+    cardShadowEnabled: false,
+    /** Do not use flexGrow:0 here — it collapses transparentModal cards to 0 height (content invisible). */
+    cardStyle: {
+      marginHorizontal: 20 + spacing.sm,
+      marginVertical: 48,
+      borderRadius: 16,
+      backgroundColor: 'transparent',
+      overflow: 'hidden',
+      ...Platform.select({
+        ios: {
+          shadowOpacity: 0,
+        },
+        default: {
+          elevation: 0,
+        },
+      }),
+    },
+  });
+}
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -244,7 +413,7 @@ export default function RootLayout() {
             AuthService.needsProfileName(profileAfterVerify) &&
             !decoded?.isBackdoor;
 
-          // Map app query param to screen (My Buys slugs, built-in applets, or hardcoded fallbacks)
+          // Map app query param to screen (My Apps / mybuys: slugs, built-in applets, or hardcoded fallbacks)
           let targetScreen: keyof RootStackParamList = 'Home';
           let screenParams: Record<string, unknown> = {};
 
@@ -261,18 +430,18 @@ export default function RootLayout() {
                     ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
                   };
                 } else {
-                  console.warn(`⚠️ No My Buys applet for deep link slug: ${app}`);
+                  console.warn(`⚠️ No My Apps applet for deep link slug: ${app}`);
                   Toast.show({
                     type: 'error',
                     text1: 'Applet not found',
-                    text2: 'Check your deep link key or open the applet from My Buys.',
+                    text2: 'Check your deep link key or open the applet from My Apps.',
                   });
                 }
               } catch (e) {
-                console.error('Failed to resolve My Buys deep link:', e);
+                console.error('Failed to resolve My Apps deep link:', e);
                 Toast.show({
                   type: 'error',
-                  text1: 'Failed to load My Buys',
+                  text1: 'Failed to load My Apps',
                   text2: 'Navigating to Home',
                 });
               }
@@ -559,7 +728,7 @@ export default function RootLayout() {
             borderBottomWidth: 0,
             opacity: 1,
           },
-          headerTintColor: '#FFFFFF',
+          headerTintColor: colors.background,
           headerTitleStyle: {
             fontWeight: 'bold',
           },
@@ -612,7 +781,7 @@ export default function RootLayout() {
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -631,7 +800,7 @@ export default function RootLayout() {
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -658,7 +827,7 @@ export default function RootLayout() {
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -701,25 +870,35 @@ export default function RootLayout() {
           name="MyBuys" 
           component={MyBuys}
           options={{
-            title: 'My Buys',
+            title: 'My Apps',
             headerShown: true,
+            headerStyle: {
+              backgroundColor: colors.folderSections.myBuys,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: colors.background,
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerTransparent: false,
           }}
         />
-        <Stack.Screen 
-          name="AddMyBuysApplet" 
+        <Stack.Screen
+          name="AddMyBuysApplet"
           component={AddMyBuysApplet}
-          options={{
-            title: 'Add Applet',
-            headerShown: true,
-          }}
+          options={myBuysAppletModalScreenOptions('Add Applet')}
         />
-        <Stack.Screen 
-          name="EditMyBuysApplet" 
+        <Stack.Screen
+          name="EditMyBuysApplet"
           component={EditMyBuysApplet}
-          options={{
-            title: 'Edit Applet',
-            headerShown: true,
-          }}
+          options={myBuysAppletModalScreenOptions('Edit Applet')}
+        />
+        <Stack.Screen
+          name="EditHubApplet"
+          component={EditHubApplet}
+          options={hubPersonalizeModalScreenOptions()}
         />
         <Stack.Screen 
           name="ViewMyBuysApplet" 
@@ -736,12 +915,12 @@ export default function RootLayout() {
             title: 'Sigmanauts',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.primary,
+              backgroundColor: colors.folderSections.sigmanauts,
               elevation: 0,
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -755,12 +934,12 @@ export default function RootLayout() {
             title: 'AI',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.primary,
+              backgroundColor: colors.folderSections.ai,
               elevation: 0,
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -774,12 +953,12 @@ export default function RootLayout() {
             title: 'Dashboards',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.primary,
+              backgroundColor: colors.folderSections.dashboards,
               elevation: 0,
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -793,12 +972,12 @@ export default function RootLayout() {
             title: 'Apps',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.primary,
+              backgroundColor: colors.folderSections.apps,
               elevation: 0,
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: {
               fontWeight: 'bold',
             },
@@ -817,7 +996,7 @@ export default function RootLayout() {
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: '#FFFFFF',
+            headerTintColor: colors.background,
             headerTitleStyle: { fontWeight: 'bold' },
             headerTransparent: false,
           }}

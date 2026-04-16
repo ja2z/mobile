@@ -258,9 +258,11 @@ export default function Login() {
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Image 
-                source={require('../../assets/bigbuys.png')}
+                source={require('../../assets/login-papercrane.png')}
                 style={styles.logo}
                 resizeMode="contain"
+                accessibilityIgnoresInvertColors
+                accessibilityLabel="Sigma paper crane"
               />
             </View>
             <Text style={styles.appName}>{Config.APP_NAME}</Text>
@@ -419,18 +421,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 24,
-    backgroundColor: colors.background,
+    width: 240,
+    height: 240,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
     ...shadows.medium,
   },
   logo: {
-    width: 100,
-    height: 100,
+    width: '100%',
+    height: '100%',
   },
   appName: {
     ...typography.h1,
@@ -439,7 +442,7 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     ...typography.h2,
-    color: colors.primary,
+    color: colors.accentBlue,
     marginBottom: spacing.sm,
   },
   subtitle: {
@@ -528,7 +531,7 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     flexDirection: 'row',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accentBlue,
     paddingVertical: spacing.md + 4,
     paddingHorizontal: spacing.xl,
     borderRadius: borderRadius.md,

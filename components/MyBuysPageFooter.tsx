@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
+import { getAppletAccentColor } from '../constants/AppletThemes';
 
 export interface MyBuysPage {
   pageId: string;
@@ -12,17 +13,24 @@ interface MyBuysPageFooterProps {
   pages: MyBuysPage[];
   selectedPage: string;
   onPageSelect: (pageId: string, pageName: string) => void;
+  /** Theme preset id or `custom` for footer chrome. */
+  themeId?: string | null;
+  themeCustomHex?: string | null;
 }
 
 export const MyBuysPageFooter: React.FC<MyBuysPageFooterProps> = ({
   pages,
   selectedPage,
   onPageSelect,
+  themeId,
+  themeCustomHex,
 }) => {
   if (pages.length === 0) return null;
 
+  const accent = getAppletAccentColor(themeId, themeCustomHex);
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderTopColor: accent }]}>
       <View style={styles.pageButtons}>
         {pages.map((page) => {
           const isSelected = selectedPage === page.pageId;
@@ -35,7 +43,10 @@ export const MyBuysPageFooter: React.FC<MyBuysPageFooterProps> = ({
               <Text style={[styles.emoji, isSelected && styles.emojiSelected]}>
                 {page.emoji}
               </Text>
-              <Text style={[styles.label, isSelected && styles.labelSelected]} numberOfLines={1}>
+              <Text
+                style={[styles.label, isSelected && { color: accent, fontWeight: '700' }]}
+                numberOfLines={1}
+              >
                 {page.name}
               </Text>
             </TouchableOpacity>
@@ -50,8 +61,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopWidth: 2,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
     ...shadows.medium,
@@ -83,9 +93,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     maxWidth: 72,
-  },
-  labelSelected: {
-    color: colors.primary,
-    fontWeight: '700',
   },
 });

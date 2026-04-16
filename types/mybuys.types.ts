@@ -1,5 +1,5 @@
 /**
- * Type definitions for My Buys feature
+ * Type definitions for My Apps feature
  */
 
 export interface PageFooterPageConfig {
@@ -17,6 +17,10 @@ export interface Applet {
   appletId: string;
   name: string;
   embedUrl: string;
+  /** Preset id or `custom` for tile + header/footer accent (persisted locally; API may echo). */
+  themeId?: string;
+  /** When themeId is `custom`, 6-digit hex e.g. #A1B2C3 */
+  themeCustomHex?: string;
   secretName?: string;
   /** Globally unique mybuys:word-word-word value for magic link `app` param */
   deepLinkSlug?: string;
@@ -32,6 +36,8 @@ export interface CreateAppletData {
   embedUrl: string;
   embedClientId: string;
   embedSecretKey: string;
+  themeId?: string;
+  themeCustomHex?: string;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;
@@ -44,6 +50,8 @@ export interface UpdateAppletData {
   embedUrl: string;
   embedClientId: string;
   embedSecretKey: string;
+  themeId?: string;
+  themeCustomHex?: string;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;

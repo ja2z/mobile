@@ -1,11 +1,12 @@
 import { Config } from '../constants/Config';
 import { AuthService } from './AuthService';
 import type { Applet, CreateAppletData, UpdateAppletData, TestResult, RegeneratedUrlResponse, PageFooterConfig } from '../types/mybuys.types';
+import { mergeAppletsWithStoredThemes, persistAppletTheme, removeAppletThemeId } from '../utils/myBuysAppletThemeStorage';
 
 const MY_BUYS_BASE_URL = Config.API.MY_BUYS_BASE_URL;
 
 /**
- * Service for managing My Buys applets
+ * Service for managing My Apps applets
  */
 export class MyBuysService {
   /**
@@ -39,7 +40,12 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      return result.applet;
+      let applet: Applet = result.applet;
+      if (data.themeId !== undefined && applet.appletId) {
+        await persistAppletTheme(applet.appletId, data.themeId, data.themeCustomHex);
+      }
+      const [merged] = await mergeAppletsWithStoredThemes([applet]);
+      return merged;
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to create applet:', originalError);
@@ -120,7 +126,7 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      return result.applets;
+      return mergeAppletsWithStoredThemes(result.applets);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to list applets:', originalError);
@@ -159,7 +165,12 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      return result.applet;
+      let applet: Applet = result.applet;
+      if (data.themeId !== undefined) {
+        await persistAppletTheme(appletId, data.themeId, data.themeCustomHex);
+      }
+      const [merged] = await mergeAppletsWithStoredThemes([applet]);
+      return merged;
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to update applet:', originalError);
@@ -196,6 +207,8 @@ export class MyBuysService {
       if (!result.success) {
         throw new Error('Failed to delete applet');
       }
+
+      await removeAppletThemeId(appletId);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to delete applet:', originalError);

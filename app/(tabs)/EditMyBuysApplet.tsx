@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,9 @@ import * as Haptics from 'expo-haptics';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
+import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, type AppletThemeId } from '../../constants/AppletThemes';
+import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
+import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
 import { SecretKeyInfoModal } from '../../components/SecretKeyInfoModal';
@@ -33,6 +37,13 @@ import { parseSigmaEmbedUrl } from '../../utils/parseSigmaEmbedUrl';
 import { mergeFetchedPagesWithExisting } from '../../utils/mergeSigmaPagesWithConfig';
 import type { RootStackParamList } from '../_layout';
 import type { Applet, PageFooterPageConfig } from '../../types/mybuys.types';
+import { persistAppletTheme } from '../../utils/myBuysAppletThemeStorage';
+
+function buildThemeLiveKey(themeId: AppletThemeId, themeCustomHex: string): string {
+  const hexPart =
+    themeId === 'custom' ? normalizeThemeCustomHex(themeCustomHex) || themeCustomHex.trim() || '' : '';
+  return `${themeId}|${hexPart}`;
+}
 
 type EditMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'EditMyBuysApplet'>;
 type EditMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'EditMyBuysApplet'>;
@@ -54,6 +65,8 @@ export default function EditMyBuysApplet() {
   const [embedClientId, setEmbedClientId] = useState('');
   const [embedSecretKey, setEmbedSecretKey] = useState('');
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
+  const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -85,16 +98,61 @@ export default function EditMyBuysApplet() {
   const embedClientIdInputRef = useRef<TextInput>(null);
   const embedSecretKeyInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  /** Suppress live theme emit until user diverges from last loaded snapshot. */
+  const lastThemeLiveKeyRef = useRef<string | null>(null);
+
+  const headerAccent = getAppletAccentColor(themeId, themeCustomHex);
 
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="close" size={22} color="#FFFFFF" />
         </TouchableOpacity>
       ),
+      headerStatusBarHeight: 0,
+      headerStyle: {
+        backgroundColor: headerAccent,
+        elevation: 0,
+        shadowOpacity: 0,
+        borderBottomWidth: 0,
+        height: Platform.OS === 'ios' ? 48 : 52,
+      },
+      headerTintColor: '#FFFFFF',
+      headerTitleStyle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#FFFFFF',
+      },
+      headerLeftContainerStyle: { paddingLeft: 4 },
+      headerTitleContainerStyle: {
+        marginHorizontal: 0,
+      },
     });
-  }, [navigation]);
+  }, [navigation, headerAccent]);
+
+  // Apply accent + sync in-memory theme immediately (no save required).
+  useEffect(() => {
+    if (loading || !appletId) return;
+    const delay = themeId === 'custom' ? 320 : 0;
+    const t = setTimeout(() => {
+      const key = buildThemeLiveKey(themeId, themeCustomHex);
+      if (key === lastThemeLiveKeyRef.current) return;
+      lastThemeLiveKeyRef.current = key;
+      void persistAppletTheme(appletId, themeId, themeId === 'custom' ? themeCustomHex : undefined);
+      const normalizedCustom = normalizeThemeCustomHex(themeCustomHex);
+      const payload: MyBuysAppletsChangedPayload = {
+        action: 'updated',
+        appletId,
+        themeId,
+        ...(themeId === 'custom'
+          ? { themeCustomHex: normalizedCustom || themeCustomHex.trim() || '#3B6FA0' }
+          : {}),
+      };
+      DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, payload);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [loading, appletId, themeId, themeCustomHex]);
 
   // --- Load applet ---
   useEffect(() => {
@@ -109,6 +167,11 @@ export default function EditMyBuysApplet() {
         }
         setApplet(found);
         setName(found.name);
+        const loadedThemeId = resolveAppletThemeId(found.themeId ?? null, found.themeId ?? null);
+        const loadedHex = found.themeCustomHex || '#3B6FA0';
+        setThemeId(loadedThemeId);
+        setThemeCustomHex(loadedHex);
+        lastThemeLiveKeyRef.current = buildThemeLiveKey(loadedThemeId, loadedHex);
         setEmbedUrl(found.embedUrl);
         setSigmaApiBaseUrl(found.sigmaApiBaseUrl || DEFAULT_SIGMA_API_SERVER);
         setSameAsEmbed(found.restApiSameAsEmbed !== false);
@@ -291,12 +354,24 @@ export default function EditMyBuysApplet() {
       const footerPages = useRestApiFeatures && pages.length > 0 ? pages : undefined;
       await MyBuysService.updateApplet(appletId, {
         name, embedUrl, embedClientId, embedSecretKey,
+        themeId,
+        themeCustomHex: themeId === 'custom' ? themeCustomHex : undefined,
         sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
         restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
         restApiClientId: useRestApiFeatures && !sameAsEmbed ? restApiClientId : undefined,
         restApiSecretKey: useRestApiFeatures && !sameAsEmbed ? restApiSecretKey : undefined,
       });
+      const normalizedCustom = normalizeThemeCustomHex(themeCustomHex);
+      const payload: MyBuysAppletsChangedPayload = {
+        action: 'updated',
+        appletId,
+        themeId,
+        ...(themeId === 'custom'
+          ? { themeCustomHex: normalizedCustom || themeCustomHex.trim() || undefined }
+          : {}),
+      };
+      DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, payload);
       navigation.goBack();
     } catch (error: any) {
       if (error.isSessionExpired) { navigation.reset({ index: 0, routes: [{ name: 'Login' }] }); }
@@ -313,6 +388,7 @@ export default function EditMyBuysApplet() {
         onPress: async () => {
           try {
             await MyBuysService.deleteApplet(appletId);
+            DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, { action: 'deleted', appletId } as MyBuysAppletsChangedPayload);
             navigation.goBack();
           } catch (error: any) {
             if (error.isSessionExpired) navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -378,10 +454,19 @@ export default function EditMyBuysApplet() {
         <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="next" onSubmitEditing={() => embedUrlInputRef.current?.focus()} />
       </View>
 
+      <View style={styles.fieldContainer}>
+        <MyBuysThemeSelector
+          themeId={themeId}
+          customHex={themeCustomHex}
+          onThemeIdChange={setThemeId}
+          onCustomHexChange={setThemeCustomHex}
+        />
+      </View>
+
       {applet?.deepLinkSlug ? (
         <View style={styles.fieldContainer}>
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Deep link key</Text>
+            <Text style={[styles.label, styles.labelDisabled]}>Deep link key</Text>
             <TouchableOpacity onPress={() => setDeepLinkKeyModalVisible(true)} style={styles.infoButton} activeOpacity={0.7}>
               <Ionicons name="information-circle-outline" size={20} color={colors.info} />
             </TouchableOpacity>
@@ -390,7 +475,11 @@ export default function EditMyBuysApplet() {
               <Text style={styles.copyKeyButtonText}>Copy</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.readonlySlugContainer}><Text style={styles.readonlySlugText} selectable>{applet.deepLinkSlug}</Text></View>
+          <View style={styles.readonlySlugContainer}>
+            <Text style={styles.readonlySlugText} selectable>
+              {applet.deepLinkSlug}
+            </Text>
+          </View>
         </View>
       ) : null}
 
@@ -536,17 +625,28 @@ export default function EditMyBuysApplet() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading applet...</Text></View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoid} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
         {renderTabBar()}
-        <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          automaticallyAdjustsScrollIndicatorInsets={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+        >
           {activeTab === 'basic' ? renderBasicTab() : renderAdvancedTab()}
 
           {testResult && (
@@ -585,25 +685,29 @@ export default function EditMyBuysApplet() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.background },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { ...typography.body, color: colors.textSecondary, marginTop: spacing.md },
   keyboardAvoid: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-  headerButton: { padding: spacing.sm, marginLeft: spacing.sm },
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  headerButton: { paddingVertical: 6, paddingHorizontal: 6, marginLeft: 2, justifyContent: 'center', alignItems: 'center', minWidth: 40, minHeight: 40 },
 
   tabBar: { flexDirection: 'row', backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
-  tab: { flex: 1, paddingVertical: spacing.md, alignItems: 'center' },
+  tab: { flex: 1, paddingVertical: spacing.sm, alignItems: 'center' },
   tabActive: { borderBottomWidth: 3, borderBottomColor: colors.primary },
   tabDisabled: { opacity: 0.4 },
   tabText: { ...typography.body, fontWeight: '600', color: colors.textSecondary },
   tabTextActive: { color: colors.primary },
   tabTextDisabled: { color: colors.textSecondary },
 
-  fieldContainer: { marginBottom: spacing.lg },
+  fieldContainer: { marginBottom: spacing.md },
   fieldDisabled: { opacity: 0.45 },
-  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs },
   label: { ...typography.body, fontWeight: '600', color: colors.textPrimary, marginRight: spacing.sm },
   labelDisabled: { color: colors.textSecondary },
   infoButton: { padding: spacing.xs },
@@ -616,8 +720,16 @@ const styles = StyleSheet.create({
   charCount: { ...typography.caption, color: colors.textSecondary, marginLeft: 'auto' },
   copyKeyButton: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
   copyKeyButtonText: { ...typography.bodySmall, fontWeight: '600', color: colors.primary },
-  readonlySlugContainer: { backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md },
-  readonlySlugText: { ...typography.bodySmall, color: colors.textSecondary, lineHeight: 22 },
+  readonlySlugContainer: {
+    height: 50,
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+  },
+  readonlySlugText: { ...typography.body, color: colors.textSecondary },
 
   serverRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
   serverDropdownCol: { flex: 2, minWidth: 0 },
@@ -655,7 +767,7 @@ const styles = StyleSheet.create({
   pickerItemTextSelected: { color: colors.primary },
   pickerItemUrl: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
 
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg, paddingVertical: spacing.sm },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md, paddingVertical: spacing.xs },
   switchRowMulti: { alignItems: 'flex-start' },
   switchLabelBlock: { flex: 1, marginRight: spacing.md },
   switchAlignTop: { marginTop: 2 },
@@ -666,29 +778,29 @@ const styles = StyleSheet.create({
   getPagesButtonText: { ...typography.body, fontWeight: '600', color: colors.primary },
   hintText: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' },
 
-  errorBanner: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, backgroundColor: '#FEE2E2', borderRadius: borderRadius.md, marginBottom: spacing.lg, gap: spacing.sm },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, backgroundColor: '#FEE2E2', borderRadius: borderRadius.md, marginBottom: spacing.md, gap: spacing.sm },
   errorBannerText: { ...typography.bodySmall, color: colors.error, flex: 1 },
 
-  pagesSection: { marginBottom: spacing.lg },
-  pagesSectionTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
+  pagesSection: { marginBottom: spacing.md },
+  pagesSectionTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.xs },
   pageRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.xs },
   pageCheckbox: { marginRight: spacing.sm, minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
   pageName: { ...typography.body, color: colors.textPrimary, flex: 1 },
   emojiButton: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: borderRadius.sm, backgroundColor: colors.surface },
   emojiText: { fontSize: 24 },
 
-  testResultContainer: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.lg },
+  testResultContainer: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, borderRadius: borderRadius.md, marginBottom: spacing.md },
   testResultSuccess: { backgroundColor: '#D1FAE5' },
   testResultError: { backgroundColor: '#FEE2E2' },
   testResultText: { ...typography.bodySmall, marginLeft: spacing.sm, flex: 1 },
   testResultTextSuccess: { color: colors.success },
   testResultTextError: { color: colors.error },
 
-  buttonContainer: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  buttonContainer: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   testButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 2, borderColor: colors.primary, gap: spacing.sm },
   testButtonText: { ...typography.body, fontWeight: '600', color: colors.primary },
   saveButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.primary, gap: spacing.sm },
   saveButtonText: { ...typography.body, fontWeight: '600', color: '#FFFFFF' },
-  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.error, marginTop: spacing.lg, gap: spacing.sm },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.error, marginTop: spacing.md, marginBottom: 0, gap: spacing.sm },
   deleteButtonText: { ...typography.body, fontWeight: '600', color: '#FFFFFF' },
 });

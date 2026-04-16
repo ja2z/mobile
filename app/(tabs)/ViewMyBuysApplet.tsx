@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -11,6 +11,8 @@ import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { MyBuysPageFooter, MyBuysPage } from '../../components/MyBuysPageFooter';
 import { colors, spacing, typography } from '../../constants/Theme';
+import { getAppletAccentColor } from '../../constants/AppletThemes';
+import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import type { RootStackParamList } from '../_layout';
 import type { Applet } from '../../types/mybuys.types';
 import { appendPageToSigmaEmbedUrl } from '../../utils/sigmaEmbedUrl';
@@ -33,6 +35,8 @@ export default function ViewMyBuysApplet() {
 
   // Footer state
   const [footerPages, setFooterPages] = useState<MyBuysPage[]>([]);
+  const [appletThemeId, setAppletThemeId] = useState<string | undefined>(undefined);
+  const [appletThemeCustomHex, setAppletThemeCustomHex] = useState<string | undefined>(undefined);
   const [selectedPage, setSelectedPage] = useState<string>('');
   const [workbookLoaded, setWorkbookLoaded] = useState(false);
   const variablesAppliedRef = useRef(false);
@@ -40,6 +44,8 @@ export default function ViewMyBuysApplet() {
   deepLinkVariablesRef.current = deepLinkVariables;
 
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
+
+  const headerAccent = getAppletAccentColor(appletThemeId, appletThemeCustomHex);
 
   useEffect(() => {
     navigation.setOptions({
@@ -49,8 +55,19 @@ export default function ViewMyBuysApplet() {
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ),
+      headerStyle: {
+        backgroundColor: headerAccent,
+        elevation: 0,
+        shadowOpacity: 0,
+        borderBottomWidth: 0,
+      },
+      headerTintColor: '#FFFFFF',
+      headerTitleStyle: {
+        fontWeight: '600',
+        color: '#FFFFFF',
+      },
     });
-  }, [navigation, appletName]);
+  }, [navigation, appletName, appletThemeId, appletThemeCustomHex]);
 
   useEffect(() => {
     const loadApplet = async () => {
@@ -63,6 +80,8 @@ export default function ViewMyBuysApplet() {
         if (!applet) throw new Error('Applet not found');
 
         setAppletName(applet.name);
+        setAppletThemeId(applet.themeId);
+        setAppletThemeCustomHex(applet.themeCustomHex);
 
         // Build footer pages from config
         if (applet.pageFooterConfig?.pages) {
@@ -101,6 +120,22 @@ export default function ViewMyBuysApplet() {
     };
     loadApplet();
   }, [appletId, navigation, deepLinkPageId]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      MY_BUYS_APPLETS_CHANGED,
+      (payload?: MyBuysAppletsChangedPayload) => {
+        if (payload?.action !== 'updated' || payload.appletId !== appletId || !payload.themeId) return;
+        setAppletThemeId(payload.themeId);
+        if (payload.themeId === 'custom' && payload.themeCustomHex) {
+          setAppletThemeCustomHex(payload.themeCustomHex);
+        } else {
+          setAppletThemeCustomHex(undefined);
+        }
+      },
+    );
+    return () => sub.remove();
+  }, [appletId]);
 
   useEffect(() => {
     variablesAppliedRef.current = false;
@@ -159,6 +194,8 @@ export default function ViewMyBuysApplet() {
       const applet = applets.find(a => a.appletId === appletId);
       if (applet) {
         setAppletName(applet.name);
+        setAppletThemeId(applet.themeId);
+        setAppletThemeCustomHex(applet.themeCustomHex);
         const result = await MyBuysService.getRegeneratedUrl(appletId);
         setEmbedUrl(deepLinkPageId ? appendPageToSigmaEmbedUrl(result.url, deepLinkPageId) : result.url);
         setEmbedJwt(result.jwt || null);
@@ -215,6 +252,8 @@ export default function ViewMyBuysApplet() {
           pages={footerPages}
           selectedPage={selectedPage}
           onPageSelect={handlePageSelect}
+          themeId={appletThemeId}
+          themeCustomHex={appletThemeCustomHex}
         />
       )}
       <EmbedUrlInfoModal

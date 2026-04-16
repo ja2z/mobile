@@ -24,9 +24,15 @@ interface UseVoiceRecordingReturn {
   cancelRecording: () => Promise<void>;
 }
 
+/** Auto-stop recognition after this long (continuous mode otherwise runs until manual stop). */
+const MAX_RECORDING_DURATION_MS = 60_000;
+
 /**
  * Voice-to-text via expo-speech-recognition (native iOS/Android + web API on web).
  * Requires a dev build; not available in Expo Go.
+ *
+ * Uses continuous recognition (no silence cutoff). Sessions auto-stop after
+ * {@link MAX_RECORDING_DURATION_MS} or when `stopRecording` / `cancelRecording` runs.
  */
 export const useVoiceRecording = ({
   onResult,
@@ -36,7 +42,7 @@ export const useVoiceRecording = ({
   const [isRecording, setIsRecording] = useState(false);
   const [partialResults, setPartialResults] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxDurationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
@@ -46,10 +52,10 @@ export const useVoiceRecording = ({
     onErrorRef.current = onError;
   }, [onResult, onError]);
 
-  const clearRecordingTimeout = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+  const clearMaxDurationTimeout = useCallback(() => {
+    if (maxDurationTimeoutRef.current) {
+      clearTimeout(maxDurationTimeoutRef.current);
+      maxDurationTimeoutRef.current = null;
     }
   }, []);
 
@@ -93,15 +99,15 @@ export const useVoiceRecording = ({
     setIsRecording(true);
     setError(null);
     setPartialResults([]);
-    clearRecordingTimeout();
-    timeoutRef.current = setTimeout(() => {
+    clearMaxDurationTimeout();
+    maxDurationTimeoutRef.current = setTimeout(() => {
       ExpoSpeechRecognitionModule.stop();
-    }, 60000);
+    }, MAX_RECORDING_DURATION_MS);
   });
 
   useSpeechRecognitionEvent('end', () => {
     setIsRecording(false);
-    clearRecordingTimeout();
+    clearMaxDurationTimeout();
   });
 
   useSpeechRecognitionEvent('result', handleResult);
@@ -129,7 +135,7 @@ export const useVoiceRecording = ({
       ExpoSpeechRecognitionModule.start({
         lang: language,
         interimResults: true,
-        continuous: false,
+        continuous: true,
       });
     } catch (err) {
       const errorMessage =
@@ -143,13 +149,13 @@ export const useVoiceRecording = ({
         [{ text: 'OK' }]
       );
     }
-  }, [language, clearRecordingTimeout]);
+  }, [language]);
 
   const stopRecording = useCallback(async () => {
     try {
+      clearMaxDurationTimeout();
       ExpoSpeechRecognitionModule.stop();
       setIsRecording(false);
-      clearRecordingTimeout();
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to stop recording';
@@ -157,15 +163,15 @@ export const useVoiceRecording = ({
       setIsRecording(false);
       onErrorRef.current?.(errorMessage);
     }
-  }, [clearRecordingTimeout]);
+  }, [clearMaxDurationTimeout]);
 
   const cancelRecording = useCallback(async () => {
     try {
+      clearMaxDurationTimeout();
       ExpoSpeechRecognitionModule.abort();
       setIsRecording(false);
       setPartialResults([]);
       setError(null);
-      clearRecordingTimeout();
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to cancel recording';
@@ -173,13 +179,13 @@ export const useVoiceRecording = ({
       setIsRecording(false);
       onErrorRef.current?.(errorMessage);
     }
-  }, [clearRecordingTimeout]);
+  }, [clearMaxDurationTimeout]);
 
   useEffect(() => {
     return () => {
-      clearRecordingTimeout();
+      clearMaxDurationTimeout();
     };
-  }, [clearRecordingTimeout]);
+  }, [clearMaxDurationTimeout]);
 
   return {
     isRecording,

@@ -12,7 +12,7 @@ import { InventoryVerificationModal } from '../../components/InventoryVerificati
 import { OperationsNavigationBar } from '../../components/OperationsNavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { InventoryVerificationData } from '../../types/inventory.types';
-import { spacing } from '../../constants/Theme';
+import { colors, spacing } from '../../constants/Theme';
 
 type OperationsRouteProp = RouteProp<RootStackParamList, 'Operations'>;
 type OperationsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Operations'>;
@@ -98,7 +98,7 @@ export default function Operations() {
           accessibilityLabel="Go to Home"
           accessibilityRole="button"
         >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={24} color={colors.background} />
         </TouchableOpacity>
       ),
     });
@@ -276,7 +276,7 @@ export default function Operations() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   content: {
     flex: 1,

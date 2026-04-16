@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,9 @@ import * as Clipboard from 'expo-clipboard';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
+import { DEFAULT_APPLET_THEME_ID, normalizeThemeCustomHex, getAppletAccentColor, type AppletThemeId } from '../../constants/AppletThemes';
+import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
+import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
 import { SecretKeyInfoModal } from '../../components/SecretKeyInfoModal';
@@ -44,6 +48,8 @@ export default function AddMyBuysApplet() {
   const [embedClientId, setEmbedClientId] = useState('');
   const [embedSecretKey, setEmbedSecretKey] = useState('');
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
+  const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -78,19 +84,35 @@ export default function AddMyBuysApplet() {
   const embedSecretKeyInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
+  const headerAccent = getAppletAccentColor(themeId, themeCustomHex);
+
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.headerButton}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.7}>
+          <Ionicons name="close" size={22} color="#FFFFFF" />
         </TouchableOpacity>
       ),
+      headerStatusBarHeight: 0,
+      headerStyle: {
+        backgroundColor: headerAccent,
+        elevation: 0,
+        shadowOpacity: 0,
+        borderBottomWidth: 0,
+        height: Platform.OS === 'ios' ? 48 : 52,
+      },
+      headerTintColor: '#FFFFFF',
+      headerTitleStyle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#FFFFFF',
+      },
+      headerLeftContainerStyle: { paddingLeft: 4 },
+      headerTitleContainerStyle: {
+        marginHorizontal: 0,
+      },
     });
-  }, [navigation]);
+  }, [navigation, headerAccent]);
 
   // --- Auto-populate credentials from existing secrets ---
   useEffect(() => {
@@ -291,12 +313,23 @@ export default function AddMyBuysApplet() {
         embedUrl,
         embedClientId,
         embedSecretKey,
+        themeId,
+        themeCustomHex: themeId === 'custom' ? themeCustomHex : undefined,
         sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
         restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
         restApiClientId: useRestApiFeatures && !sameAsEmbed ? restApiClientId : undefined,
         restApiSecretKey: useRestApiFeatures && !sameAsEmbed ? restApiSecretKey : undefined,
       });
+
+      DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, {
+        action: 'created',
+        appletId: created.appletId,
+        themeId,
+        ...(themeId === 'custom'
+          ? { themeCustomHex: normalizeThemeCustomHex(themeCustomHex) || themeCustomHex.trim() || undefined }
+          : {}),
+      } as MyBuysAppletsChangedPayload);
 
       if (created.deepLinkSlug) {
         Alert.alert(
@@ -376,6 +409,15 @@ export default function AddMyBuysApplet() {
           autoCapitalize="words"
           returnKeyType="next"
           onSubmitEditing={() => embedUrlInputRef.current?.focus()}
+        />
+      </View>
+
+      <View style={styles.fieldContainer}>
+        <MyBuysThemeSelector
+          themeId={themeId}
+          customHex={themeCustomHex}
+          onThemeIdChange={setThemeId}
+          onCustomHexChange={setThemeCustomHex}
         />
       </View>
 
@@ -669,7 +711,7 @@ export default function AddMyBuysApplet() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
@@ -680,8 +722,13 @@ export default function AddMyBuysApplet() {
           ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
+          contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          automaticallyAdjustsScrollIndicatorInsets={false}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
         >
           {activeTab === 'basic' ? renderBasicTab() : renderAdvancedTab()}
 
@@ -752,7 +799,7 @@ export default function AddMyBuysApplet() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
   keyboardAvoid: {
     flex: 1,
@@ -761,12 +808,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   headerButton: {
-    padding: spacing.sm,
-    marginLeft: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginLeft: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 40,
+    minHeight: 40,
   },
 
   // --- Tabs ---
@@ -778,7 +831,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
   },
   tabActive: {

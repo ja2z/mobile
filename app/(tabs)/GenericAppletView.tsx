@@ -9,6 +9,7 @@ import { DashboardView, DashboardViewRef } from '../../components/DashboardView'
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { colors } from '../../constants/Theme';
 
 type GenericAppletViewRouteProp = RouteProp<RootStackParamList, 'GenericAppletView'>;
 type GenericAppletViewScreenNavigationProp = StackNavigationProp<RootStackParamList, 'GenericAppletView'>;
@@ -74,7 +75,7 @@ export default function GenericAppletView() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   content: {
     flex: 1,

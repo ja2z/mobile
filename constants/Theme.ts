@@ -1,33 +1,55 @@
 /**
  * Design System Theme
- * Simple, clean design tokens for Big Buys Mobile
+ * Light theme with black as the dominant color and steel-blue / copper / magenta accents.
  */
 
 export const colors = {
   // Primary Palette
-  primary: '#F2A648',
-  primaryDark: '#DA9238',
-  primaryLight: '#FFF7ED',
-  
+  primary: '#000000',
+  primaryDark: '#333333',
+  primaryLight: '#F0F0F0',
+
+  // Brand accents (derived from papercrane icon)
+  accentBlue: '#3B6FA0',
+  accentBlueLight: '#EBF0F7',
+  accentCopper: '#B87840',
+  accentCopperLight: '#FBF3EA',
+  accentMagenta: '#A03068',
+  accentMagentaLight: '#F5E8EF',
+
   // Neutrals
   background: '#FFFFFF',
   surface: '#F8F9FA',
   border: '#E5E7EB',
   textPrimary: '#1F2937',
   textSecondary: '#6B7280',
-  
+
   // Semantic Colors
   success: '#10B981',
   error: '#EF4444',
-  warning: '#F59E0B',
+  warning: '#DC2626',
   info: '#3B82F6',
-  
+
   // Tile Colors
   tileColors: {
-    orange1: '#F97316',
-    orange2: '#EA580C',
-    orange3: '#FB923C',
-    orange4: '#FDBA74',
+    orange1: '#000000',
+    orange2: '#000000',
+    orange3: '#000000',
+    orange4: '#000000',
+  },
+
+  /** Pencil icon on tiles — near-black for contrast on light card backgrounds. */
+  editPencilColor: '#1A1A1A',
+
+  /**
+   * Stack nav headers for folder sections — near-black.
+   */
+  folderSections: {
+    myBuys: '#1A1A1A',
+    sigmanauts: '#1A1A1A',
+    ai: '#1A1A1A',
+    dashboards: '#1A1A1A',
+    apps: '#1A1A1A',
   },
 };
 

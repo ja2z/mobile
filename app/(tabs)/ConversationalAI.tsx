@@ -11,6 +11,7 @@ import { ChatModal, ChatModalRef } from '../../components/ChatModal';
 import { NavigationBar } from '../../components/NavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { colors } from '../../constants/Theme';
 import { ChatMessage } from '../../types/chat.types';
 
 type ConversationalAIRouteProp = RouteProp<RootStackParamList, 'ConversationalAI'>;
@@ -249,7 +250,7 @@ export default function ConversationalAI() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   content: {
     flex: 1,
