@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/zeta_solid_purple_1024x1024_transparent.png",
+      "image": "./assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -66,10 +66,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/zeta_solid_purple_1024x1024_transparent.png",
+          "image": "./assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png",
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF",
-          "imageWidth": 320
+          "imageWidth": 310
         }
       ],
       [
