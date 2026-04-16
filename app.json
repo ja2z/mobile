@@ -1,22 +1,22 @@
 {
   "expo": {
-    "name": "Big Buys",
+    "name": "Zeta",
     "slug": "bigbuys-mobile-app",
     "scheme": "bigbuys",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/bigbuys.png",
+    "icon": "./assets/zeta_candidate2_1024x1024.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/bigbuys_transparent.png",
+      "image": "./assets/zeta_solid_purple_1024x1024_transparent.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F2A648"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
-      "icon": "./assets/bigbuys.png",
+      "icon": "./assets/zeta_candidate2_1024x1024.png",
       "associatedDomains": [
         "applinks:mobile.bigbuys.io"
       ],
@@ -66,24 +66,25 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/bigbuys_transparent.png",
+          "image": "./assets/zeta_solid_purple_1024x1024_transparent.png",
           "resizeMode": "contain",
-          "backgroundColor": "#F2A648"
+          "backgroundColor": "#FFFFFF",
+          "imageWidth": 320
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Big Buys to access your camera to scan QR codes.",
-          "microphonePermission": "Allow Big Buys to access your microphone when recording video with the camera.",
+          "cameraPermission": "Allow Zeta to access your camera to scan QR codes.",
+          "microphonePermission": "Allow Zeta to access your microphone when recording video with the camera.",
           "recordAudioAndroid": false
         }
       ],
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Allow Big Buys to access your microphone for voice-to-text messaging.",
-          "speechRecognitionPermission": "Allow Big Buys to use speech recognition to convert your voice to text."
+          "microphonePermission": "Allow Zeta to access your microphone for voice-to-text messaging.",
+          "speechRecognitionPermission": "Allow Zeta to use speech recognition to convert your voice to text."
         }
       ]
     ],

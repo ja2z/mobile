@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # EAS Build Script for iOS
-# Usage: ./eas-build.sh [production|development|deploy <ipa-path>]
+# Usage: ./eas-build.sh [production|development|deploy <ipa-path>] [--clear-cache]
 
 set -e
 
@@ -14,16 +14,18 @@ NC='\033[0m' # No Color
 
 # Function to print usage
 print_usage() {
-    echo -e "${YELLOW}Usage:${NC} ./eas-build.sh [production|development|deploy <ipa-path>]"
+    echo -e "${YELLOW}Usage:${NC} ./eas-build.sh [production|development|deploy <ipa-path>] [--clear-cache]"
     echo ""
     echo "Arguments:"
     echo "  production          - Build production version and submit to TestFlight"
     echo "  development         - Build development version (no submission)"
     echo "  deploy <ipa-path>   - Submit existing IPA file to TestFlight"
+    echo "  --clear-cache       - Optional; pass as second arg only (after production or development)"
+    echo "                        Clears EAS build cache (slower; use when native assets look stale)"
     echo ""
     echo "Examples:"
     echo "  ./eas-build.sh production"
-    echo "  ./eas-build.sh development"
+    echo "  ./eas-build.sh development --clear-cache"
     echo "  ./eas-build.sh deploy ./builds/build-ios-20250101-120000.ipa"
     exit 1
 }
@@ -326,6 +328,18 @@ if [ "$BUILD_TYPE" != "production" ] && [ "$BUILD_TYPE" != "development" ]; then
     print_usage
 fi
 
+# Optional: EAS --clear-cache (production/development only; slower, avoids stale native cache)
+CLEAR_CACHE_FLAG=""
+if [ -n "${2:-}" ]; then
+    if [ "$2" == "--clear-cache" ]; then
+        CLEAR_CACHE_FLAG="--clear-cache"
+    else
+        echo -e "${RED}Error: Unknown argument '${2}' (expected --clear-cache or nothing)${NC}"
+        echo ""
+        print_usage
+    fi
+fi
+
 # Determine script directory and project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 if [[ "$SCRIPT_DIR" == */scripts ]]; then
@@ -364,6 +378,9 @@ echo -e "${GREEN}===========================================================${NC
 echo -e "${GREEN}EAS Build Script${NC}"
 echo -e "${GREEN}===========================================================${NC}"
 echo -e "Build Type: ${YELLOW}${BUILD_TYPE}${NC}"
+if [ -n "$CLEAR_CACHE_FLAG" ]; then
+    echo -e "EAS cache: ${YELLOW}clear (--clear-cache)${NC}"
+fi
 echo -e "Project Root: ${BLUE}${PROJECT_ROOT}${NC}"
 echo -e "IPA Output: ${BLUE}${LOCAL_IPA_OUTPUT}${NC}"
 echo -e "Log File: ${BLUE}${LOG_FILE}${NC}"
@@ -381,6 +398,9 @@ log() {
 
 log "Starting ${BUILD_TYPE} build process..."
 log "Working directory: $(pwd)"
+if [ -n "$CLEAR_CACHE_FLAG" ]; then
+    log "Using EAS build with --clear-cache"
+fi
 
 # Build command based on type
 if [ "$BUILD_TYPE" == "production" ]; then
@@ -388,7 +408,7 @@ if [ "$BUILD_TYPE" == "production" ]; then
     echo -e "${YELLOW}Building production version (this may take several minutes)...${NC}"
     
     # Run build in background and capture PID
-    eas build --profile production --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive >> "$LOG_FILE" 2>&1 &
+    eas build --profile production --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive $CLEAR_CACHE_FLAG >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
     # Show progress and monitor for errors
@@ -471,7 +491,7 @@ else
     echo -e "${YELLOW}Building development version (this may take several minutes)...${NC}"
     
     # Run build in background and capture PID
-    eas build --profile development --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive >> "$LOG_FILE" 2>&1 &
+    eas build --profile development --platform ios --local --output "$LOCAL_IPA_OUTPUT" --non-interactive $CLEAR_CACHE_FLAG >> "$LOG_FILE" 2>&1 &
     BUILD_PID=$!
     
     # Show progress and monitor for errors

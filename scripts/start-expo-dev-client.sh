@@ -68,4 +68,4 @@ cleanup() {
 }
 trap cleanup EXIT
 
-npx expo start --dev-client
+npx expo start --dev-client --clear
