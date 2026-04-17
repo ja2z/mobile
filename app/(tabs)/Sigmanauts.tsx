@@ -98,6 +98,7 @@ export default function Sigmanauts() {
         embedPath: applet.embed_path,
         name: applet.name,
         pageId: applet.initial_page_id || undefined,
+        color: applet.color ?? undefined,
       };
       const screen = applet.target_screen === 'conversationalai' ? 'ConversationalAI' : applet.target_screen;
       const routeName = screen as keyof RootStackParamList;
@@ -120,7 +121,7 @@ export default function Sigmanauts() {
           tileBg: colors.background,
           accentColor: accent,
           accentBarHeight: 6,
-          landingColor: colors.primary,
+          landingColor: applet.color || colors.primary,
           title: displayName,
           subtitle: applet.subtitle || undefined,
           iconName: (applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline',
@@ -137,7 +138,7 @@ export default function Sigmanauts() {
   );
 
   const renderAppletTile = (applet: BuiltInApplet) => {
-    const accent = colors.accentBlue;
+    const accent = applet.color || colors.accentBlue;
     const displayName = applet.name;
     const isHiddenForHero = hiddenHeroTileId === applet.applet_id;
 

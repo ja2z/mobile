@@ -33,6 +33,7 @@ export default function GenericAppletView() {
     name,
     pageId,
     variables,
+    color: routeColor,
   } = route.params || {};
   const dashboardRef = useRef<DashboardViewRef>(null);
 
@@ -49,7 +50,7 @@ export default function GenericAppletView() {
     }
   }, [navigation]);
 
-  const headerAccent = getAppletAccentColor();
+  const headerAccent = routeColor || getAppletAccentColor();
 
   useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 

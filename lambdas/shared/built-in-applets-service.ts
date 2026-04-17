@@ -86,3 +86,20 @@ export async function listBuiltInApplets(listScreen?: string): Promise<BuiltInAp
   );
   return rows;
 }
+
+/**
+ * Update the global accent color for a built-in applet.
+ * Pass color = null to clear (revert to default accent on the client).
+ * Returns the updated row, or null if no applet exists with that id.
+ */
+export async function updateBuiltInAppletColor(
+  appletId: string,
+  color: string | null
+): Promise<BuiltInAppletRow | null> {
+  const { rows } = await query<BuiltInAppletRow>(
+    'UPDATE built_in_applets SET color = $2, updated_at = EXTRACT(EPOCH FROM NOW())::bigint ' +
+      'WHERE applet_id = $1 RETURNING *',
+    [appletId, color]
+  );
+  return rows[0] ?? null;
+}

@@ -7,9 +7,10 @@ import { colors, spacing, borderRadius, typography } from '../../constants/Theme
 import { UserList } from '../../components/UserList';
 import { WhitelistList } from '../../components/WhitelistList';
 import { ActivityLogView } from '../../components/ActivityLogView';
+import { AppsList } from '../../components/AppsList';
 import type { RootStackParamList } from '../_layout';
 
-type TabType = 'users' | 'whitelist' | 'activityLog';
+type TabType = 'users' | 'whitelist' | 'activityLog' | 'apps';
 type AdminRouteProp = RouteProp<RootStackParamList, 'Admin'>;
 
 /**
@@ -99,6 +100,21 @@ export default function Admin() {
               Activity Log
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'apps' && styles.tabActive]}
+            onPress={() => setActiveTab('apps')}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="grid-outline"
+              size={20}
+              color={activeTab === 'apps' ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.tabText, activeTab === 'apps' && styles.tabTextActive]}>
+              Apps
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tab Content */}
@@ -111,6 +127,7 @@ export default function Admin() {
           )}
           {activeTab === 'whitelist' && <WhitelistList refreshTrigger={whitelistRefreshTrigger} />}
           {activeTab === 'activityLog' && <ActivityLogView />}
+          {activeTab === 'apps' && <AppsList />}
         </View>
       </View>
     </SafeAreaView>

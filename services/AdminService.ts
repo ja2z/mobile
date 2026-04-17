@@ -1,5 +1,6 @@
 import { Config } from '../constants/Config';
 import { AuthService } from './AuthService';
+import type { BuiltInApplet } from './BuiltInAppletsService';
 
 const ADMIN_BASE_URL = Config.API.ADMIN_BASE_URL;
 
@@ -318,6 +319,23 @@ export class AdminService {
    */
   static async healthCheck(): Promise<{ status: string; message: string; timestamp: number }> {
     return this.apiCall<{ status: string; message: string; timestamp: number }>('/health');
+  }
+
+  /**
+   * Update the global accent color for a built-in applet (admin only).
+   * Pass color = null to clear back to the client default.
+   */
+  static async updateBuiltInAppletColor(
+    appletId: string,
+    color: string | null
+  ): Promise<{ applet: BuiltInApplet }> {
+    return this.apiCall<{ applet: BuiltInApplet }>(
+      `/applets/built-in/${encodeURIComponent(appletId)}/color`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ color }),
+      }
+    );
   }
 }
 

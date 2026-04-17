@@ -26,7 +26,7 @@ type ConversationalAIScreenNavigationProp = StackNavigationProp<RootStackParamLi
 export default function ConversationalAI() {
   const route = useRoute<ConversationalAIRouteProp>();
   const navigation = useNavigation<ConversationalAIScreenNavigationProp>();
-  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables } = route.params || {};
+  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables, color: routeColor } = route.params || {};
   const fullEmbedPath = slug && embedPath ? `${slug}/${embedPath}` : 'papercrane-embedding-gcp/workbook';
   const resolvedWorkbookId = workbookId || '5vuwQqluzlA5gmq9A82vt7';
   const dashboardRef = useRef<DashboardViewRef>(null);
@@ -74,7 +74,7 @@ export default function ConversationalAI() {
     }
   }, [navigation]);
 
-  const headerAccent = getAppletAccentColor();
+  const headerAccent = routeColor || getAppletAccentColor();
 
   useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 

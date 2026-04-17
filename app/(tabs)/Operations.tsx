@@ -26,7 +26,7 @@ type OperationsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'O
 export default function Operations() {
   const route = useRoute<OperationsRouteProp>();
   const navigation = useNavigation<OperationsScreenNavigationProp>();
-  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables } = route.params || {};
+  const { appletId, appletName, workbookId, slug, embedPath, name, pageId, variables, color: routeColor } = route.params || {};
   const fullEmbedPath = slug && embedPath ? `${slug}/${embedPath}` : 'papercrane-embedding-gcp/workbook';
   const resolvedWorkbookId = workbookId || '4dc63DnExwkJ9SsAzHJWBt';
   const dashboardRef = useRef<DashboardViewRef>(null);
@@ -87,7 +87,7 @@ export default function Operations() {
     }
   }, [navigation]);
 
-  const headerAccent = getAppletAccentColor();
+  const headerAccent = routeColor || getAppletAccentColor();
 
   useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 

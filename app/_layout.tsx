@@ -60,11 +60,11 @@ export type RootStackParamList = {
   Login: undefined;
   ExpiredLink: { email?: string; errorType?: 'expired' | 'invalid' | 'used' };
   Home: undefined;
-  Dashboard: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
-  ConversationalAI: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
-  Operations: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
-  GenericAppletView: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string> };
-  Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog'; emailFilter?: string; showDeactivated?: boolean } | undefined;
+  Dashboard: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string>; color?: string };
+  ConversationalAI: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string>; color?: string };
+  Operations: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string>; color?: string };
+  GenericAppletView: { appletId?: string; appletName?: string; workbookId?: string; slug?: string; embedPath?: string; name?: string; pageId?: string; variables?: Record<string, string>; color?: string };
+  Admin: { initialTab?: 'users' | 'whitelist' | 'activityLog' | 'apps'; emailFilter?: string; showDeactivated?: boolean } | undefined;
   ActivityLog: undefined;
   EditUser: { user: import('../services/AdminService').User };
   AddWhitelistUser: undefined;

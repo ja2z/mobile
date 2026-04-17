@@ -12,7 +12,7 @@ import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/u
 import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
 import { listUsers, updateUser, purgeUserFromPostgres } from '../shared/user-service';
 import { listApprovedEmails, createOrUpdateApprovedEmail, deleteApprovedEmail, getApprovedEmail } from '../shared/approved-emails-service';
-import { listBuiltInApplets } from '../shared/built-in-applets-service';
+import { listBuiltInApplets, updateBuiltInAppletColor } from '../shared/built-in-applets-service';
 import { listUserActivity, listDistinctEventTypes } from '../shared/admin-user-activity-queries';
 
 // CRITICAL: Log module initialization immediately after imports
@@ -333,6 +333,12 @@ const handlerImpl = async (event: any) => {
         return await handleDeactivateUser(userId!, decoded);
       } else if (path === '/v1/applets/built-in' && method === 'GET') {
         return await handleListBuiltInApplets(decoded);
+      } else if (
+        path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)\/color$/) &&
+        method === 'PUT'
+      ) {
+        const appletId = path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)\/color$/)?.[1];
+        return await handleUpdateBuiltInAppletColor(appletId!, body, decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'GET') {
         return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
@@ -640,6 +646,64 @@ async function handleListBuiltInApplets(user: any) {
     console.error('Error listing built-in applets:', error);
     return createResponse(500, {
       error: 'Failed to list built-in applets',
+      details: error?.message || String(error)
+    });
+  }
+}
+
+/**
+ * Normalize a user-supplied color to canonical #RRGGBB uppercase, or null to clear.
+ * Returns undefined when the input is non-empty but not a valid hex (caller should 400).
+ */
+function normalizeBuiltInAppletColor(raw: unknown): string | null | undefined {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().replace(/^#/, '');
+  if (!trimmed) return null;
+  if (/^[0-9a-fA-F]{3}$/.test(trimmed)) {
+    return `#${trimmed[0]}${trimmed[0]}${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}`.toUpperCase();
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return `#${trimmed.toUpperCase()}`;
+  }
+  return undefined;
+}
+
+/**
+ * Update the global accent color for a built-in applet (admin only).
+ * Body: { color: string | null } where color is "#RRGGBB" / "#RGB" or null/empty to clear.
+ */
+async function handleUpdateBuiltInAppletColor(appletId: string, body: any, adminUser: any) {
+  if (!appletId) {
+    return createResponse(400, { error: 'Applet id is required' });
+  }
+
+  const normalized = normalizeBuiltInAppletColor(body?.color);
+  if (normalized === undefined) {
+    return createResponse(400, {
+      error: 'Invalid color',
+      message: 'color must be a #RRGGBB hex string or null'
+    });
+  }
+
+  try {
+    const updated = await updateBuiltInAppletColor(appletId, normalized);
+    if (!updated) {
+      return createResponse(404, { error: 'Built-in applet not found' });
+    }
+
+    await logActivity(
+      'built_in_applet_color_updated',
+      adminUser.userId,
+      getActivityLogEmail(adminUser.email, adminUser.isBackdoor),
+      { appletId, name: updated.name, color: normalized }
+    );
+
+    return createResponse(200, { applet: updated });
+  } catch (error: any) {
+    console.error('Error updating built-in applet color:', error);
+    return createResponse(500, {
+      error: 'Failed to update built-in applet color',
       details: error?.message || String(error)
     });
   }
