@@ -412,6 +412,7 @@ CREATE TABLE IF NOT EXISTS applets (
     embed_url TEXT NOT NULL,
     secret_name VARCHAR(255),
     deep_link_slug VARCHAR(512) NOT NULL,
+    color VARCHAR(50),
     created_at BIGINT NOT NULL,
     updated_at BIGINT NOT NULL,
     PRIMARY KEY (user_id, applet_id),

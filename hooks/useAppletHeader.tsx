@@ -11,11 +11,13 @@ import { colors, spacing } from '../constants/Theme';
  * @param navigation - The navigation object from useNavigation hook
  * @param handleHomePress - Callback function to handle home button press
  * @param headerBackgroundColor - Optional header bar color (defaults to theme primary)
+ * @param headerForegroundColor - Optional color for back icon, tint, and title text (defaults to theme background for dark headers)
  */
 export function useAppletHeader(
   navigation: StackNavigationProp<any>,
   handleHomePress: () => void,
-  headerBackgroundColor: string = colors.primary
+  headerBackgroundColor: string = colors.primary,
+  headerForegroundColor: string = colors.background
 ) {
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -27,7 +29,7 @@ export function useAppletHeader(
           accessibilityLabel="Go to Home"
           accessibilityRole="button"
         >
-          <Ionicons name="arrow-back" size={24} color={colors.background} />
+          <Ionicons name="arrow-back" size={24} color={headerForegroundColor} />
         </TouchableOpacity>
       ),
       // Re-assert header style to ensure it's applied (fixes magic link issue)
@@ -37,13 +39,14 @@ export function useAppletHeader(
         shadowOpacity: 0,
         borderBottomWidth: 0,
       },
-      headerTintColor: colors.background,
+      headerTintColor: headerForegroundColor,
       headerTitleStyle: {
         fontWeight: 'bold',
+        color: headerForegroundColor,
       },
       headerTransparent: false,
     });
-  }, [navigation, handleHomePress, headerBackgroundColor]);
+  }, [navigation, handleHomePress, headerBackgroundColor, headerForegroundColor]);
 }
 
 const styles = StyleSheet.create({

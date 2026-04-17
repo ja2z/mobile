@@ -1,9 +1,25 @@
 import { Config } from '../constants/Config';
 import { AuthService } from './AuthService';
 import type { Applet, CreateAppletData, UpdateAppletData, TestResult, RegeneratedUrlResponse, PageFooterConfig } from '../types/mybuys.types';
-import { mergeAppletsWithStoredThemes, persistAppletTheme, removeAppletThemeId } from '../utils/myBuysAppletThemeStorage';
+import { resolveColorHexForSave, themeFromStoredColor } from '../constants/AppletThemes';
 
 const MY_BUYS_BASE_URL = Config.API.MY_BUYS_BASE_URL;
+
+/**
+ * Merge the server-returned applet (which has `color`) with UI theme fields
+ * (`themeId` / `themeCustomHex`) derived from that hex so the rest of the app
+ * keeps working unchanged.
+ */
+function hydrateAppletFromServer(a: any): Applet {
+    const { themeId, themeCustomHex } = themeFromStoredColor(a?.color ?? null);
+    const base = { ...a, themeId } as Applet;
+    if (themeCustomHex) {
+        base.themeCustomHex = themeCustomHex;
+    } else {
+        delete base.themeCustomHex;
+    }
+    return base;
+}
 
 /**
  * Service for managing My Apps applets
@@ -19,13 +35,20 @@ export class MyBuysService {
         throw new Error('Not authenticated. Please sign in.');
       }
 
+      // Translate UI theme selection into the persisted `color` hex.
+      const { themeId: _dropThemeId, themeCustomHex: _dropCustomHex, ...rest } = data;
+      const body: any = { ...rest };
+      if (data.themeId !== undefined || data.themeCustomHex !== undefined) {
+        body.color = resolveColorHexForSave(data.themeId, data.themeCustomHex);
+      }
+
       const response = await fetch(`${MY_BUYS_BASE_URL}/applets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.jwt}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       });
 
       await AuthService.handleApiResponse(response);
@@ -40,12 +63,7 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      let applet: Applet = result.applet;
-      if (data.themeId !== undefined && applet.appletId) {
-        await persistAppletTheme(applet.appletId, data.themeId, data.themeCustomHex);
-      }
-      const [merged] = await mergeAppletsWithStoredThemes([applet]);
-      return merged;
+      return hydrateAppletFromServer(result.applet);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to create applet:', originalError);
@@ -126,7 +144,7 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      return mergeAppletsWithStoredThemes(result.applets);
+      return (result.applets as any[]).map(hydrateAppletFromServer);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to list applets:', originalError);
@@ -144,13 +162,20 @@ export class MyBuysService {
         throw new Error('Not authenticated. Please sign in.');
       }
 
+      // Translate UI theme selection into the persisted `color` hex.
+      const { themeId: _dropThemeId, themeCustomHex: _dropCustomHex, ...rest } = data;
+      const body: any = { ...rest };
+      if (data.themeId !== undefined || data.themeCustomHex !== undefined) {
+        body.color = resolveColorHexForSave(data.themeId, data.themeCustomHex);
+      }
+
       const response = await fetch(`${MY_BUYS_BASE_URL}/applets/${appletId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.jwt}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       });
 
       await AuthService.handleApiResponse(response);
@@ -165,15 +190,49 @@ export class MyBuysService {
         throw new Error('Invalid response from API');
       }
 
-      let applet: Applet = result.applet;
-      if (data.themeId !== undefined) {
-        await persistAppletTheme(appletId, data.themeId, data.themeCustomHex);
-      }
-      const [merged] = await mergeAppletsWithStoredThemes([applet]);
-      return merged;
+      return hydrateAppletFromServer(result.applet);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to update applet:', originalError);
+      throw originalError;
+    }
+  }
+
+  /**
+   * Partial update — persist only the accent color. Used by the edit screen's
+   * live color picker so the DB (and every client) reflects the change without
+   * requiring the user to press Save.
+   */
+  static async updateAppletColor(appletId: string, color: string | null): Promise<void> {
+    try {
+      const session = await AuthService.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please sign in.');
+      }
+
+      const response = await fetch(`${MY_BUYS_BASE_URL}/applets/${appletId}/color`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.jwt}`,
+        },
+        body: JSON.stringify({ color }),
+      });
+
+      await AuthService.handleApiResponse(response);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || `API returned status ${response.status}`);
+      }
+
+      const result = await response.json().catch(() => ({}));
+      if (!result.success) {
+        throw new Error(result.message || result.error || 'Failed to update applet color');
+      }
+    } catch (error) {
+      const originalError = error instanceof Error ? error : new Error(String(error));
+      console.error('Failed to update applet color:', originalError);
       throw originalError;
     }
   }
@@ -207,8 +266,6 @@ export class MyBuysService {
       if (!result.success) {
         throw new Error('Failed to delete applet');
       }
-
-      await removeAppletThemeId(appletId);
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       console.error('Failed to delete applet:', originalError);

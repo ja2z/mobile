@@ -31,6 +31,8 @@ export interface Applet {
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed: boolean;
   pageFooterConfig?: PageFooterConfig;
+  /** User-selected accent hex (#RRGGBB). Undefined = default accent. */
+  color?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -45,6 +47,7 @@ interface AppletRow {
   sigma_api_base_url: string | null;
   rest_api_same_as_embed: boolean;
   page_footer_config: any | null;
+  color: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -63,6 +66,7 @@ function rowToApplet(row: AppletRow): Applet {
     sigmaApiBaseUrl: row.sigma_api_base_url || undefined,
     restApiSameAsEmbed: row.rest_api_same_as_embed ?? true,
     pageFooterConfig: row.page_footer_config || undefined,
+    color: row.color || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -201,6 +205,7 @@ export async function createApplet(applet: {
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;
+  color?: string | null;
 }): Promise<Applet> {
   const now = Math.floor(Date.now() / 1000);
   const deepLinkSlug = await allocateUniqueDeepLinkSlug();
@@ -208,9 +213,9 @@ export async function createApplet(applet: {
   await query(
     `INSERT INTO applets (
       user_id, applet_id, name, embed_url, secret_name, deep_link_slug,
-      sigma_api_base_url, rest_api_same_as_embed, page_footer_config,
+      sigma_api_base_url, rest_api_same_as_embed, page_footer_config, color,
       created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     ON CONFLICT (user_id, applet_id) DO UPDATE SET
       name = EXCLUDED.name,
       embed_url = EXCLUDED.embed_url,
@@ -218,6 +223,7 @@ export async function createApplet(applet: {
       sigma_api_base_url = EXCLUDED.sigma_api_base_url,
       rest_api_same_as_embed = EXCLUDED.rest_api_same_as_embed,
       page_footer_config = EXCLUDED.page_footer_config,
+      color = EXCLUDED.color,
       updated_at = EXCLUDED.updated_at`,
     [
       applet.userId,
@@ -229,6 +235,7 @@ export async function createApplet(applet: {
       applet.sigmaApiBaseUrl || null,
       applet.restApiSameAsEmbed ?? true,
       applet.pageFooterConfig ? JSON.stringify(applet.pageFooterConfig) : null,
+      applet.color ?? null,
       now,
       now,
     ]
@@ -257,6 +264,7 @@ export async function updateApplet(
     sigmaApiBaseUrl?: string | null;
     restApiSameAsEmbed?: boolean;
     pageFooterConfig?: PageFooterConfig | null;
+    color?: string | null;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -287,6 +295,10 @@ export async function updateApplet(
   if (updates.pageFooterConfig !== undefined) {
     setParts.push(`page_footer_config = $${paramIndex++}`);
     values.push(updates.pageFooterConfig ? JSON.stringify(updates.pageFooterConfig) : null);
+  }
+  if (updates.color !== undefined) {
+    setParts.push(`color = $${paramIndex++}`);
+    values.push(updates.color);
   }
 
   if (setParts.length === 0) {

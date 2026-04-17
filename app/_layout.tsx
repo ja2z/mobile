@@ -4,10 +4,10 @@ import type { RouteProp, Theme } from '@react-navigation/native';
 import {
   createStackNavigator,
   CardStyleInterpolators,
-  HeaderStyleInterpolators,
   type StackNavigationOptions,
   type StackNavigationProp,
   type StackCardStyleInterpolator,
+  type StackHeaderStyleInterpolator,
 } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
@@ -42,7 +42,6 @@ import Dashboards from './(tabs)/Dashboards';
 import Apps from './(tabs)/Apps';
 import PhoneVerification from './(tabs)/PhoneVerification';
 import CollectName from './(tabs)/CollectName';
-import EditHubApplet from './(tabs)/EditHubApplet';
 import Toast from 'react-native-toast-message';
 import { colors, spacing } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
@@ -77,7 +76,6 @@ export type RootStackParamList = {
   AI: undefined;
   Dashboards: undefined;
   Apps: undefined;
-  EditHubApplet: { itemId: string; currentName: string; currentThemeId?: string; currentThemeCustomHex?: string };
   PhoneVerification: undefined;
   CollectName:
     | {
@@ -189,58 +187,6 @@ function myBuysAppletModalScreenOptions(title: string) {
   });
 }
 
-/** Compact transparent modal — header is inside the screen; card height follows content. */
-function hubPersonalizeModalScreenOptions() {
-  return ({
-    navigation,
-  }: {
-    navigation: StackNavigationProp<RootStackParamList, 'EditHubApplet'>;
-  }): StackNavigationOptions => ({
-    headerShown: false,
-    presentation: 'transparentModal' as const,
-    animation: 'scale_from_center' as const,
-    transitionSpec: MY_BUYS_APPLET_MODAL_TRANSITION_SPEC,
-    cardStyleInterpolator: (props: Parameters<typeof CardStyleInterpolators.forScaleFromCenterAndroid>[0]) => {
-      const base = CardStyleInterpolators.forScaleFromCenterAndroid(props);
-      const overlayOpacity = props.current.progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 1],
-        extrapolate: 'clamp',
-      });
-      return {
-        ...base,
-        overlayStyle: { opacity: overlayOpacity },
-      };
-    },
-    gestureEnabled: true,
-    cardOverlayEnabled: true,
-    cardOverlay: ({ style }) => (
-      <Animated.View style={[style, StyleSheet.absoluteFill]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => navigation.goBack()}>
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} />
-        </Pressable>
-      </Animated.View>
-    ),
-    cardShadowEnabled: false,
-    /** Do not use flexGrow:0 here — it collapses transparentModal cards to 0 height (content invisible). */
-    cardStyle: {
-      marginHorizontal: 20 + spacing.sm,
-      marginVertical: 48,
-      borderRadius: 16,
-      backgroundColor: 'transparent',
-      overflow: 'hidden',
-      ...Platform.select({
-        ios: {
-          shadowOpacity: 0,
-        },
-        default: {
-          elevation: 0,
-        },
-      }),
-    },
-  });
-}
-
 /**
  * Timing spec shared by every hero-transition route. 480ms forward / 360ms
  * back with a smooth Bezier easing, matching the splash -> Login logo
@@ -250,14 +196,14 @@ const HERO_TRANSITION_SPEC = {
   open: {
     animation: 'timing' as const,
     config: {
-      duration: 480,
+      duration: 576,
       easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
     },
   },
   close: {
     animation: 'timing' as const,
     config: {
-      duration: 360,
+      duration: 432,
       easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
     },
   },
@@ -281,13 +227,27 @@ const heroDefaultCardStyleInterpolator: StackCardStyleInterpolator = ({
  * Build a card style interpolator for a hero-destination route. When a
  * `CardHeroSource` is registered for the route (source screen measured the
  * tapped card and called `setCardHeroSourceForRoute` before navigating),
- * the destination card is scaled from the source rect's width ratio up to
- * full screen, centered on screen, with opacity 0 at progress=0 and
- * opacity 1 at progress=1. No translation is applied, so the card grows
- * in place rather than sliding from the tapped tile's position — this
- * preserves the "entering the folder" zoom feel without a diagonal slide
- * on open or back. The `[0, 0.15, 1] -> [0, 0.35, 1]` opacity ramp gives
- * a gradual "mini page fades in" feel rather than a pop-in.
+ * the destination card uses asymmetric open/close curves so each direction
+ * feels right on its own:
+ *
+ * Open (`closing === false`) — two-phase "window into the folder":
+ *  1. Phase 1 (progress 0 → ~0.4): the card sits at the tapped tile's
+ *     exact rect — scaled down to `rect.width / screen.width` and
+ *     translated so its center lands on the tile's center — while its
+ *     opacity ramps 0 → 1. Visually this is a small, faded preview
+ *     appearing inside the tile, as if peeking through a window.
+ *  2. Phase 2 (progress ~0.25 → 1): scale interpolates back to 1 and
+ *     translate back to (0, 0), so the preview grows out to fill the
+ *     screen. Phases overlap slightly (0.25–0.40) so the hand-off feels
+ *     natural rather than robotic.
+ *
+ * Close (`closing === true`) — smooth monotonic shrink+fade:
+ *   Using the open curves in reverse made the tiny card park on the tile
+ *   rect (high on Home) for the final ~25% while fading out — it felt
+ *   "stuck up top". For close we instead interpolate scale + translate
+ *   linearly from full-screen down to the tile rect, with opacity falling
+ *   straight 1 → 0 across the whole close. The card shrinks toward the
+ *   folder while fading simultaneously and never parks.
  *
  * When no source is registered (deep link, imperative reset, etc.), the
  * interpolator falls back to the global crossfade so the screen still
@@ -296,29 +256,200 @@ const heroDefaultCardStyleInterpolator: StackCardStyleInterpolator = ({
 function makeHeroFromRectInterpolator(
   routeName: string,
 ): StackCardStyleInterpolator {
-  return ({ current, layouts: { screen } }) => {
+  return ({ current, closing, layouts: { screen } }) => {
     const src = getCardHeroSourceForRoute(routeName);
     if (!src || screen.width <= 0 || screen.height <= 0) {
       return { cardStyle: { opacity: current.progress } };
     }
 
     const initialScale = Math.max(src.rect.width / screen.width, 0.01);
+    /**
+     * Offset from screen center to the tile's center. RN applies transforms
+     * around the view's own center, so translating by this delta parks the
+     * scaled-down card on top of the tile's rect.
+     */
+    const dx = src.rect.x + src.rect.width / 2 - screen.width / 2;
+    const dy = src.rect.y + src.rect.height / 2 - screen.height / 2;
+
+    /**
+     * Top-row parked drop. Because the card is parked with its CENTER on the
+     * tile's center and scaled uniformly by `initialScale = tile.w/screen.w`,
+     * the scaled card's extent (`screen.h * initialScale`) is much taller
+     * than the tile — its TOP edge in world space sits at
+     *
+     *   scaledCardTop = tile_center_y − screen.h * initialScale / 2
+     *
+     * For tiles in the top row of Home (My Apps, Sigmanauts) that value is
+     * near zero, so the parked card's top — and everything inside it,
+     * including the header title and back arrow — sits at the very top of
+     * the screen. The user reads that as "the card and its heading come
+     * from the top of the screen" instead of from the tapped tile.
+     *
+     * Fix: push the whole parked card DOWN by `src.rect.y − scaledCardTop`
+     * so the card's top edge lands on the tile's top edge at parked. This
+     * shifts the header content (a child of the card) along with the card
+     * body, so the heading visually emerges from the tile instead of from
+     * the top of the screen — and it still relaxes to 0 by progress 1 so
+     * the final full-screen card position is unchanged.
+     *
+     * Applied symmetrically to open and close so the back transition
+     * shrinks the card back to the tile's top edge rather than parking on
+     * the tile center (which would feel like two different animations).
+     *
+     * Middle/bottom row tiles hit `needsTopAnchor === false` and use the
+     * original curves (parked center-on-tile) without any adjustment.
+     */
+    const scaledCardTop =
+      src.rect.y + src.rect.height / 2 - (screen.height * initialScale) / 2;
+    const needsTopAnchor =
+      scaledCardTop < 0 || src.rect.y < screen.height / 3;
+    const parkedDy = needsTopAnchor ? dy + (src.rect.y - scaledCardTop) : dy;
+
+    if (closing) {
+      return {
+        cardStyle: {
+          opacity: current.progress,
+          transform: [
+            {
+              translateX: current.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [dx, 0],
+              }),
+            },
+            {
+              translateY: current.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [parkedDy, 0],
+              }),
+            },
+            {
+              scale: current.progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [initialScale, 1],
+              }),
+            },
+          ],
+        },
+      };
+    }
 
     return {
       cardStyle: {
         opacity: current.progress.interpolate({
-          inputRange: [0, 0.15, 1],
-          outputRange: [0, 0.35, 1],
+          inputRange: [0, 0.4, 1],
+          outputRange: [0, 1, 1],
         }),
         transform: [
           {
+            translateX: current.progress.interpolate({
+              inputRange: [0, 0.25, 1],
+              outputRange: [dx, dx, 0],
+            }),
+          },
+          {
+            translateY: current.progress.interpolate({
+              inputRange: [0, 0.25, 1],
+              outputRange: [parkedDy, parkedDy, 0],
+            }),
+          },
+          {
             scale: current.progress.interpolate({
-              inputRange: [0, 1],
-              outputRange: [initialScale, 1],
+              inputRange: [0, 0.25, 1],
+              outputRange: [initialScale, initialScale, 1],
             }),
           },
         ],
       },
+    };
+  };
+}
+
+/**
+ * Header style interpolator paired with the hero card interpolator.
+ *
+ * The card sits inside a `headerMode: 'screen'` stack, so the header is a
+ * child of the scaling+translating card. An earlier fix held the header
+ * content fully invisible during the scale phase and faded it in only at
+ * the tail of open (opacity 0 during progress 0 → 0.7, 0 → 1 during
+ * 0.7 → 1). That killed the stretched-text look, but meant the title and
+ * back arrow simply popped into place once the card had arrived — the
+ * body of the card visibly traveled, the header content did not.
+ *
+ * This version keeps that clean-bg + late-fade feel and adds a
+ * **counter-scale** to the title / back / right button so they stay at
+ * native size throughout the transition. The card scale curve is:
+ *
+ *   scale(progress) = piecewise [0, 0.25, 1] -> [initialScale, initialScale, 1]
+ *
+ * So we drive an inverse scale on each header element:
+ *
+ *   invScale(progress) = [0, 0.25, 1] -> [1/initialScale, 1/initialScale, 1]
+ *
+ * Net effect: parent down-scales child by S, child scales itself by 1/S
+ * around its own center — visible size stays native. But the child's
+ * POSITION is still dictated by the scaled+translated parent, so the
+ * title and back arrow's world-space anchor travels from the tile
+ * (where the card is parked during progress 0 → 0.25) up into the
+ * header slot as the card grows to full-screen. Combined with a
+ * 0 → 0.4 → 1 opacity fade-in they visibly ride the card into place
+ * instead of popping at the end.
+ *
+ * `backgroundStyle.opacity = 1` throughout so the header strip continues
+ * to read as a solid extension of the card's own background (no seam,
+ * no peek-through to Home during the grow).
+ *
+ * `initialScale` MUST match `makeHeroFromRectInterpolator`'s scale
+ * curve. If that card interpolator is retuned, this inverse curve has
+ * to follow in lockstep or the header content will drift in size.
+ *
+ * ---
+ * **Top-row anchor shift.** Moved into `makeHeroFromRectInterpolator`:
+ * the card body's parked `translateY` is pushed down so the scaled
+ * card's TOP edge lands on the tile's top edge (not near y=0). Because
+ * the header is a child of the card, that single shift repositions the
+ * header in world space along with the rest of the card — no separate
+ * translate is required here. This interpolator therefore only
+ * counter-scales the header content and fades it in; all vertical
+ * positioning is delegated to the card interpolator.
+ *
+ * When no hero source is registered (deep link, imperative reset, etc.)
+ * we fall back to the plain opacity-only fade — same as the previous
+ * implementation — because there's no rect to derive a scale from.
+ */
+function makeHeroHeaderStyleInterpolator(
+  routeName: string,
+): StackHeaderStyleInterpolator {
+  return ({ current, layouts: { screen } }) => {
+    const contentOpacity = current.progress.interpolate({
+      inputRange: [0, 0.4, 1],
+      outputRange: [0, 0, 1],
+      extrapolate: 'clamp',
+    });
+
+    const src = getCardHeroSourceForRoute(routeName);
+    if (!src || screen.width <= 0) {
+      return {
+        leftButtonStyle: { opacity: contentOpacity },
+        rightButtonStyle: { opacity: contentOpacity },
+        titleStyle: { opacity: contentOpacity },
+        backgroundStyle: { opacity: 1 },
+      };
+    }
+
+    const initialScale = Math.max(src.rect.width / screen.width, 0.01);
+    const inverseScale = current.progress.interpolate({
+      inputRange: [0, 0.25, 1],
+      outputRange: [1 / initialScale, 1 / initialScale, 1],
+      extrapolate: 'clamp',
+    });
+
+    const contentTransform = [{ scale: inverseScale }];
+
+    return {
+      leftButtonStyle: { opacity: contentOpacity, transform: contentTransform },
+      rightButtonStyle: { opacity: contentOpacity, transform: contentTransform },
+      titleStyle: { opacity: contentOpacity, transform: contentTransform },
+      backgroundStyle: { opacity: 1 },
     };
   };
 }
@@ -344,12 +475,19 @@ function heroDestinationScreenOptions(
      * with the rest of the destination — the whole folder content
      * (header bar included) pops in and fades as a single unit.
      *
-     * `forFade` is kept as a belt-and-suspenders crossfade on the header
-     * internals; the card-level scale+opacity does the heavy lifting now
-     * that the header rides along with the card.
+     * `makeHeroHeaderStyleInterpolator(routeName)` pairs with that: the
+     * header BACKGROUND stays solid throughout so the growing card has
+     * no seam at the top, while the title / back arrow are
+     * counter-scaled (inverse of the card's scale curve) so they stay
+     * at native size. Their world-space positions still follow the
+     * scaled+translated parent, which means they visibly travel from
+     * the tile area into the header slot as the card grows, fading
+     * in from 0.4 → 1 along the way — "the header moves into place
+     * like everything else". Factory-based because we need the
+     * per-route hero source (rect) to derive initialScale.
      */
     headerMode: 'screen',
-    headerStyleInterpolator: HeaderStyleInterpolators.forFade,
+    headerStyleInterpolator: makeHeroHeaderStyleInterpolator(routeName),
     cardShadowEnabled: false,
     cardOverlayEnabled: false,
     gestureEnabled: true,
@@ -1401,14 +1539,16 @@ export default function RootLayout() {
             title: 'My Apps',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.folderSections.myBuys,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
-              borderBottomWidth: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             },
-            headerTintColor: colors.background,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
               fontWeight: 'bold',
+              color: colors.textPrimary,
             },
             headerTransparent: false,
           }}
@@ -1422,11 +1562,6 @@ export default function RootLayout() {
           name="EditMyBuysApplet"
           component={EditMyBuysApplet}
           options={myBuysAppletModalScreenOptions('Edit Applet')}
-        />
-        <Stack.Screen
-          name="EditHubApplet"
-          component={EditHubApplet}
-          options={hubPersonalizeModalScreenOptions()}
         />
         <Stack.Screen 
           name="ViewMyBuysApplet" 
@@ -1445,14 +1580,16 @@ export default function RootLayout() {
             title: 'Sigmanauts',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.folderSections.sigmanauts,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
-              borderBottomWidth: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             },
-            headerTintColor: colors.background,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
               fontWeight: 'bold',
+              color: colors.textPrimary,
             },
             headerTransparent: false,
           }}
@@ -1465,14 +1602,16 @@ export default function RootLayout() {
             title: 'AI',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.folderSections.ai,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
-              borderBottomWidth: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             },
-            headerTintColor: colors.background,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
               fontWeight: 'bold',
+              color: colors.textPrimary,
             },
             headerTransparent: false,
           }}
@@ -1485,14 +1624,16 @@ export default function RootLayout() {
             title: 'Dashboards',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.folderSections.dashboards,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
-              borderBottomWidth: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             },
-            headerTintColor: colors.background,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
               fontWeight: 'bold',
+              color: colors.textPrimary,
             },
             headerTransparent: false,
           }}
@@ -1505,14 +1646,16 @@ export default function RootLayout() {
             title: 'Apps',
             headerShown: true,
             headerStyle: {
-              backgroundColor: colors.folderSections.apps,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
-              borderBottomWidth: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
             },
-            headerTintColor: colors.background,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
               fontWeight: 'bold',
+              color: colors.textPrimary,
             },
             headerTransparent: false,
           }}

@@ -23,7 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
-import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, type AppletThemeId } from '../../constants/AppletThemes';
+import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, resolveColorHexForSave, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
@@ -37,8 +37,6 @@ import { parseSigmaEmbedUrl } from '../../utils/parseSigmaEmbedUrl';
 import { mergeFetchedPagesWithExisting } from '../../utils/mergeSigmaPagesWithConfig';
 import type { RootStackParamList } from '../_layout';
 import type { Applet, PageFooterPageConfig } from '../../types/mybuys.types';
-import { persistAppletTheme } from '../../utils/myBuysAppletThemeStorage';
-
 function buildThemeLiveKey(themeId: AppletThemeId, themeCustomHex: string): string {
   const hexPart =
     themeId === 'custom' ? normalizeThemeCustomHex(themeCustomHex) || themeCustomHex.trim() || '' : '';
@@ -131,7 +129,9 @@ export default function EditMyBuysApplet() {
     });
   }, [navigation, headerAccent]);
 
-  // Apply accent + sync in-memory theme immediately (no save required).
+  // Apply accent + persist color immediately (no Save required). Listeners that
+  // see `liveThemeOnly: true` skip their server refetch so the optimistic patch
+  // isn't clobbered before the PUT lands.
   useEffect(() => {
     if (loading || !appletId) return;
     const delay = themeId === 'custom' ? 320 : 0;
@@ -139,17 +139,21 @@ export default function EditMyBuysApplet() {
       const key = buildThemeLiveKey(themeId, themeCustomHex);
       if (key === lastThemeLiveKeyRef.current) return;
       lastThemeLiveKeyRef.current = key;
-      void persistAppletTheme(appletId, themeId, themeId === 'custom' ? themeCustomHex : undefined);
       const normalizedCustom = normalizeThemeCustomHex(themeCustomHex);
       const payload: MyBuysAppletsChangedPayload = {
         action: 'updated',
         appletId,
         themeId,
+        liveThemeOnly: true,
         ...(themeId === 'custom'
           ? { themeCustomHex: normalizedCustom || themeCustomHex.trim() || '#3B6FA0' }
           : {}),
       };
       DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, payload);
+      const colorToSave = resolveColorHexForSave(themeId, themeCustomHex);
+      MyBuysService.updateAppletColor(appletId, colorToSave).catch((err) => {
+        console.warn('[EditMyBuysApplet] Failed to persist color:', err);
+      });
     }, delay);
     return () => clearTimeout(t);
   }, [loading, appletId, themeId, themeCustomHex]);

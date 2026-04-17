@@ -1,16 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
-import { appletAccentMutedBackground, getAppletAccentColor } from '../../constants/AppletThemes';
+import { appletAccentMutedBackground } from '../../constants/AppletThemes';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
-import { useHubPersonalizations } from '../../hooks/useHubPersonalizations';
-import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
-import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
+import {
+  clearCardHeroSourceForRoute,
+  setCardHeroSourceForRoute,
+} from '../../constants/CardHeroTransition';
+import {
+  getCachedBuiltInAppletsSync,
+  listBuiltInApplets,
+  type BuiltInApplet,
+} from '../../services/BuiltInAppletsService';
 import type { RootStackParamList } from '../_layout';
 
 type AIScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AI'>;
@@ -25,10 +31,29 @@ const SPINNER_DELAY_MS = 200;
 export default function AI() {
   const navigation = useNavigation<AIScreenNavigationProp>();
   const route = useRoute();
-  const [applets, setApplets] = useState<BuiltInApplet[]>([]);
-  const [loading, setLoading] = useState(true);
+  /**
+   * Seed the grid synchronously from the module-level cache (warmed by
+   * Home's `prefetchBuiltInApplets` on mount). When the cache is populated,
+   * tiles render on first paint so they're visible inside the hero
+   * transition's growing window. When the cache is cold we fall back to
+   * the existing fetch path and spinner.
+   */
+  const cachedOnMount = getCachedBuiltInAppletsSync();
+  const [applets, setApplets] = useState<BuiltInApplet[]>(
+    cachedOnMount ? cachedOnMount.filter((a) => a.list_screen === LIST_SCREEN) : [],
+  );
+  const [loading, setLoading] = useState(cachedOnMount === null);
   const [showSpinner, setShowSpinner] = useState(false);
   const spinnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [hiddenHeroTileId, setHiddenHeroTileId] = useState<string | null>(null);
+  const tileInnerRefs = useRef<Map<string, View>>(new Map());
+
+  useFocusEffect(
+    useCallback(() => {
+      setHiddenHeroTileId(null);
+    }, []),
+  );
 
   useEffect(() => {
     spinnerTimeoutRef.current = setTimeout(() => {
@@ -63,26 +88,10 @@ export default function AI() {
     }
   }, [navigation]);
 
-  useAppletHeader(navigation, handleHomePress, colors.folderSections.ai);
-
-  const { getOverride } = useHubPersonalizations();
-
-  const handleEdit = useCallback(
-    (applet: BuiltInApplet) => {
-      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-      const ov = getOverride(applet.applet_id);
-      navigation.navigate('EditHubApplet', {
-        itemId: applet.applet_id,
-        currentName: ov?.displayName || applet.name,
-        currentThemeId: ov?.themeId,
-        currentThemeCustomHex: ov?.themeCustomHex,
-      });
-    },
-    [navigation, getOverride],
-  );
+  useAppletHeader(navigation, handleHomePress, colors.background, colors.textPrimary);
 
   const navigateToApplet = useCallback(
-    (applet: BuiltInApplet) => {
+    (applet: BuiltInApplet, accent: string, displayName: string) => {
       const params = {
         appletId: applet.applet_id,
         appletName: applet.name,
@@ -93,44 +102,64 @@ export default function AI() {
         pageId: applet.initial_page_id || undefined,
       };
       const screen = applet.target_screen === 'conversationalai' ? 'ConversationalAI' : applet.target_screen;
-      navigation.navigate(screen as keyof RootStackParamList, params as never);
+      const routeName = screen as keyof RootStackParamList;
+      const doNavigate = () => navigation.navigate(routeName, params as never);
+
+      const node = tileInnerRefs.current.get(applet.applet_id);
+      if (!node) {
+        doNavigate();
+        return;
+      }
+      try { Haptics.selectionAsync(); } catch {}
+      node.measureInWindow((x, y, width, height) => {
+        if (!width || !height) {
+          doNavigate();
+          return;
+        }
+        setCardHeroSourceForRoute(routeName, {
+          rect: { x, y, width, height },
+          cornerRadius: borderRadius.md,
+          tileBg: colors.background,
+          accentColor: accent,
+          accentBarHeight: 6,
+          landingColor: colors.primary,
+          title: displayName,
+          subtitle: applet.subtitle || undefined,
+          iconName: (applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline',
+          iconColor: colors.primary,
+          iconBgColor: appletAccentMutedBackground(accent, 0.18),
+          iconSize: 24,
+          variant: 'L2',
+        });
+        setHiddenHeroTileId(applet.applet_id);
+        doNavigate();
+      });
     },
     [navigation]
   );
 
   const renderAppletTile = (applet: BuiltInApplet) => {
-    const ov = getOverride(applet.applet_id);
-    const accent = ov?.themeId
-      ? getAppletAccentColor(ov.themeId, ov.themeCustomHex)
-      : colors.accentBlue;
-    const displayName = ov?.displayName || applet.name;
+    const accent = colors.accentBlue;
+    const displayName = applet.name;
+    const isHiddenForHero = hiddenHeroTileId === applet.applet_id;
 
     return (
       <TouchableOpacity
         key={applet.applet_id}
         style={styles.tileButton}
-        onPress={() => navigateToApplet(applet)}
+        onPress={() => navigateToApplet(applet, accent, displayName)}
         activeOpacity={0.7}
         accessibilityLabel={`${displayName} - ${applet.subtitle || ''}`}
         accessibilityRole="button"
       >
-        <View style={styles.tile}>
+        <View
+          ref={(node) => {
+            if (node) tileInnerRefs.current.set(applet.applet_id, node);
+            else tileInnerRefs.current.delete(applet.applet_id);
+          }}
+          style={[styles.tile, isHiddenForHero && styles.tileHidden]}
+        >
           <View style={[styles.tileAccent, { backgroundColor: accent }]} />
-          <TouchableOpacity
-            style={styles.tileEditButton}
-            onPress={() => handleEdit(applet)}
-            activeOpacity={0.75}
-            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-            accessibilityLabel={`Personalize ${displayName}`}
-            accessibilityRole="button"
-          >
-            <Image
-              source={require('../../assets/pencil-edit.png')}
-              style={styles.tileEditPencilImage}
-              resizeMode="contain"
-              accessibilityIgnoresInvertColors
-            />
-          </TouchableOpacity>
           <View style={styles.tileContent}>
             <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(accent, 0.18) }]}>
               <Ionicons name={(applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline'} size={24} color={colors.primary} />
@@ -161,7 +190,7 @@ export default function AI() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -211,19 +240,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.medium,
   },
+  tileHidden: {
+    opacity: 0,
+  },
   tileAccent: {
     height: 6,
-  },
-  tileEditButton: {
-    position: 'absolute',
-    top: 6 + spacing.md + spacing.xs,
-    right: spacing.sm,
-    zIndex: 2,
-  },
-  tileEditPencilImage: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'transparent',
   },
   tileContent: {
     flex: 1,

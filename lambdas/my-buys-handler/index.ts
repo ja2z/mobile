@@ -44,6 +44,25 @@ function getIpAddress(event: any): string | undefined {
 }
 
 /**
+ * Normalize a user-supplied applet accent color to `#RRGGBB` uppercase.
+ * Returns null for null/undefined/empty, and null for invalid input (callers
+ * disambiguate by checking whether the field was present on the body).
+ */
+function normalizeAppletColor(raw: unknown): string | null {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim().replace(/^#/, '');
+    if (!trimmed) return null;
+    if (/^[0-9a-fA-F]{3}$/.test(trimmed)) {
+        return `#${trimmed[0]}${trimmed[0]}${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}`.toUpperCase();
+    }
+    if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
+        return `#${trimmed.toUpperCase()}`;
+    }
+    return null;
+}
+
+/**
  * Get session JWT secret (for verifying user session JWTs)
  */
 async function getSessionSecret(): Promise<string> {
@@ -538,8 +557,18 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     const body = JSON.parse(event.body || '{}');
     const { name, embedUrl, embedClientId, embedSecretKey,
             sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
-            restApiClientId, restApiSecretKey } = body;
-    
+            restApiClientId, restApiSecretKey, color } = body;
+
+    // Normalize and validate color: accept null, undefined, or `#RRGGBB` (case-insensitive)
+    const normalizedColor = normalizeAppletColor(color);
+    if (color !== undefined && color !== null && normalizedColor === null) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid color',
+            message: 'color must be a #RRGGBB hex string'
+        });
+    }
+
     // Validate required fields
     if (!name || !embedUrl || !embedClientId || !embedSecretKey) {
         return createResponse(400, {
@@ -623,6 +652,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         sigmaApiBaseUrl: sigmaApiBaseUrl || null,
         restApiSameAsEmbed: sameAsEmbed,
         pageFooterConfig: pageFooterConfig || null,
+        color: normalizedColor,
     });
 
     // Log activity
@@ -646,6 +676,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
             sigmaApiBaseUrl: created.sigmaApiBaseUrl,
             restApiSameAsEmbed: created.restApiSameAsEmbed,
             pageFooterConfig: created.pageFooterConfig,
+            color: created.color,
             createdAt: created.createdAt,
             updatedAt: created.updatedAt
         }
@@ -668,6 +699,7 @@ async function handleListApplets(userId: string): Promise<any> {
         sigmaApiBaseUrl: item.sigmaApiBaseUrl,
         restApiSameAsEmbed: item.restApiSameAsEmbed,
         pageFooterConfig: item.pageFooterConfig,
+        color: item.color,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt
     }));
@@ -703,8 +735,19 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     const body = JSON.parse(event.body || '{}');
     const { name, embedUrl, embedClientId, embedSecretKey,
             sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
-            restApiClientId, restApiSecretKey } = body;
-    
+            restApiClientId, restApiSecretKey, color } = body;
+
+    // Normalize and validate color: accept null, undefined, or `#RRGGBB` (case-insensitive)
+    const colorProvided = Object.prototype.hasOwnProperty.call(body, 'color');
+    const normalizedColor = normalizeAppletColor(color);
+    if (colorProvided && color !== null && normalizedColor === null) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid color',
+            message: 'color must be a #RRGGBB hex string'
+        });
+    }
+
     // Validate required fields
     if (!name || !embedUrl || !embedClientId || !embedSecretKey) {
         return createResponse(400, {
@@ -773,6 +816,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         sigmaApiBaseUrl: sigmaApiBaseUrl || null,
         restApiSameAsEmbed: sameAsEmbed,
         pageFooterConfig: pageFooterConfig || null,
+        ...(colorProvided ? { color: normalizedColor } : {}),
     });
 
     const refreshed = await getApplet(userId, appletId);
@@ -798,9 +842,70 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             sigmaApiBaseUrl: refreshed?.sigmaApiBaseUrl,
             restApiSameAsEmbed: refreshed?.restApiSameAsEmbed ?? true,
             pageFooterConfig: refreshed?.pageFooterConfig,
+            color: refreshed?.color,
             createdAt: existing.createdAt,
             updatedAt: refreshed?.updatedAt ?? existing.updatedAt
         }
+    });
+}
+
+/**
+ * Extract the applet ID from a path like `/my-buys/applets/{appletId}/color`.
+ * Falls back to parsing when API Gateway proxy integration omits pathParameters.
+ */
+function extractAppletIdBeforeSuffix(event: any, suffix: string): string | undefined {
+    const fromParams = event.pathParameters?.appletId;
+    if (fromParams) return fromParams;
+    const rawPath: string = event.path || event.rawPath || event.requestContext?.path || '';
+    const normalized = rawPath
+        .replace(/^\/v1\/v1\/my-buys\//, '/my-buys/')
+        .replace(/^\/v1\/my-buys\//, '/my-buys/');
+    const parts = normalized.split('/').filter(Boolean);
+    // expected shape: ['my-buys','applets','{appletId}', suffix]
+    const suffixIdx = parts.lastIndexOf(suffix);
+    if (suffixIdx > 0) return parts[suffixIdx - 1];
+    return undefined;
+}
+
+/**
+ * Handle PUT /v1/my-buys/applets/{appletId}/color - Partial update of accent color only.
+ * Lightweight so the edit screen can save colors live without having the embed secrets on hand.
+ */
+async function handleUpdateAppletColor(event: any, userId: string, email: string, deviceId?: string, isBackdoor?: boolean): Promise<any> {
+    const appletId = extractAppletIdBeforeSuffix(event, 'color');
+    if (!appletId) {
+        return createResponse(400, {
+            success: false,
+            error: 'Missing appletId'
+        });
+    }
+
+    const existing = await getApplet(userId, appletId);
+    if (!existing) {
+        return createResponse(404, {
+            success: false,
+            error: 'Applet not found'
+        });
+    }
+
+    const body = JSON.parse(event.body || '{}');
+    const provided = Object.prototype.hasOwnProperty.call(body, 'color');
+    const normalized = normalizeAppletColor(body.color);
+    if (provided && body.color !== null && normalized === null) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid color',
+            message: 'color must be a #RRGGBB hex string'
+        });
+    }
+
+    const colorValue = provided ? normalized : null;
+    await updateApplet(userId, appletId, { color: colorValue });
+
+    return createResponse(200, {
+        success: true,
+        appletId,
+        color: colorValue
     });
 }
 
@@ -1223,6 +1328,9 @@ export const handler = async (event: any) => {
         } else if (path.includes('/applets/') && path.includes('/regenerate-url') && method === 'POST') {
             // Path like /my-buys/applets/{appletId}/regenerate-url
             return await handleRegenerateUrl(event, userId, email, deviceId, isBackdoor);
+        } else if (path.includes('/applets/') && path.endsWith('/color') && method === 'PUT') {
+            // Path like /my-buys/applets/{appletId}/color - live color save
+            return await handleUpdateAppletColor(event, userId, email, deviceId, isBackdoor);
         } else if (path.includes('/applets/') && method === 'PUT') {
             // Path like /my-buys/applets/{appletId}
             return await handleUpdateApplet(event, userId, email, deviceId, isBackdoor);

@@ -104,6 +104,37 @@ export function resolveAppletThemeId(fromLocal?: string | null, fromApi?: string
   return DEFAULT_APPLET_THEME_ID;
 }
 
+/**
+ * Convert UI theme selection (preset id + optional custom hex) into the single
+ * `#RRGGBB` value stored in `applets.color`. Returns null when no color is set,
+ * meaning "use default accent".
+ */
+export function resolveColorHexForSave(
+  themeId?: string | null,
+  customHex?: string | null,
+): string | null {
+  const hex = getAppletAccentColor(themeId, customHex);
+  return normalizeThemeCustomHex(hex);
+}
+
+/**
+ * Map a stored hex back into the UI's themeId / themeCustomHex pair. If the hex
+ * exactly matches a preset swatch, treat it as that preset; otherwise custom.
+ * Missing / invalid values fall back to the default preset.
+ */
+export function themeFromStoredColor(
+  color?: string | null,
+): { themeId: AppletThemeId; themeCustomHex?: string } {
+  if (!color) return { themeId: DEFAULT_APPLET_THEME_ID };
+  const normalized = normalizeThemeCustomHex(color);
+  if (!normalized) return { themeId: DEFAULT_APPLET_THEME_ID };
+  const preset = APPLET_THEME_OPTIONS.find(
+    (opt) => (normalizeThemeCustomHex(opt.color) ?? opt.color.toUpperCase()) === normalized,
+  );
+  if (preset) return { themeId: preset.id };
+  return { themeId: 'custom', themeCustomHex: normalized };
+}
+
 /** Muted tile icon background — rgba avoids unreliable #RRGGBBAA on some Android builds. */
 export function appletAccentMutedBackground(hexColor: string, opacity = 0.14): string {
   const hex = hexColor.replace('#', '');

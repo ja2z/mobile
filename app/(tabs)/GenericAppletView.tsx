@@ -9,6 +9,7 @@ import { DashboardView, DashboardViewRef } from '../../components/DashboardView'
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { getAppletAccentColor } from '../../constants/AppletThemes';
 import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 
@@ -48,7 +49,9 @@ export default function GenericAppletView() {
     }
   }, [navigation]);
 
-  useAppletHeader(navigation, handleHomePress);
+  const headerAccent = getAppletAccentColor();
+
+  useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 
   useEffect(() => {
     return () => {

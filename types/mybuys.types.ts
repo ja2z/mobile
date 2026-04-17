@@ -17,10 +17,12 @@ export interface Applet {
   appletId: string;
   name: string;
   embedUrl: string;
-  /** Preset id or `custom` for tile + header/footer accent (persisted locally; API may echo). */
+  /** Preset id or `custom` for tile + header/footer accent (derived from `color` on read). */
   themeId?: string;
   /** When themeId is `custom`, 6-digit hex e.g. #A1B2C3 */
   themeCustomHex?: string;
+  /** Persisted accent hex in Postgres `applets.color` (#RRGGBB uppercase). */
+  color?: string;
   secretName?: string;
   /** Globally unique mybuys:word-word-word value for magic link `app` param */
   deepLinkSlug?: string;
@@ -38,6 +40,8 @@ export interface CreateAppletData {
   embedSecretKey: string;
   themeId?: string;
   themeCustomHex?: string;
+  /** Optional direct hex override; MyBuysService otherwise derives it from themeId/themeCustomHex. */
+  color?: string;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;
@@ -52,6 +56,8 @@ export interface UpdateAppletData {
   embedSecretKey: string;
   themeId?: string;
   themeCustomHex?: string;
+  /** Optional direct hex override; MyBuysService otherwise derives it from themeId/themeCustomHex. */
+  color?: string;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;

@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, typography, shadows } from '../../constants/Theme';
-import { appletAccentMutedBackground, getAppletAccentColor } from '../../constants/AppletThemes';
+import { appletAccentMutedBackground } from '../../constants/AppletThemes';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
-import { useHubPersonalizations } from '../../hooks/useHubPersonalizations';
-import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
+import {
+  getCachedBuiltInAppletsSync,
+  listBuiltInApplets,
+  type BuiltInApplet,
+} from '../../services/BuiltInAppletsService';
 import {
   clearCardHeroSourceForRoute,
   setCardHeroSourceForRoute,
@@ -28,8 +31,18 @@ const SPINNER_DELAY_MS = 200;
 export default function Sigmanauts() {
   const navigation = useNavigation<SigmanautsScreenNavigationProp>();
   const route = useRoute();
-  const [applets, setApplets] = useState<BuiltInApplet[]>([]);
-  const [loading, setLoading] = useState(true);
+  /**
+   * Seed the grid synchronously from the module-level cache (warmed by
+   * Home's `prefetchBuiltInApplets` on mount). When the cache is populated,
+   * tiles render on first paint so they're visible inside the hero
+   * transition's growing window. When the cache is cold we fall back to
+   * the existing fetch path and spinner.
+   */
+  const cachedOnMount = getCachedBuiltInAppletsSync();
+  const [applets, setApplets] = useState<BuiltInApplet[]>(
+    cachedOnMount ? cachedOnMount.filter((a) => a.list_screen === LIST_SCREEN) : [],
+  );
+  const [loading, setLoading] = useState(cachedOnMount === null);
   const [showSpinner, setShowSpinner] = useState(false);
   const spinnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,23 +86,7 @@ export default function Sigmanauts() {
     }
   }, [navigation]);
 
-  useAppletHeader(navigation, handleHomePress, colors.folderSections.sigmanauts);
-
-  const { getOverride } = useHubPersonalizations();
-
-  const handleEdit = useCallback(
-    (applet: BuiltInApplet) => {
-      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-      const ov = getOverride(applet.applet_id);
-      navigation.navigate('EditHubApplet', {
-        itemId: applet.applet_id,
-        currentName: ov?.displayName || applet.name,
-        currentThemeId: ov?.themeId,
-        currentThemeCustomHex: ov?.themeCustomHex,
-      });
-    },
-    [navigation, getOverride],
-  );
+  useAppletHeader(navigation, handleHomePress, colors.background, colors.textPrimary);
 
   const navigateToApplet = useCallback(
     (applet: BuiltInApplet, accent: string, displayName: string) => {
@@ -140,11 +137,8 @@ export default function Sigmanauts() {
   );
 
   const renderAppletTile = (applet: BuiltInApplet) => {
-    const ov = getOverride(applet.applet_id);
-    const accent = ov?.themeId
-      ? getAppletAccentColor(ov.themeId, ov.themeCustomHex)
-      : colors.accentBlue;
-    const displayName = ov?.displayName || applet.name;
+    const accent = colors.accentBlue;
+    const displayName = applet.name;
     const isHiddenForHero = hiddenHeroTileId === applet.applet_id;
 
     return (
@@ -164,21 +158,6 @@ export default function Sigmanauts() {
           style={[styles.tile, isHiddenForHero && styles.tileHidden]}
         >
           <View style={[styles.tileAccent, { backgroundColor: accent }]} />
-          <TouchableOpacity
-            style={styles.tileEditButton}
-            onPress={() => handleEdit(applet)}
-            activeOpacity={0.75}
-            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-            accessibilityLabel={`Personalize ${displayName}`}
-            accessibilityRole="button"
-          >
-            <Image
-              source={require('../../assets/pencil-edit.png')}
-              style={styles.tileEditPencilImage}
-              resizeMode="contain"
-              accessibilityIgnoresInvertColors
-            />
-          </TouchableOpacity>
           <View style={styles.tileContent}>
             <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(accent, 0.18) }]}>
               <Ionicons name={(applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline'} size={24} color={colors.primary} />
@@ -209,7 +188,7 @@ export default function Sigmanauts() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -264,17 +243,6 @@ const styles = StyleSheet.create({
   },
   tileAccent: {
     height: 6,
-  },
-  tileEditButton: {
-    position: 'absolute',
-    top: 6 + spacing.md + spacing.xs,
-    right: spacing.sm,
-    zIndex: 2,
-  },
-  tileEditPencilImage: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'transparent',
   },
   tileContent: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -78,10 +79,50 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
   const [sessionExpirationDate, setSessionExpirationDate] = useState<Date | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRendered, setIsRendered] = useState(visible);
+
+  const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const scale = useRef(new Animated.Value(visible ? 1 : 0.92)).current;
 
   useEffect(() => {
     if (visible) {
       loadSessionData();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      setIsRendered(true);
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          friction: 7,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (isRendered) {
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 0.96,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setIsRendered(false);
+        }
+      });
     }
   }, [visible]);
 
@@ -135,15 +176,20 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
 
   return (
     <Modal
-      visible={visible}
+      visible={isRendered}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
+        <Animated.View style={[styles.overlay, { opacity }]}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <View style={styles.menuContainer}>
+            <Animated.View
+              style={[
+                styles.menuContainer,
+                { opacity, transform: [{ scale }] },
+              ]}
+            >
               {/* Header */}
               <View style={styles.header}>
                 <Text style={styles.headerTitle}>Profile</Text>
@@ -249,9 +295,9 @@ export function ProfileMenu({ visible, onClose, onLogout }: ProfileMenuProps) {
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
+            </Animated.View>
           </TouchableWithoutFeedback>
-        </View>
+        </Animated.View>
       </TouchableWithoutFeedback>
     </Modal>
   );
@@ -292,11 +338,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingContainer: {
-    padding: spacing.xxl,
+    minHeight: 440,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
+    minHeight: 440,
     padding: spacing.lg,
   },
   infoRow: {

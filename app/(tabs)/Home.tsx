@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, Animated, Dimensions, Image, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { ActivityService } from '../../services/ActivityService';
 import { ProfileMenu } from '../../components/ProfileMenu';
 import type { RootStackParamList } from '../_layout';
 import { setCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
+import { prefetchBuiltInApplets } from '../../services/BuiltInAppletsService';
 import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -44,6 +45,7 @@ type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
  */
 export default function Home() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const insets = useSafeAreaInsets();
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
   const [isSigmaEmployee, setIsSigmaEmployee] = useState(false);
   const [phoneNudgeVisible, setPhoneNudgeVisible] = useState(false);
@@ -100,6 +102,15 @@ export default function Home() {
     checkEmailDomain();
   }, []);
 
+  /**
+   * Warm the built-in applet cache so folder screens (Apps / AI / Dashboards
+   * / Sigmanauts) can render their grid from cache on first paint instead
+   * of waiting for a network fetch after the hero transition settles.
+   */
+  useEffect(() => {
+    prefetchBuiltInApplets();
+  }, []);
+
   // Post-login phone nudge: show once per login instance if no verified phone and not backdoor
   useEffect(() => {
     const checkPhoneNudge = async () => {
@@ -154,7 +165,7 @@ export default function Home() {
       description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
       iconName: 'layers-outline',
       isActive: true,
-      landingColor: colors.folderSections.myBuys,
+      landingColor: colors.background,
       routeName: 'MyBuys',
       onPress: handleNavigateToMyBuys,
     },
@@ -165,7 +176,7 @@ export default function Home() {
       description: 'Access Sigma employee tools and resources. Available only for @sigmacomputing.com email addresses.',
       iconName: 'people-outline',
       isActive: true,
-      landingColor: colors.folderSections.sigmanauts,
+      landingColor: colors.background,
       routeName: 'Sigmanauts',
       onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
     },
@@ -176,7 +187,7 @@ export default function Home() {
       description: 'Access AI-powered tools and assistants. Chat with AI, query data, read newsletters, and get intelligent insights.',
       iconName: 'sparkles-outline',
       isActive: true,
-      landingColor: colors.folderSections.ai,
+      landingColor: colors.background,
       routeName: 'AI',
       onPress: handleNavigateToAI,
     },
@@ -187,7 +198,7 @@ export default function Home() {
       description: 'View executive dashboards and data visualizations. Get insights on the go with real-time data.',
       iconName: 'bar-chart-outline',
       isActive: true,
-      landingColor: colors.folderSections.dashboards,
+      landingColor: colors.background,
       routeName: 'Dashboards',
       onPress: handleNavigateToDashboards,
     },
@@ -198,7 +209,7 @@ export default function Home() {
       description: 'Access workflow and operations applications. Streamline your work with powerful tools.',
       iconName: 'apps-outline',
       isActive: true,
-      landingColor: colors.folderSections.apps,
+      landingColor: colors.background,
       routeName: 'Apps',
       onPress: handleNavigateToApps,
     },
@@ -445,16 +456,20 @@ export default function Home() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <StatusBar barStyle="dark-content" />
       
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTopBorder} />
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerContent}>
           <View style={styles.headerTextContainer}>
+            <Image
+              source={require('../../assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
             <Text style={styles.headerTitle}>{Config.APP_NAME}</Text>
-            <Text style={styles.headerSubtitle}>Welcome back</Text>
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity
@@ -609,28 +624,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTopBorder: {
-    height: 4,
-    backgroundColor: colors.primary,
-  },
   headerContent: {
+    height: 44,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerTextContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+    marginRight: spacing.sm,
   },
   headerTitle: {
     ...typography.h2,
     color: colors.textPrimary,
-  },
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
   },
   headerButtons: {
     flexDirection: 'row',

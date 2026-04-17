@@ -6,4 +6,6 @@ export type MyBuysAppletsChangedPayload = {
   appletId: string;
   themeId?: string;
   themeCustomHex?: string;
+  /** When true, emitter already persisted color and wants listeners to skip server refetch. */
+  liveThemeOnly?: boolean;
 };

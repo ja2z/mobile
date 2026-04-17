@@ -10,6 +10,7 @@ import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { getAppletAccentColor } from '../../constants/AppletThemes';
 import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 
@@ -88,8 +89,9 @@ export default function Dashboard() {
     }
   }, [navigation]);
 
-  // Set up navigation header with Home button and consistent styling
-  useAppletHeader(navigation, handleHomePress);
+  const headerAccent = getAppletAccentColor();
+
+  useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 
   // Set header title dynamically from appletName or name
   useLayoutEffect(() => {

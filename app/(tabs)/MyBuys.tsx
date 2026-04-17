@@ -109,7 +109,13 @@ export default function MyBuys() {
         } else if (payload?.action === 'deleted') {
           setApplets((prev) => prev.filter((a) => a.appletId !== payload.appletId));
         }
-        loadApplets();
+        // Skip the reconciling refetch for live color-picker updates: the PUT
+        // to /color is still in flight, so refetching here would read stale
+        // server state and clobber the optimistic patch above. The focus
+        // effect will reconcile when the user navigates back.
+        if (!payload?.liveThemeOnly) {
+          loadApplets();
+        }
       },
     );
     return () => sub.remove();
@@ -215,7 +221,7 @@ export default function MyBuys() {
           style={styles.headerButton}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
       ),
     });
@@ -312,7 +318,7 @@ export default function MyBuys() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       {loading ? (
         <View style={styles.loadingContainer}>

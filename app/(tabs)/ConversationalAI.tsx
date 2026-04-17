@@ -11,6 +11,7 @@ import { ChatModal, ChatModalRef } from '../../components/ChatModal';
 import { NavigationBar } from '../../components/NavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { getAppletAccentColor } from '../../constants/AppletThemes';
 import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 import { ChatMessage } from '../../types/chat.types';
@@ -73,8 +74,9 @@ export default function ConversationalAI() {
     }
   }, [navigation]);
 
-  // Set up navigation header with Home button and consistent styling
-  useAppletHeader(navigation, handleHomePress);
+  const headerAccent = getAppletAccentColor();
+
+  useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 
   /**
    * Handle page selection from navigation bar

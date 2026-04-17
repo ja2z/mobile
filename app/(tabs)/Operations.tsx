@@ -1,19 +1,20 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '../_layout';
 import { DashboardView, DashboardViewRef } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { InventoryVerificationModal } from '../../components/InventoryVerificationModal';
 import { OperationsNavigationBar } from '../../components/OperationsNavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
+import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { getAppletAccentColor } from '../../constants/AppletThemes';
 import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { InventoryVerificationData } from '../../types/inventory.types';
-import { colors, spacing } from '../../constants/Theme';
+import { colors } from '../../constants/Theme';
 
 type OperationsRouteProp = RouteProp<RootStackParamList, 'Operations'>;
 type OperationsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Operations'>;
@@ -86,24 +87,9 @@ export default function Operations() {
     }
   }, [navigation]);
 
-  /**
-   * Set up navigation header with Home button
-   */
-  useEffect(() => {
-    navigation.setOptions({
-      headerLeft: () => (
-        <TouchableOpacity
-          onPress={handleHomePress}
-          style={styles.headerButton}
-          activeOpacity={0.7}
-          accessibilityLabel="Go to Home"
-          accessibilityRole="button"
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.background} />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, handleHomePress]);
+  const headerAccent = getAppletAccentColor();
+
+  useAppletHeader(navigation, handleHomePress, headerAccent, '#FFFFFF');
 
   /**
    * Handle page selection from navigation bar
@@ -289,10 +275,6 @@ const styles = StyleSheet.create({
     flex: 1,
     margin: 0,
     padding: 0,
-  },
-  headerButton: {
-    padding: spacing.sm,
-    marginLeft: spacing.sm,
   },
 });
 
