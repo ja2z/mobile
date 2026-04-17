@@ -4,23 +4,23 @@ import type { RouteProp, Theme } from '@react-navigation/native';
 import {
   createStackNavigator,
   CardStyleInterpolators,
+  HeaderStyleInterpolators,
   type StackNavigationOptions,
   type StackNavigationProp,
+  type StackCardStyleInterpolator,
 } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import {
   View,
-  Text,
-  ActivityIndicator,
   StyleSheet,
   Animated,
   Pressable,
   Platform,
   Alert,
   Easing,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Login from './(tabs)/Login';
 import ExpiredLink from './(tabs)/ExpiredLink';
 import Home from './(tabs)/Home';
@@ -44,11 +44,17 @@ import PhoneVerification from './(tabs)/PhoneVerification';
 import CollectName from './(tabs)/CollectName';
 import EditHubApplet from './(tabs)/EditHubApplet';
 import Toast from 'react-native-toast-message';
-import { colors, spacing, typography } from '../constants/Theme';
+import { colors, spacing } from '../constants/Theme';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { listBuiltInApplets } from '../services/BuiltInAppletsService';
 import { MyBuysService } from '../services/MyBuysService';
+import {
+  getLoginLogoTarget,
+  loginLogoOpacity,
+  type LoginLogoTarget,
+} from '../constants/LoginLogoTransition';
+import { getCardHeroSourceForRoute } from '../constants/CardHeroTransition';
 
 // Define the navigation stack parameter list
 export type RootStackParamList = {
@@ -235,7 +241,405 @@ function hubPersonalizeModalScreenOptions() {
   });
 }
 
+/**
+ * Timing spec shared by every hero-transition route. 480ms forward / 360ms
+ * back with a smooth Bezier easing, matching the splash -> Login logo
+ * settle so the two transitions feel like they belong to the same app.
+ */
+const HERO_TRANSITION_SPEC = {
+  open: {
+    animation: 'timing' as const,
+    config: {
+      duration: 480,
+      easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
+    },
+  },
+  close: {
+    animation: 'timing' as const,
+    config: {
+      duration: 360,
+      easing: Easing.bezier(0.20833, 0.82, 0.25, 1),
+    },
+  },
+};
+
+/**
+ * Default card style interpolator applied to every screen in the stack via
+ * `screenOptions`. It only animates the entering screen's opacity (no
+ * translation), which means the previous screen is held in place while a
+ * new screen fades in on top. This removes the horizontal slide that
+ * otherwise bleeds through the hero transition and makes every non-hero
+ * screen a plain crossfade by default.
+ */
+const heroDefaultCardStyleInterpolator: StackCardStyleInterpolator = ({
+  current,
+}) => ({
+  cardStyle: { opacity: current.progress },
+});
+
+/**
+ * Build a card style interpolator for a hero-destination route. When a
+ * `CardHeroSource` is registered for the route (source screen measured the
+ * tapped card and called `setCardHeroSourceForRoute` before navigating),
+ * the destination card is scaled from the source rect's width ratio up to
+ * full screen, centered on screen, with opacity 0 at progress=0 and
+ * opacity 1 at progress=1. No translation is applied, so the card grows
+ * in place rather than sliding from the tapped tile's position — this
+ * preserves the "entering the folder" zoom feel without a diagonal slide
+ * on open or back. The `[0, 0.15, 1] -> [0, 0.35, 1]` opacity ramp gives
+ * a gradual "mini page fades in" feel rather than a pop-in.
+ *
+ * When no source is registered (deep link, imperative reset, etc.), the
+ * interpolator falls back to the global crossfade so the screen still
+ * animates in cleanly.
+ */
+function makeHeroFromRectInterpolator(
+  routeName: string,
+): StackCardStyleInterpolator {
+  return ({ current, layouts: { screen } }) => {
+    const src = getCardHeroSourceForRoute(routeName);
+    if (!src || screen.width <= 0 || screen.height <= 0) {
+      return { cardStyle: { opacity: current.progress } };
+    }
+
+    const initialScale = Math.max(src.rect.width / screen.width, 0.01);
+
+    return {
+      cardStyle: {
+        opacity: current.progress.interpolate({
+          inputRange: [0, 0.15, 1],
+          outputRange: [0, 0.35, 1],
+        }),
+        transform: [
+          {
+            scale: current.progress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [initialScale, 1],
+            }),
+          },
+        ],
+      },
+    };
+  };
+}
+
+/**
+ * Screen options preset for every hero-destination route. The per-route
+ * interpolator is constructed by the caller via
+ * `makeHeroFromRectInterpolator(routeName)` so it reads the correct source
+ * out of the bus at transition start.
+ */
+function heroDestinationScreenOptions(
+  routeName: string,
+): StackNavigationOptions {
+  return {
+    transitionSpec: HERO_TRANSITION_SPEC,
+    cardStyleInterpolator: makeHeroFromRectInterpolator(routeName),
+    /**
+     * iOS default `headerMode: 'float'` renders one shared header layer
+     * above every card with its own independent animation, so the header
+     * appears to slide/pop in separately from the card that's fading +
+     * scaling underneath it. `headerMode: 'screen'` attaches the header
+     * to THIS screen's card, so the header fades and scales together
+     * with the rest of the destination — the whole folder content
+     * (header bar included) pops in and fades as a single unit.
+     *
+     * `forFade` is kept as a belt-and-suspenders crossfade on the header
+     * internals; the card-level scale+opacity does the heavy lifting now
+     * that the header rides along with the card.
+     */
+    headerMode: 'screen',
+    headerStyleInterpolator: HeaderStyleInterpolators.forFade,
+    cardShadowEnabled: false,
+    cardOverlayEnabled: false,
+    gestureEnabled: true,
+  };
+}
+
 const Stack = createStackNavigator<RootStackParamList>();
+
+type LoadingScreenProps = {
+  shouldExit: boolean;
+  onExitComplete: () => void;
+  /**
+   * When true, the exit animation settles the overlay logo onto the Login
+   * screen's underlying logo (scale-down + translate + container fade) for a
+   * seamless reveal. When false, falls back to the original zoom-out + fade
+   * (used for authenticated boots that go straight to Home, etc.).
+   */
+  coordinateWithLoginLogo: boolean;
+};
+
+/**
+ * Full-screen white overlay that holds the zeta icon while the app boots.
+ * When `shouldExit` flips true it plays either a coordinated "settle"
+ * transition (scale+translate onto Login's logo then fade the bg) or the
+ * fallback "zoom-in + fade-out" transition, then calls `onExitComplete`.
+ */
+function LoadingScreen({
+  shouldExit,
+  onExitComplete,
+  coordinateWithLoginLogo,
+}: LoadingScreenProps) {
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const scale = useRef(new Animated.Value(1)).current;
+  const logoOpacity = useRef(new Animated.Value(1)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const containerOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!shouldExit) return;
+
+    let cancelled = false;
+
+    const runCoordinated = (target: LoginLogoTarget) => {
+      const overlaySize = 310;
+      const scaleTarget = target.size / overlaySize;
+      const dx = target.centerX - screenW / 2;
+      const dy = target.centerY - screenH / 2;
+
+      /**
+       * Run the logo settle + background fade in parallel (with a short fade
+       * delay) so the Login content behind the overlay reveals progressively
+       * as the logo is still moving — feels like everything loads in together
+       * rather than "move, then reveal".
+       */
+      Animated.parallel([
+        Animated.timing(scale, {
+          toValue: scaleTarget,
+          duration: 750,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateX, {
+          toValue: dx,
+          duration: 750,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: dy,
+          duration: 750,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.delay(150),
+          Animated.timing(containerOpacity, {
+            toValue: 0,
+            duration: 700,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+        /**
+         * Reveal Login's underlying logo AFTER the overlay logo has landed on
+         * top of it at t=750. Before this, Login's logo is held at opacity 0
+         * so it cannot visually overlap the moving overlay logo. Because the
+         * overlay logo stays fully opaque at the same position and size, this
+         * reveal is hidden from the user — it's just a handoff so that when
+         * the overlay unmounts, Login's logo is already visible in its place.
+         */
+        Animated.sequence([
+          Animated.delay(750),
+          Animated.timing(loginLogoOpacity, {
+            toValue: 1,
+            duration: 100,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(({ finished }) => {
+        if (finished && !cancelled) onExitComplete();
+      });
+    };
+
+    const runFallback = () => {
+      Animated.parallel([
+        Animated.timing(scale, {
+          toValue: 2.2,
+          duration: 550,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoOpacity, {
+          toValue: 0,
+          duration: 550,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished && !cancelled) onExitComplete();
+      });
+    };
+
+    if (!coordinateWithLoginLogo) {
+      runFallback();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    /** Poll briefly for the target in case Login hasn't measured yet. */
+    const deadline = Date.now() + 200;
+    const tryStart = () => {
+      if (cancelled) return;
+      const target = getLoginLogoTarget();
+      if (target) {
+        runCoordinated(target);
+      } else if (Date.now() < deadline) {
+        requestAnimationFrame(tryStart);
+      } else {
+        runFallback();
+      }
+    };
+    tryStart();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    shouldExit,
+    coordinateWithLoginLogo,
+    scale,
+    logoOpacity,
+    translateX,
+    translateY,
+    containerOpacity,
+    onExitComplete,
+    screenW,
+    screenH,
+  ]);
+
+  return (
+    <View
+      style={styles.loadingContainer}
+      pointerEvents={shouldExit ? 'none' : 'auto'}
+    >
+      <StatusBar style="auto" />
+      {/*
+        White background is a sibling of the logo (not a parent) so fading it
+        does not fade the logo. Coordinated transition: bg fades while logo
+        only moves. Fallback transition: bg stays opaque, logo zooms + fades.
+      */}
+      <Animated.View
+        style={[styles.loadingBackground, { opacity: containerOpacity }]}
+        pointerEvents="none"
+      />
+      {/*
+        shouldRasterizeIOS / renderToHardwareTextureAndroid tell the platform
+        to cache this view as a GPU texture once, so the scale+translate
+        animation becomes a cheap bitmap blit each frame instead of resampling
+        the 1024x1024 source PNG. fadeDuration=0 disables Android's default
+        image fade-in so it can't interrupt our animation on first paint.
+      */}
+      <Animated.Image
+        source={require('../assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png')}
+        style={[
+          styles.zetaIcon,
+          {
+            opacity: logoOpacity,
+            transform: [
+              { translateX },
+              { translateY },
+              { scale },
+            ],
+          },
+        ]}
+        resizeMode="contain"
+        resizeMethod="scale"
+        fadeDuration={0}
+        shouldRasterizeIOS
+        renderToHardwareTextureAndroid
+      />
+    </View>
+  );
+}
+
+type MagicLinkVerifyingOverlayProps = {
+  visible: boolean;
+};
+
+/**
+ * Warm-handler verification overlay. The main boot `LoadingScreen` has already
+ * exited in this case (user was on Login when they tapped the magic link), so
+ * there is nothing covering the Login screen while `handleDeepLink` verifies
+ * the token and the `NavigationContainer` remounts from Login to Home. This
+ * overlay matches the boot splash visuals (white bg + zeta logo) and covers
+ * that entire window, then fades out to reveal the target screen.
+ *
+ * Cold boot is unaffected: RootLayout only renders this when `hasExited` is
+ * true, so the main boot splash keeps ownership of the initial transition.
+ */
+function MagicLinkVerifyingOverlay({ visible }: MagicLinkVerifyingOverlayProps) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const [shouldRender, setShouldRender] = useState(visible);
+
+  useEffect(() => {
+    let cancelled = false;
+    let rafId1: number | null = null;
+    let rafId2: number | null = null;
+
+    if (visible) {
+      setShouldRender(true);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 120,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      /**
+       * Defer the fade-out by two RAFs so the NavigationContainer remount and
+       * the target screen's first paint both land under the overlay. Without
+       * this, there can be a 1-frame empty flash between Login unmount and
+       * Home mount as the overlay reveals.
+       */
+      rafId1 = requestAnimationFrame(() => {
+        rafId2 = requestAnimationFrame(() => {
+          if (cancelled) return;
+          Animated.timing(opacity, {
+            toValue: 0,
+            duration: 220,
+            easing: Easing.in(Easing.quad),
+            useNativeDriver: true,
+          }).start(({ finished }) => {
+            if (finished && !cancelled) {
+              setShouldRender(false);
+            }
+          });
+        });
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      if (rafId1 !== null) cancelAnimationFrame(rafId1);
+      if (rafId2 !== null) cancelAnimationFrame(rafId2);
+    };
+  }, [visible, opacity]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <Animated.View
+      style={[styles.loadingContainer, { opacity }]}
+      pointerEvents={visible ? 'auto' : 'none'}
+    >
+      <View style={styles.loadingBackground} pointerEvents="none" />
+      <Animated.Image
+        source={require('../assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png')}
+        style={styles.zetaIcon}
+        resizeMode="contain"
+        resizeMethod="scale"
+        fadeDuration={0}
+        shouldRasterizeIOS
+        renderToHardwareTextureAndroid
+      />
+    </Animated.View>
+  );
+}
 
 /**
  * Root Layout Component
@@ -254,7 +658,33 @@ export default function RootLayout() {
   const [collectNameInitialParams, setCollectNameInitialParams] = useState<
     RootStackParamList['CollectName'] | undefined
   >(undefined);
+  const [isExiting, setIsExiting] = useState(false);
+  const [hasExited, setHasExited] = useState(false);
   const navigationRef = useRef<any>(null);
+
+  const isLoading = isCheckingAuth || initialRoute === null || isVerifyingMagicLink;
+
+  /**
+   * Hide Login's underlying logo synchronously during the coordinated boot
+   * transition so it does not visually overlap the moving overlay logo.
+   * Runs during render (before children, including Login, mount) so Login's
+   * first paint picks up opacity=0. The overlay animation later fades this
+   * back to 1 once its logo has landed on top. Idempotent (safe on re-render).
+   */
+  if (initialRoute === 'Login' && !hasExited) {
+    loginLogoOpacity.setValue(0);
+  }
+
+  /**
+   * Trigger the splash → app zoom-in + fade-out transition as soon as all
+   * loading work completes. The LoadingScreen overlay plays the animation
+   * and calls back into `setHasExited` when the reveal is done.
+   */
+  useEffect(() => {
+    if (!isLoading && !isExiting && !hasExited) {
+      setIsExiting(true);
+    }
+  }, [isLoading, isExiting, hasExited]);
 
   useEffect(() => {
     // Check if user is already authenticated
@@ -291,8 +721,6 @@ export default function RootLayout() {
         setIsCheckingAuth(false);
       }
     };
-
-    checkAuth();
 
     // Handle deep links
     const handleDeepLink = async (url: string) => {
@@ -524,6 +952,48 @@ export default function RootLayout() {
             } else {
               setPendingDeepLinkNav(null);
             }
+
+            /**
+             * Defensive imperative nav: if the NavigationContainer is already
+             * mounted (warm handler case: app was on Login, user tapped magic
+             * link) the key={initialRoute} prop SHOULD force a remount onto
+             * the new initialRouteName. If for any reason it doesn't (stale
+             * nav state, Fast Refresh preserving state, etc.), this reset
+             * guarantees the user lands on the target screen. Retries briefly
+             * in case the ref isn't ready yet (mid-remount).
+             *
+             * IMPORTANT: only dispatch when we have a DEFINED current route
+             * that differs from the target. If getCurrentRoute() returns
+             * undefined (common during the container remount window), we keep
+             * retrying instead of dispatching a reset. Dispatching reset when
+             * the remount is already landing on Home causes Stack.Navigator
+             * to play its default horizontal card transition, which bleeds
+             * through the verifying overlay's fade-out as a visible swipe.
+             */
+            const targetRouteName = initialRouteForStack;
+            const attemptReset = (attemptsLeft: number) => {
+              const nav = navigationRef.current;
+              const isReady = !!(nav && nav.isReady && nav.isReady());
+              const currentRoute = isReady ? nav.getCurrentRoute?.() : undefined;
+
+              if (currentRoute) {
+                if (currentRoute.name !== targetRouteName) {
+                  console.log(
+                    `🔗 Imperative nav reset to ${targetRouteName} (was: ${currentRoute.name})`
+                  );
+                  nav.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [{ name: targetRouteName }],
+                    })
+                  );
+                }
+                // else: remount already landed on target, nothing to do.
+              } else if (attemptsLeft > 0) {
+                setTimeout(() => attemptReset(attemptsLeft - 1), 50);
+              }
+            };
+            setTimeout(() => attemptReset(20), 50);
           }
 
           // Log app launch (from deep link)
@@ -647,12 +1117,47 @@ export default function RootLayout() {
       }
     };
 
-    // Handle initial URL (if app opened via deep link)
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        handleDeepLink(url);
+    /**
+     * Bootstrap auth + initial deep link handling in a deterministic order.
+     *
+     * Why not run them in parallel fire-and-forget (previous behavior): when
+     * `NavigationContainer` mounts eagerly (required for the splash → Login
+     * coordinated logo animation), React Navigation locks in whatever
+     * `initialRouteName` the `initialRoute` state holds at first mount. If
+     * `checkAuth` wins the race and sets `initialRoute='Login'` before the
+     * magic-link deep link is verified, the subsequent `setInitialRoute('Home')`
+     * from the deep link success path becomes a no-op — the user is stuck on
+     * Login after tapping the magic link. Pre-setting `isVerifyingMagicLink`
+     * keeps `isLoading` true (splash visible, but see note below about the
+     * remount fallback), and the `key={initialRoute}` prop on the navigator
+     * guarantees a remount if the route does change post-mount.
+     */
+    const bootstrap = async () => {
+      try {
+        const initialUrl = await Linking.getInitialURL();
+
+        if (initialUrl) {
+          // Hold the splash so the race above can't lock in initialRouteName.
+          setIsVerifyingMagicLink(true);
+        }
+
+        await Promise.all([
+          checkAuth(),
+          initialUrl
+            ? handleDeepLink(initialUrl).finally(() => {
+                // Covers the "URL but no token" path, where handleDeepLink
+                // returns without touching isVerifyingMagicLink.
+                setIsVerifyingMagicLink(false);
+              })
+            : Promise.resolve(),
+        ]);
+      } catch (err) {
+        console.error('Bootstrap error:', err);
+        setIsVerifyingMagicLink(false);
       }
-    });
+    };
+
+    bootstrap();
 
     // Listen for deep links while app is running
     const subscription = Linking.addEventListener('url', (event) => {
@@ -664,29 +1169,21 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Show loading screen while checking auth status or verifying magic link
-  if (isCheckingAuth || initialRoute === null || isVerifyingMagicLink) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar style="auto" />
-        <View style={styles.loadingContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>
-            {isVerifyingMagicLink ? 'Logging in...' : 'Loading...'}
-          </Text>
-          {isVerifyingMagicLink && (
-            <Text style={styles.loadingSubtext}>
-              Setting up your account
-            </Text>
-          )}
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <NavigationContainer 
-      ref={navigationRef}
+    <View style={styles.rootContainer}>
+      {initialRoute !== null && (
+        <NavigationContainer
+          /**
+           * Keying on initialRoute forces a fresh navigator mount when the
+           * route is changed after the container has already mounted — most
+           * importantly, when a deep-linked magic-link verify finishes AFTER
+           * checkAuth has already set initialRoute='Login'. Without this,
+           * React Navigation ignores the prop change (initialRouteName is
+           * mount-time only) and the user is stranded on Login. onReady
+           * re-fires on the new container, which also re-runs pendingDeepLinkNav.
+           */
+          key={initialRoute}
+          ref={navigationRef}
       onReady={() => {
         // Once navigation is ready, navigate with params if we have pending deep link navigation
         if (pendingDeepLinkNav) {
@@ -733,6 +1230,32 @@ export default function RootLayout() {
             fontWeight: 'bold',
           },
           headerTransparent: false,
+          /**
+           * Global default interpolator: opacity-only, no translate. Held
+           * below any per-screen override (magic-link forNoAnimation,
+           * per-hero scale-from-rect). Ensures source screens (Home, Apps,
+           * Dashboards, etc.) do NOT slide off horizontally when a hero
+           * destination is pushed on top — the previous screen stays put
+           * while the destination grows over it.
+           */
+          cardStyleInterpolator: heroDefaultCardStyleInterpolator,
+          cardOverlayEnabled: false,
+          cardShadowEnabled: false,
+          /**
+           * During magic-link verification, force the card interpolator to
+           * forNoAnimation so any card transition that fires inside the verify
+           * window (e.g., the defensive imperative reset dispatching a
+           * CommonActions.reset, or the navigator mounting into a mid-flight
+           * state after the `key={initialRoute}` remount) is instant instead
+           * of the default iOS horizontal slide. The slide would otherwise
+           * bleed through the MagicLinkVerifyingOverlay's fade-out as a
+           * visible "swipe into Home". Cleared automatically when
+           * setIsVerifyingMagicLink(false) fires, restoring normal in-app
+           * navigation transitions.
+           */
+          ...(isVerifyingMagicLink && {
+            cardStyleInterpolator: CardStyleInterpolators.forNoAnimation,
+          }),
         }}
       >
         <Stack.Screen 
@@ -773,6 +1296,7 @@ export default function RootLayout() {
           name="Dashboard" 
           component={Dashboard}
           options={{
+            ...heroDestinationScreenOptions('Dashboard'),
             title: 'Dashboard',
             headerShown: true,
             headerStyle: {
@@ -792,6 +1316,7 @@ export default function RootLayout() {
           name="ConversationalAI" 
           component={ConversationalAI}
           options={{
+            ...heroDestinationScreenOptions('ConversationalAI'),
             title: 'AI Query',
             headerShown: true,
             headerStyle: {
@@ -811,6 +1336,7 @@ export default function RootLayout() {
           name="Operations" 
           component={Operations}
           options={{
+            ...heroDestinationScreenOptions('Operations'),
             title: 'Operations',
             headerShown: true,
           }}
@@ -819,6 +1345,7 @@ export default function RootLayout() {
           name="GenericAppletView" 
           component={GenericAppletView}
           options={({ route }) => ({
+            ...heroDestinationScreenOptions('GenericAppletView'),
             title: (route.params as { name?: string })?.name || 'Applet',
             headerShown: true,
             headerStyle: {
@@ -870,6 +1397,7 @@ export default function RootLayout() {
           name="MyBuys" 
           component={MyBuys}
           options={{
+            ...heroDestinationScreenOptions('MyBuys'),
             title: 'My Apps',
             headerShown: true,
             headerStyle: {
@@ -904,6 +1432,7 @@ export default function RootLayout() {
           name="ViewMyBuysApplet" 
           component={ViewMyBuysApplet}
           options={{
+            ...heroDestinationScreenOptions('ViewMyBuysApplet'),
             title: '', // Title will be set by component once applet name loads
             headerShown: true,
           }}
@@ -912,6 +1441,7 @@ export default function RootLayout() {
           name="Sigmanauts" 
           component={Sigmanauts}
           options={{
+            ...heroDestinationScreenOptions('Sigmanauts'),
             title: 'Sigmanauts',
             headerShown: true,
             headerStyle: {
@@ -931,6 +1461,7 @@ export default function RootLayout() {
           name="AI" 
           component={AI}
           options={{
+            ...heroDestinationScreenOptions('AI'),
             title: 'AI',
             headerShown: true,
             headerStyle: {
@@ -950,6 +1481,7 @@ export default function RootLayout() {
           name="Dashboards" 
           component={Dashboards}
           options={{
+            ...heroDestinationScreenOptions('Dashboards'),
             title: 'Dashboards',
             headerShown: true,
             headerStyle: {
@@ -969,6 +1501,7 @@ export default function RootLayout() {
           name="Apps" 
           component={Apps}
           options={{
+            ...heroDestinationScreenOptions('Apps'),
             title: 'Apps',
             headerShown: true,
             headerStyle: {
@@ -1004,30 +1537,42 @@ export default function RootLayout() {
       </Stack.Navigator>
       <Toast />
     </NavigationContainer>
+      )}
+      {!hasExited && (
+        <LoadingScreen
+          shouldExit={isExiting}
+          onExitComplete={() => setHasExited(true)}
+          coordinateWithLoginLogo={initialRoute === 'Login'}
+        />
+      )}
+      {hasExited && (
+        <MagicLinkVerifyingOverlay visible={isVerifyingMagicLink} />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  rootContainer: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
+  },
+  /**
+   * Absolute-fill overlay that mirrors the native splash (same image, same
+   * white background from app.json). It sits on top of the navigator and
+   * fades/zooms out to reveal the first screen beneath.
+   */
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  loadingBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
   },
-  loadingText: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginTop: spacing.lg,
-    textAlign: 'center',
-  },
-  loadingSubtext: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-    textAlign: 'center',
+  zetaIcon: {
+    width: 310,
+    height: 310,
   },
 });

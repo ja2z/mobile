@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
   TouchableOpacity,
   StatusBar,
   KeyboardAvoidingView,
@@ -11,6 +11,8 @@ import {
   Image,
   ActivityIndicator,
   ScrollView,
+  Animated,
+  LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -23,8 +25,11 @@ import { AuthService } from '../../services/AuthService';
 import { ActivityService } from '../../services/ActivityService';
 import { sha256 } from 'js-sha256';
 import { BackdoorPasswordModal } from '../../components/BackdoorPasswordModal';
+import { setLoginLogoTarget, loginLogoOpacity } from '../../constants/LoginLogoTransition';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
+
+const DEFAULT_DOMAIN = 'sigmacomputing.com';
 
 /**
  * Login Screen Component
@@ -33,7 +38,7 @@ type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'
 export default function Login() {
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const [username, setUsername] = useState('');
-  const [domain, setDomain] = useState('sigmacomputing.com');
+  const [domain, setDomain] = useState(DEFAULT_DOMAIN);
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [domainFocused, setDomainFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,9 +49,89 @@ export default function Login() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [storedUsernameHash, setStoredUsernameHash] = useState<string | null>(null);
   const [storedSecureEmail, setStoredSecureEmail] = useState<string | null>(null);
+  const [domainTextWidth, setDomainTextWidth] = useState(0);
   const usernameInputRef = useRef<TextInput>(null);
   const domainInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const logoContainerRef = useRef<View>(null);
+  const errorOpacity = useRef(new Animated.Value(0)).current;
+  const errorDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Publish the logo's window-space center + size so the splash-exit animation
+   * can scale/translate its overlay logo to land exactly on top of this one.
+   * onLayout fires before iOS finishes compositing on some devices; one RAF
+   * guarantees measureInWindow returns stable coordinates.
+   */
+  const handleLogoLayout = () => {
+    requestAnimationFrame(() => {
+      logoContainerRef.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0 && h > 0) {
+          setLoginLogoTarget({
+            centerX: x + w / 2,
+            centerY: y + h / 2,
+            size: w,
+          });
+        }
+      });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      setLoginLogoTarget(null);
+    };
+  }, []);
+
+  /**
+   * Fade the error banner out, then clear the error state. Also clears any
+   * pending auto-dismiss timer so it can't fire on top of a manual dismiss.
+   */
+  const dismissError = () => {
+    if (errorDismissTimerRef.current) {
+      clearTimeout(errorDismissTimerRef.current);
+      errorDismissTimerRef.current = null;
+    }
+    Animated.timing(errorOpacity, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setError(null);
+      }
+    });
+  };
+
+  /**
+   * Whenever a new error appears, fade the banner in and schedule an
+   * auto-dismiss ~3s later. Clearing the error from elsewhere (typing,
+   * focusing an input, a successful submit) goes through dismissError().
+   */
+  useEffect(() => {
+    if (error) {
+      Animated.timing(errorOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+
+      if (errorDismissTimerRef.current) {
+        clearTimeout(errorDismissTimerRef.current);
+      }
+      errorDismissTimerRef.current = setTimeout(() => {
+        dismissError();
+      }, 3000);
+    }
+
+    return () => {
+      if (errorDismissTimerRef.current) {
+        clearTimeout(errorDismissTimerRef.current);
+        errorDismissTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   const isValidEmail = (email: string) => {
     return email.includes('@') && email.length > 3 && email.split('@').length === 2;
@@ -63,9 +148,15 @@ export default function Login() {
 
   const handleLogin = async () => {
     const completeEmail = getCompleteEmail();
-    
+
     if (!isValidEmail(completeEmail)) {
-      setError('Please enter a valid email address');
+      if (!username.trim()) {
+        setError('Please enter your email first.');
+      } else if (!domain.trim()) {
+        setError('Please enter a domain.');
+      } else {
+        setError('Please enter a valid email address.');
+      }
       return;
     }
 
@@ -210,30 +301,31 @@ export default function Login() {
     setStoredSecureEmail(null);
   };
 
-  // Clear error when user starts typing, but debounce to prevent jitter
   const handleUsernameChange = (text: string) => {
     setUsername(text);
-    // Clear error on next tick to avoid layout recalculations during typing
     if (error) {
-      requestAnimationFrame(() => {
-        setError(null);
-      });
+      dismissError();
     }
   };
 
   const handleDomainChange = (text: string) => {
     setDomain(text);
-    // Clear error on next tick to avoid layout recalculations during typing
     if (error) {
-      requestAnimationFrame(() => {
-        setError(null);
-      });
+      dismissError();
+    }
+  };
+
+  const handleDomainMeasure = (e: LayoutChangeEvent) => {
+    const w = Math.ceil(e.nativeEvent.layout.width);
+    if (w > 0 && w !== domainTextWidth) {
+      setDomainTextWidth(w);
     }
   };
 
   const completeEmail = getCompleteEmail();
   const isFocused = usernameFocused || domainFocused;
   const canSubmit = isValidEmail(completeEmail);
+  const isDomainDefault = domain === DEFAULT_DOMAIN;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -254,26 +346,36 @@ export default function Login() {
           bounces={false}
         >
           <View style={styles.content}>
+          {/* Top Spacer */}
+          <View style={styles.spacer} />
+
           {/* Header Section with Branding */}
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Image 
-                source={require('../../assets/login-papercrane.png')}
-                style={styles.logo}
-                resizeMode="contain"
-                accessibilityIgnoresInvertColors
-                accessibilityLabel="Sigma paper crane"
-              />
+            <View
+              ref={logoContainerRef}
+              style={styles.logoContainer}
+              onLayout={handleLogoLayout}
+              collapsable={false}
+            >
+              <Animated.View style={[styles.logo, { opacity: loginLogoOpacity }]}>
+                <Image
+                  source={require('../../assets/zeta_solid_purple_6B2A87_1024x1024_cropped_transparent.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                  resizeMethod="scale"
+                  fadeDuration={0}
+                  accessibilityIgnoresInvertColors
+                  accessibilityLabel="Zeta logo"
+                />
+              </Animated.View>
             </View>
             <Text style={styles.appName}>{Config.APP_NAME}</Text>
-            <Text style={styles.welcomeText}>Welcome</Text>
           </View>
 
           {/* Login Form */}
           <View style={styles.formContainer}>
             {/* Email Input */}
             <View style={styles.inputContainer} collapsable={false}>
-              <Text style={styles.inputLabel}>Email Address</Text>
               <View 
                 style={[
                   styles.inputRow,
@@ -281,7 +383,7 @@ export default function Login() {
                 ]}
                 collapsable={false}
               >
-                {/* Username Input (30%) */}
+                {/* Username Input (flexes to fill leftover row width) */}
                 <View style={styles.usernameWrapper} pointerEvents="box-none" collapsable={false}>
                   <TextInput
                     ref={usernameInputRef}
@@ -290,7 +392,10 @@ export default function Login() {
                     placeholderTextColor={colors.textSecondary}
                     value={username}
                     onChangeText={handleUsernameChange}
-                    onFocus={() => setUsernameFocused(true)}
+                    onFocus={() => {
+                      setUsernameFocused(true);
+                      if (error) dismissError();
+                    }}
                     onBlur={() => setUsernameFocused(false)}
                     keyboardType="default"
                     autoCapitalize="none"
@@ -299,6 +404,8 @@ export default function Login() {
                     textAlignVertical="center"
                     editable={!loading}
                     selectTextOnFocus={false}
+                    accessibilityLabel="Email address, username"
+                    accessibilityHint="Enter the part of your email before the at sign"
                     importantForAccessibility="yes"
                   />
                 </View>
@@ -306,16 +413,29 @@ export default function Login() {
                 {/* @ Symbol */}
                 <Text style={styles.atSymbol}>@</Text>
                 
-                {/* Domain Input (remaining) */}
-                <View style={styles.domainWrapper} pointerEvents="box-none" collapsable={false}>
+                {/* Domain Input (sized to content so username can use remaining space) */}
+                <View
+                  style={[
+                    styles.domainWrapper,
+                    domainTextWidth > 0 && { width: domainTextWidth + spacing.xs + spacing.sm + 2 },
+                  ]}
+                  pointerEvents="box-none"
+                  collapsable={false}
+                >
                   <TextInput
                     ref={domainInputRef}
-                    style={styles.domainInput}
+                    style={[
+                      styles.domainInput,
+                      isDomainDefault && styles.domainInputDefault,
+                    ]}
                     placeholder="domain.com"
                     placeholderTextColor={colors.textSecondary}
                     value={domain}
                     onChangeText={handleDomainChange}
-                    onFocus={() => setDomainFocused(true)}
+                    onFocus={() => {
+                      setDomainFocused(true);
+                      if (error) dismissError();
+                    }}
                     onBlur={() => setDomainFocused(false)}
                     keyboardType="default"
                     autoCapitalize="none"
@@ -324,18 +444,38 @@ export default function Login() {
                     textAlignVertical="center"
                     editable={!loading}
                     selectTextOnFocus={false}
+                    accessibilityLabel="Email address, domain"
+                    accessibilityHint="Enter the part of your email after the at sign. Defaults to sigmacomputing.com."
                     importantForAccessibility="yes"
                   />
                 </View>
+
+                {/* Off-screen measurer: picks up the intrinsic width of whatever
+                    the domain input is displaying so the domain column can size
+                    to content and the username column can claim the leftover
+                    space instead of truncating with an ellipsis. */}
+                <Text
+                  style={styles.domainMeasure}
+                  numberOfLines={1}
+                  onLayout={handleDomainMeasure}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  pointerEvents="none"
+                >
+                  {domain.length > 0 ? domain : 'domain.com'}
+                </Text>
               </View>
             </View>
 
             {/* Error/Success Messages - Positioned absolutely to not affect layout */}
             {error && (
-              <View style={styles.errorContainerAbsolute} pointerEvents="none">
+              <Animated.View
+                style={[styles.errorContainerAbsolute, { opacity: errorOpacity }]}
+                pointerEvents="none"
+              >
                 <Ionicons name="alert-circle" size={20} color={colors.error} />
                 <Text style={styles.errorText}>{error}</Text>
-              </View>
+              </Animated.View>
             )}
 
             {success && (
@@ -347,11 +487,6 @@ export default function Login() {
               </View>
             )}
 
-            {/* Subtitle moved below email input */}
-            <Text style={styles.subtitle}>
-              Sign in to access your data
-            </Text>
-
             {/* Submit Button */}
             <TouchableOpacity
               style={[
@@ -359,8 +494,9 @@ export default function Login() {
                 (!canSubmit || loading) && styles.submitButtonDisabled
               ]}
               onPress={handleLogin}
-              disabled={!canSubmit || loading}
+              disabled={loading}
               activeOpacity={0.8}
+              accessibilityState={{ disabled: !canSubmit || loading }}
             >
               {loading ? (
                 <ActivityIndicator color={colors.textPrimary} size="large" />
@@ -371,14 +507,9 @@ export default function Login() {
                 </>
               )}
             </TouchableOpacity>
-
-            {/* Info Text */}
-            <Text style={styles.infoText}>
-              We'll send you a secure magic link to sign in
-            </Text>
           </View>
 
-          {/* Spacer */}
+          {/* Bottom Spacer */}
           <View style={styles.spacer} />
           </View>
         </ScrollView>
@@ -413,23 +544,19 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.xl,
   },
   header: {
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginTop: 0,
     marginBottom: spacing.md,
   },
   logoContainer: {
     width: 240,
     height: 240,
-    borderRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
-    ...shadows.medium,
+    marginBottom: spacing.xl,
   },
   logo: {
     width: '100%',
@@ -438,34 +565,14 @@ const styles = StyleSheet.create({
   appName: {
     ...typography.h1,
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  welcomeText: {
-    ...typography.h2,
-    color: colors.accentBlue,
     marginBottom: spacing.sm,
   },
-  subtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    maxWidth: 300,
-    lineHeight: 24,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
   formContainer: {
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     position: 'relative',
   },
   inputContainer: {
     marginBottom: spacing.lg,
-  },
-  inputLabel: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
   },
   inputRow: {
     flexDirection: 'row',
@@ -482,7 +589,8 @@ const styles = StyleSheet.create({
     ...shadows.small,
   },
   usernameWrapper: {
-    width: '30%',
+    flex: 1,
+    minWidth: 60,
     backgroundColor: 'transparent',
     justifyContent: 'center',
   },
@@ -511,9 +619,9 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   domainWrapper: {
-    flex: 1,
     backgroundColor: 'transparent',
     minWidth: 0,
+    flexShrink: 0,
     justifyContent: 'center',
   },
   domainInput: {
@@ -528,6 +636,18 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
     flex: 1,
+  },
+  domainInputDefault: {
+    color: colors.textSecondary,
+  },
+  domainMeasure: {
+    position: 'absolute',
+    left: -10000,
+    top: 0,
+    opacity: 0,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
+    includeFontPadding: false,
   },
   submitButton: {
     flexDirection: 'row',
@@ -552,21 +672,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginRight: spacing.sm,
   },
-  infoText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    lineHeight: 20,
-  },
   spacer: {
     flex: 1,
   },
   errorContainerAbsolute: {
     position: 'absolute',
-    top: -70,
+    top: '100%',
     left: 0,
     right: 0,
+    marginTop: spacing.lg + spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF2F2',
@@ -582,9 +696,10 @@ const styles = StyleSheet.create({
   },
   successContainerAbsolute: {
     position: 'absolute',
-    top: -70,
+    top: '100%',
     left: 0,
     right: 0,
+    marginTop: spacing.lg + spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDF4',

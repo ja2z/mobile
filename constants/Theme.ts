@@ -1,6 +1,6 @@
 /**
  * Design System Theme
- * Light theme with black as the dominant color and steel-blue / copper / magenta accents.
+ * Light theme with black as the dominant color and purple / copper / magenta accents.
  */
 
 export const colors = {
@@ -9,9 +9,9 @@ export const colors = {
   primaryDark: '#333333',
   primaryLight: '#F0F0F0',
 
-  // Brand accents (derived from papercrane icon)
-  accentBlue: '#3B6FA0',
-  accentBlueLight: '#EBF0F7',
+  // Brand accents (derived from zeta icon)
+  accentBlue: '#6B2A87',
+  accentBlueLight: '#F0E6F5',
   accentCopper: '#B87840',
   accentCopperLight: '#FBF3EA',
   accentMagenta: '#A03068',

@@ -25,10 +25,10 @@ const PRESET_THEME_IDS = new Set<string>([
 
 /**
  * My Apps applet accent swatches — full hue range so users can pick any vibe.
- * Default `teal` uses brand steel-blue; app chrome elsewhere stays neutral + accentBlue.
+ * Default `teal` uses brand purple; app chrome elsewhere stays neutral + accentBlue.
  */
 export const APPLET_THEME_OPTIONS: { id: AppletPresetThemeId; label: string; color: string }[] = [
-  { id: 'teal', label: 'Steel Blue', color: colors.accentBlue },
+  { id: 'teal', label: 'Brand Purple', color: colors.accentBlue },
   { id: 'indigo', label: 'Indigo', color: '#4F46E5' },
   { id: 'violet', label: 'Violet', color: '#A855F7' },
   { id: 'blue', label: 'Blue', color: '#2563EB' },
@@ -52,7 +52,7 @@ function mixHex(a: string, b: string, t: number): string {
 const SLATE_NEUTRAL = '#94A3B8';
 
 /**
- * Blend API-provided tile chroma toward slate so catalog cards stay subdued (accent is accentBlue elsewhere).
+ * Blend API-provided tile chroma toward slate so catalog cards stay subdued (accent is brand purple elsewhere).
  */
 export function softenDisplayAccent(hex: string | undefined | null, fallbackHex: string): string {
   const raw = (hex && hex.trim()) || '';

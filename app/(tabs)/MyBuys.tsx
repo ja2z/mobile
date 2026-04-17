@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +22,10 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../consta
 import { getAppletAccentColor, appletAccentMutedBackground } from '../../constants/AppletThemes';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysService } from '../../services/MyBuysService';
+import {
+  clearCardHeroSourceForRoute,
+  setCardHeroSourceForRoute,
+} from '../../constants/CardHeroTransition';
 import type { Applet } from '../../types/mybuys.types';
 import type { RootStackParamList } from '../_layout';
 
@@ -33,9 +37,27 @@ type MyBuysScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MyBuy
  */
 export default function MyBuys() {
   const navigation = useNavigation<MyBuysScreenNavigationProp>();
+  const route = useRoute();
   const [applets, setApplets] = useState<Applet[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [hiddenHeroTileId, setHiddenHeroTileId] = useState<string | null>(null);
+  const tileInnerRefs = useRef<Map<string, View>>(new Map());
+
+  // Re-reveal hero source tile when this screen regains focus after the
+  // ViewMyBuysApplet destination is popped.
+  useFocusEffect(
+    useCallback(() => {
+      setHiddenHeroTileId(null);
+    }, []),
+  );
+
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   /**
    * Load applets from API
@@ -111,10 +133,43 @@ export default function MyBuys() {
   }, [loadApplets]);
 
   /**
-   * Handle applet press - navigate to view screen
+   * Handle applet press - measure the tapped card, publish a hero source
+   * so the root overlay can morph it into the embed screen, then navigate.
    */
-  const handleAppletPress = useCallback((applet: Applet) => {
-    navigation.navigate('ViewMyBuysApplet' as never, { appletId: applet.appletId } as never);
+  const handleAppletPress = useCallback((applet: Applet, accent: string, iconBg: string) => {
+    const doNavigate = () =>
+      navigation.navigate('ViewMyBuysApplet' as never, { appletId: applet.appletId } as never);
+
+    const node = tileInnerRefs.current.get(applet.appletId);
+    if (!node) {
+      doNavigate();
+      return;
+    }
+    try { Haptics.selectionAsync(); } catch {}
+    node.measureInWindow((x, y, width, height) => {
+      if (!width || !height) {
+        doNavigate();
+        return;
+      }
+      setCardHeroSourceForRoute('ViewMyBuysApplet', {
+        rect: { x, y, width, height },
+        cornerRadius: borderRadius.md,
+        tileBg: colors.background,
+        accentColor: accent,
+        accentBarHeight: 6,
+        // ViewMyBuysApplet uses the primary header color.
+        landingColor: colors.primary,
+        title: applet.name,
+        subtitle: applet.secretName || undefined,
+        iconName: 'layers-outline',
+        iconColor: colors.primary,
+        iconBgColor: iconBg,
+        iconSize: 24,
+        variant: 'L2',
+      });
+      setHiddenHeroTileId(applet.appletId);
+      doNavigate();
+    });
   }, [navigation]);
 
   /**
@@ -174,13 +229,20 @@ export default function MyBuys() {
     const orgName = applet.secretName || MyBuysService.extractSecretNameFromUrl(applet.embedUrl) || 'Custom Embed';
     const accent = getAppletAccentColor(applet.themeId, applet.themeCustomHex);
     const iconBg = appletAccentMutedBackground(accent);
+    const isHiddenForHero = hiddenHeroTileId === applet.appletId;
 
     return (
       <View key={applet.appletId} style={styles.tileButton}>
-        <View style={styles.tile}>
+        <View
+          ref={(node) => {
+            if (node) tileInnerRefs.current.set(applet.appletId, node);
+            else tileInnerRefs.current.delete(applet.appletId);
+          }}
+          style={[styles.tile, isHiddenForHero && styles.tileHidden]}
+        >
           <TouchableOpacity
             style={styles.tileMainPress}
-            onPress={() => handleAppletPress(applet)}
+            onPress={() => handleAppletPress(applet, accent, iconBg)}
             activeOpacity={0.7}
             accessibilityLabel={`Open ${applet.name}`}
             accessibilityRole="button"
@@ -251,8 +313,7 @@ export default function MyBuys() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <StatusBar barStyle="light-content" />
-      
-      {/* Content */}
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accentBlue} />
@@ -340,6 +401,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     overflow: 'hidden',
     ...shadows.medium,
+  },
+  tileHidden: {
+    opacity: 0,
   },
   tileMainPress: {
     flex: 1,

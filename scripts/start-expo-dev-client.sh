@@ -5,6 +5,17 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# Pass-through extra args (e.g. --tunnel for networks with client isolation like guest Wi‑Fi).
+# Usage: ./scripts/start-expo-dev-client.sh           # normal LAN mode
+#        ./scripts/start-expo-dev-client.sh --tunnel  # tunnel mode (bypasses LAN restrictions)
+EXTRA_ARGS=("$@")
+USE_TUNNEL=0
+for arg in "${EXTRA_ARGS[@]}"; do
+  if [[ "$arg" == "--tunnel" ]]; then
+    USE_TUNNEL=1
+  fi
+done
+
 # Default Metro port (override with RCT_METRO_PORT or METRO_PORT if you use a different one)
 METRO_PORT="${RCT_METRO_PORT:-${METRO_PORT:-8081}}"
 
@@ -38,6 +49,14 @@ if _ip=$(local_ipv4); then
 fi
 
 print_lan_urls() {
+  if [[ "$USE_TUNNEL" == "1" ]]; then
+    echo ""
+    echo "  Expo (dev client) — TUNNEL MODE (works on any network, incl. guest Wi‑Fi):"
+    echo "    Scan the QR code above from the Zeta dev client."
+    echo "    Or use the exp://...exp.direct URL shown by Expo above."
+    echo ""
+    return
+  fi
   if [[ -n "${LOCAL_IP:-}" ]]; then
     echo ""
     echo "  Expo (dev client) — connect from a device on the same Wi‑Fi:"
@@ -68,4 +87,4 @@ cleanup() {
 }
 trap cleanup EXIT
 
-npx expo start --dev-client --clear
+npx expo start --dev-client --clear "${EXTRA_ARGS[@]}"

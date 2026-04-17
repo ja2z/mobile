@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -9,6 +9,7 @@ import { DashboardView, DashboardViewRef } from '../../components/DashboardView'
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 
 type GenericAppletViewRouteProp = RouteProp<RootStackParamList, 'GenericAppletView'>;
@@ -48,6 +49,12 @@ export default function GenericAppletView() {
   }, [navigation]);
 
   useAppletHeader(navigation, handleHomePress);
+
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>

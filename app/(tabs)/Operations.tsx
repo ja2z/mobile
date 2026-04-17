@@ -11,6 +11,7 @@ import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { InventoryVerificationModal } from '../../components/InventoryVerificationModal';
 import { OperationsNavigationBar } from '../../components/OperationsNavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { InventoryVerificationData } from '../../types/inventory.types';
 import { colors, spacing } from '../../constants/Theme';
 
@@ -235,6 +236,12 @@ export default function Operations() {
       });
     }
   }, [handleInventoryVerification]);
+
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>

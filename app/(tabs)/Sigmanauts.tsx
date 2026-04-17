@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -10,6 +10,10 @@ import { appletAccentMutedBackground, getAppletAccentColor } from '../../constan
 import { useAppletHeader } from '../../hooks/useAppletHeader';
 import { useHubPersonalizations } from '../../hooks/useHubPersonalizations';
 import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
+import {
+  clearCardHeroSourceForRoute,
+  setCardHeroSourceForRoute,
+} from '../../constants/CardHeroTransition';
 import type { RootStackParamList } from '../_layout';
 
 type SigmanautsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Sigmanauts'>;
@@ -23,10 +27,26 @@ const SPINNER_DELAY_MS = 200;
  */
 export default function Sigmanauts() {
   const navigation = useNavigation<SigmanautsScreenNavigationProp>();
+  const route = useRoute();
   const [applets, setApplets] = useState<BuiltInApplet[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSpinner, setShowSpinner] = useState(false);
   const spinnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [hiddenHeroTileId, setHiddenHeroTileId] = useState<string | null>(null);
+  const tileInnerRefs = useRef<Map<string, View>>(new Map());
+
+  useFocusEffect(
+    useCallback(() => {
+      setHiddenHeroTileId(null);
+    }, []),
+  );
+
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   useEffect(() => {
     spinnerTimeoutRef.current = setTimeout(() => {
@@ -72,7 +92,7 @@ export default function Sigmanauts() {
   );
 
   const navigateToApplet = useCallback(
-    (applet: BuiltInApplet) => {
+    (applet: BuiltInApplet, accent: string, displayName: string) => {
       const params = {
         appletId: applet.applet_id,
         appletName: applet.name,
@@ -83,7 +103,38 @@ export default function Sigmanauts() {
         pageId: applet.initial_page_id || undefined,
       };
       const screen = applet.target_screen === 'conversationalai' ? 'ConversationalAI' : applet.target_screen;
-      navigation.navigate(screen as keyof RootStackParamList, params as never);
+      const routeName = screen as keyof RootStackParamList;
+      const doNavigate = () => navigation.navigate(routeName, params as never);
+
+      const node = tileInnerRefs.current.get(applet.applet_id);
+      if (!node) {
+        doNavigate();
+        return;
+      }
+      try { Haptics.selectionAsync(); } catch {}
+      node.measureInWindow((x, y, width, height) => {
+        if (!width || !height) {
+          doNavigate();
+          return;
+        }
+        setCardHeroSourceForRoute(routeName, {
+          rect: { x, y, width, height },
+          cornerRadius: borderRadius.md,
+          tileBg: colors.background,
+          accentColor: accent,
+          accentBarHeight: 6,
+          landingColor: colors.primary,
+          title: displayName,
+          subtitle: applet.subtitle || undefined,
+          iconName: (applet.icon_name as keyof typeof Ionicons.glyphMap) || 'grid-outline',
+          iconColor: colors.primary,
+          iconBgColor: appletAccentMutedBackground(accent, 0.18),
+          iconSize: 24,
+          variant: 'L2',
+        });
+        setHiddenHeroTileId(applet.applet_id);
+        doNavigate();
+      });
     },
     [navigation]
   );
@@ -94,17 +145,24 @@ export default function Sigmanauts() {
       ? getAppletAccentColor(ov.themeId, ov.themeCustomHex)
       : colors.accentBlue;
     const displayName = ov?.displayName || applet.name;
+    const isHiddenForHero = hiddenHeroTileId === applet.applet_id;
 
     return (
       <TouchableOpacity
         key={applet.applet_id}
         style={styles.tileButton}
-        onPress={() => navigateToApplet(applet)}
+        onPress={() => navigateToApplet(applet, accent, displayName)}
         activeOpacity={0.7}
         accessibilityLabel={`${displayName} - ${applet.subtitle || ''}`}
         accessibilityRole="button"
       >
-        <View style={styles.tile}>
+        <View
+          ref={(node) => {
+            if (node) tileInnerRefs.current.set(applet.applet_id, node);
+            else tileInnerRefs.current.delete(applet.applet_id);
+          }}
+          style={[styles.tile, isHiddenForHero && styles.tileHidden]}
+        >
           <View style={[styles.tileAccent, { backgroundColor: accent }]} />
           <TouchableOpacity
             style={styles.tileEditButton}
@@ -200,6 +258,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     overflow: 'hidden',
     ...shadows.medium,
+  },
+  tileHidden: {
+    opacity: 0,
   },
   tileAccent: {
     height: 6,

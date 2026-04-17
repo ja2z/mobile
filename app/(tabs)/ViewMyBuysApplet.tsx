@@ -9,6 +9,7 @@ import { MyBuysService } from '../../services/MyBuysService';
 import { DashboardView, DashboardViewRef, SkeletonPlaceholder } from '../../components/DashboardView';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { MyBuysPageFooter, MyBuysPage } from '../../components/MyBuysPageFooter';
 import { colors, spacing, typography } from '../../constants/Theme';
 import { getAppletAccentColor } from '../../constants/AppletThemes';
@@ -206,6 +207,12 @@ export default function ViewMyBuysApplet() {
       setLoading(false);
     }
   }, [appletId, deepLinkPageId]);
+
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   if (loading) {
     return (

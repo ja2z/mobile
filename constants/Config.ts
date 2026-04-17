@@ -14,7 +14,7 @@ export const Config = {
   },
   
   // App configuration
-  APP_NAME: 'Zambini',
+  APP_NAME: 'Zeta',
   
   // Navigation configuration
   NAVIGATION: {

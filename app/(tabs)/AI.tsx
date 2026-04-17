@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -9,6 +9,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../consta
 import { appletAccentMutedBackground, getAppletAccentColor } from '../../constants/AppletThemes';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
 import { useHubPersonalizations } from '../../hooks/useHubPersonalizations';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { listBuiltInApplets, type BuiltInApplet } from '../../services/BuiltInAppletsService';
 import type { RootStackParamList } from '../_layout';
 
@@ -23,6 +24,7 @@ const SPINNER_DELAY_MS = 200;
  */
 export default function AI() {
   const navigation = useNavigation<AIScreenNavigationProp>();
+  const route = useRoute();
   const [applets, setApplets] = useState<BuiltInApplet[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSpinner, setShowSpinner] = useState(false);
@@ -37,6 +39,14 @@ export default function AI() {
       if (spinnerTimeoutRef.current) clearTimeout(spinnerTimeoutRef.current);
     };
   }, []);
+
+  // Clear this screen's hero source (set by Home's AI tile) on unmount so
+  // a later deep-link nav doesn't reuse the stale source rect.
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   useEffect(() => {
     listBuiltInApplets()

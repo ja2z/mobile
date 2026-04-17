@@ -12,6 +12,8 @@ import { AuthService } from '../../services/AuthService';
 import { ActivityService } from '../../services/ActivityService';
 import { ProfileMenu } from '../../components/ProfileMenu';
 import type { RootStackParamList } from '../_layout';
+import { setCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -22,6 +24,15 @@ interface AppTile {
   description: string;
   iconName: keyof typeof Ionicons.glyphMap;
   isActive: boolean;
+  /** Color the hero overlay settles into (matches destination header). */
+  landingColor: string;
+  /**
+   * Destination route name used to key the hero source in the per-route
+   * bus. When present, pressing the tile publishes a source for this route
+   * so the destination's `cardStyleInterpolator` can scale in from the
+   * tile's rect.
+   */
+  routeName?: keyof RootStackParamList;
   onPress?: () => void;
 }
 
@@ -39,6 +50,30 @@ export default function Home() {
 
   // State for selected tile
   const [selectedTile, setSelectedTile] = useState<AppTile | null>(null);
+
+  /**
+   * ID of the tile that's currently the source of an in-flight hero
+   * transition. Its rendered opacity drops to 0 while the destination
+   * scales in over the same rect so we don't see a "ghost" card behind
+   * the shrinking destination on back. Cleared when Home regains focus
+   * (after the destination is popped).
+   */
+  const [hiddenHeroTileId, setHiddenHeroTileId] = useState<string | null>(null);
+
+  const tileInnerRefs = useRef<Map<string, View>>(new Map());
+
+  /**
+   * Re-reveal the source tile when Home regains focus (the destination
+   * has been popped off the stack). While Home is blurred (a destination
+   * sits on top), we intentionally leave the tile hidden so the back
+   * transition shrinks a full-size card back onto an empty slot rather
+   * than an already-visible duplicate.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setHiddenHeroTileId(null);
+    }, []),
+  );
   
   // Animation values
   const detailViewOpacity = useRef(new Animated.Value(0)).current;
@@ -119,6 +154,8 @@ export default function Home() {
       description: 'Create and manage your own custom Sigma workbook embeds. Build personalized dashboards tailored to your needs.',
       iconName: 'layers-outline',
       isActive: true,
+      landingColor: colors.folderSections.myBuys,
+      routeName: 'MyBuys',
       onPress: handleNavigateToMyBuys,
     },
     { 
@@ -128,6 +165,8 @@ export default function Home() {
       description: 'Access Sigma employee tools and resources. Available only for @sigmacomputing.com email addresses.',
       iconName: 'people-outline',
       isActive: true,
+      landingColor: colors.folderSections.sigmanauts,
+      routeName: 'Sigmanauts',
       onPress: isSigmaEmployee ? handleNavigateToSigmanauts : undefined,
     },
     { 
@@ -137,6 +176,8 @@ export default function Home() {
       description: 'Access AI-powered tools and assistants. Chat with AI, query data, read newsletters, and get intelligent insights.',
       iconName: 'sparkles-outline',
       isActive: true,
+      landingColor: colors.folderSections.ai,
+      routeName: 'AI',
       onPress: handleNavigateToAI,
     },
     { 
@@ -146,6 +187,8 @@ export default function Home() {
       description: 'View executive dashboards and data visualizations. Get insights on the go with real-time data.',
       iconName: 'bar-chart-outline',
       isActive: true,
+      landingColor: colors.folderSections.dashboards,
+      routeName: 'Dashboards',
       onPress: handleNavigateToDashboards,
     },
     { 
@@ -155,6 +198,8 @@ export default function Home() {
       description: 'Access workflow and operations applications. Streamline your work with powerful tools.',
       iconName: 'apps-outline',
       isActive: true,
+      landingColor: colors.folderSections.apps,
+      routeName: 'Apps',
       onPress: handleNavigateToApps,
     },
   ];
@@ -245,12 +290,56 @@ export default function Home() {
     });
   };
 
+  /**
+   * Measure the tapped tile in window coords, publish a `CardHeroSource`
+   * for the destination route so that route's `cardStyleInterpolator` can
+   * scale the destination card in from the tile's rect, hide the source
+   * tile for the duration of the transition, then navigate. Falls back to
+   * a plain navigate if the tile isn't measurable or has no routeName.
+   */
+  const triggerHeroNavigate = (tile: AppTile) => {
+    const node = tileInnerRefs.current.get(tile.id);
+    if (!node || !tile.onPress || !tile.routeName) {
+      tile.onPress?.();
+      return;
+    }
+    const routeName = tile.routeName;
+    node.measureInWindow((x, y, width, height) => {
+      if (!width || !height) {
+        tile.onPress?.();
+        return;
+      }
+      setCardHeroSourceForRoute(routeName, {
+        rect: { x, y, width, height },
+        cornerRadius: borderRadius.md,
+        tileBg: colors.background,
+        accentColor: colors.accentBlue,
+        accentBarHeight: 6,
+        landingColor: tile.landingColor,
+        title: tile.title,
+        subtitle: tile.subtitle,
+        iconName: tile.iconName,
+        iconColor: colors.primary,
+        iconBgColor: appletAccentMutedBackground(colors.accentBlue, 0.18),
+        iconSize: 24,
+        variant: 'L1',
+      });
+      setHiddenHeroTileId(tile.id);
+      tile.onPress?.();
+    });
+  };
+
   const handleTilePress = (tile: AppTile) => {
-    // If tile is active and has onPress handler, navigate directly
+    // If tile is active and has onPress handler, trigger the hero transition.
     if (tile.isActive && tile.onPress) {
-      tile.onPress();
+      try {
+        Haptics.selectionAsync();
+      } catch {
+        // Haptics unavailable; proceed silently.
+      }
+      triggerHeroNavigate(tile);
     } else {
-      // Otherwise, show description modal
+      // Otherwise, show description modal.
       expandTile(tile);
     }
   };
@@ -390,54 +479,66 @@ export default function Home() {
           scrollEnabled={!selectedTile}
         >
           <View style={styles.grid}>
-            {appTiles.map((tile) => (
-              <TouchableOpacity
-                key={tile.id}
-                style={styles.tileButton}
-                onPress={() => handleTilePress(tile)}
-                onLongPress={() => handleTileLongPress(tile)}
-                activeOpacity={0.7}
-                accessibilityLabel={`${tile.title} - ${tile.subtitle}${tile.isActive && tile.onPress ? ' - Long press for description' : ''}`}
-                accessibilityRole="button"
-                disabled={!!selectedTile}
-              >
-                <View style={[styles.tile, { 
-                  opacity: (tile.id === 'sigmanauts' && !isSigmaEmployee) ? 0.4 : (tile.isActive ? 1 : 0.4)
-                }]}>
-                  {/* Color accent bar */}
-                  <View style={[styles.tileAccent, { backgroundColor: colors.accentBlue }]} />
-                  
-                  {/* Tile content */}
-                  <View style={styles.tileContent}>
-                    {/* Icon */}
-                    <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(colors.accentBlue, 0.18) }]}>
-                      {tile.id === 'sigmanauts' ? (
-                        <Image
-                          source={require('../../assets/sigma-logo-symbol-black.png')}
-                          style={styles.sigmaLogo}
-                          resizeMode="contain"
-                        />
-                      ) : (
-                        <Ionicons name={tile.iconName} size={24} color={colors.primary} />
-                      )}
-                    </View>
+            {appTiles.map((tile) => {
+              const isDim = tile.id === 'sigmanauts' && !isSigmaEmployee;
+              const baseOpacity = isDim ? 0.4 : (tile.isActive ? 1 : 0.4);
+              const isHiddenForHero = hiddenHeroTileId === tile.id;
+              return (
+                <TouchableOpacity
+                  key={tile.id}
+                  style={styles.tileButton}
+                  onPress={() => handleTilePress(tile)}
+                  onLongPress={() => handleTileLongPress(tile)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`${tile.title} - ${tile.subtitle}${tile.isActive && tile.onPress ? ' - Long press for description' : ''}`}
+                  accessibilityRole="button"
+                  disabled={!!selectedTile}
+                >
+                  <View
+                    ref={(node) => {
+                      if (node) tileInnerRefs.current.set(tile.id, node);
+                      else tileInnerRefs.current.delete(tile.id);
+                    }}
+                    style={[
+                      styles.tile,
+                      { opacity: isHiddenForHero ? 0 : baseOpacity },
+                    ]}
+                  >
+                    {/* Color accent bar */}
+                    <View style={[styles.tileAccent, { backgroundColor: colors.accentBlue }]} />
 
-                    {/* Text content */}
-                    <View style={styles.tileTextContainer}>
-                      <Text style={styles.tileTitle} numberOfLines={2}>
-                        {tile.title}
-                      </Text>
-                      <Text style={styles.tileSubtitle} numberOfLines={1}>
-                        {tile.subtitle}
-                      </Text>
-                      {!tile.isActive && (
-                        <Text style={styles.comingSoon}>Coming Soon</Text>
-                      )}
+                    {/* Tile content */}
+                    <View style={styles.tileContent}>
+                      {/* Icon */}
+                      <View style={[styles.iconContainer, { backgroundColor: appletAccentMutedBackground(colors.accentBlue, 0.18) }]}>
+                        {tile.id === 'sigmanauts' ? (
+                          <Image
+                            source={require('../../assets/sigma-logo-symbol-black.png')}
+                            style={styles.sigmaLogo}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <Ionicons name={tile.iconName} size={24} color={colors.primary} />
+                        )}
+                      </View>
+
+                      {/* Text content */}
+                      <View style={styles.tileTextContainer}>
+                        <Text style={styles.tileTitle} numberOfLines={2}>
+                          {tile.title}
+                        </Text>
+                        <Text style={styles.tileSubtitle} numberOfLines={1}>
+                          {tile.subtitle}
+                        </Text>
+                        {!tile.isActive && (
+                          <Text style={styles.comingSoon}>Coming Soon</Text>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </ScrollView>
       </Animated.View>

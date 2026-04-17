@@ -10,6 +10,7 @@ import { NavigationBar } from '../../components/NavigationBar';
 import { EmbedUrlInfoModal } from '../../components/EmbedUrlInfoModal';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 
 type DashboardRouteProp = RouteProp<RootStackParamList, 'Dashboard'>;
@@ -65,6 +66,14 @@ export default function Dashboard() {
   
   // Use custom hook for embed URL info modal and header button
   const { infoModalVisible, setInfoModalVisible, getEmbedUrl, getJWT } = useEmbedUrlInfo(dashboardRef);
+
+  // Clear this screen's hero source (published by its source list screen)
+  // on unmount so the bus is empty for the next forward navigation.
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   /**
    * Handle home button press

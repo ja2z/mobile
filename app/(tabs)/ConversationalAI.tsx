@@ -11,6 +11,7 @@ import { ChatModal, ChatModalRef } from '../../components/ChatModal';
 import { NavigationBar } from '../../components/NavigationBar';
 import { useEmbedUrlInfo } from '../../hooks/useEmbedUrlInfo';
 import { useAppletHeader } from '../../hooks/useAppletHeader';
+import { clearCardHeroSourceForRoute } from '../../constants/CardHeroTransition';
 import { colors } from '../../constants/Theme';
 import { ChatMessage } from '../../types/chat.types';
 
@@ -207,6 +208,13 @@ export default function ConversationalAI() {
       });
     }
   }, [handleChatOpen, handleChatResponse]);
+
+  // Clear this screen's hero source on unmount.
+  useEffect(() => {
+    return () => {
+      clearCardHeroSourceForRoute(route.name);
+    };
+  }, [route.name]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
