@@ -29,6 +29,17 @@ if [ -f "index.js" ]; then
 fi
 
 echo ""
+# tsconfig.json pulls ../shared/**/*.ts into the compile set, which means
+# tsc resolves `@aws-sdk/*` and `pg` imports in those files relative to
+# ../shared/. On a fresh clone that folder has no node_modules and tsc
+# fails with TS2307 even though admin-handler itself has the deps. Install
+# them once here - no-op on subsequent builds.
+if [ ! -d "../shared/node_modules" ]; then
+  echo "📦 Installing shared dependencies (lambdas/shared)..."
+  (cd ../shared && npm install)
+fi
+
+echo ""
 echo "📦 Installing dependencies..."
 npm install
 
