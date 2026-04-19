@@ -5,7 +5,7 @@
     "scheme": "bigbuys",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/zeta_candidate2_1024x1024.png",
+    "icon": "./assets/zeta_solid_purple_6B2A87_1024x1024_app_icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sigmacomputing.bigbuys",
-      "icon": "./assets/zeta_candidate2_1024x1024.png",
+      "icon": "./assets/zeta_solid_purple_6B2A87_1024x1024_app_icon.png",
       "associatedDomains": [
         "applinks:mobile.bigbuys.io"
       ],
