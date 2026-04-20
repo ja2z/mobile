@@ -7,6 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AdminService } from '../services/AdminService';
@@ -27,13 +31,18 @@ interface EditBuiltInAppletColorModalProps {
   visible: boolean;
   applet: BuiltInApplet | null;
   onClose: () => void;
-  onSaved: (updatedColor: string | null) => void;
+  /** Called with the updated applet after a successful save. */
+  onSaved: (updated: BuiltInApplet) => void;
 }
 
+const NAME_MAX_LENGTH = 120;
+const SUBTITLE_MAX_LENGTH = 240;
+
 /**
- * Edit Built-In Applet Color Modal
- * Admin-only: lets an admin pick / customize the global accent color for a
- * built-in applet. Persists to built_in_applets.color via AdminService.
+ * Edit Built-In Applet Modal
+ * Admin-only: lets an admin update the global display name, subtitle, and
+ * accent color for a built-in applet. Persists to built_in_applets via
+ * AdminService in a single call on Save.
  */
 export function EditBuiltInAppletColorModal({
   visible,
@@ -43,6 +52,8 @@ export function EditBuiltInAppletColorModal({
 }: EditBuiltInAppletColorModalProps) {
   const [themeId, setThemeId] = useState<AppletThemeId>('teal');
   const [customHex, setCustomHex] = useState<string>('#');
+  const [name, setName] = useState<string>('');
+  const [subtitle, setSubtitle] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -50,12 +61,25 @@ export function EditBuiltInAppletColorModal({
     const seed = themeFromStoredColor(applet.color);
     setThemeId(seed.themeId);
     setCustomHex(seed.themeCustomHex || '#');
+    setName(applet.name ?? '');
+    setSubtitle(applet.subtitle ?? '');
   }, [visible, applet]);
 
   const previewAccent = getAppletAccentColor(themeId, customHex);
+  const trimmedName = name.trim();
+  const trimmedSubtitle = subtitle.trim();
+  const nameChanged = !!applet && trimmedName !== (applet.name ?? '');
+  const subtitleChanged =
+    !!applet && trimmedSubtitle !== (applet.subtitle ?? '');
 
   const handleSave = async () => {
     if (!applet) return;
+
+    if (!trimmedName) {
+      Alert.alert('Name required', 'Please enter an applet name.');
+      return;
+    }
+
     const hex = resolveColorHexForSave(themeId, customHex);
     if (!hex) {
       Alert.alert(
@@ -64,14 +88,29 @@ export function EditBuiltInAppletColorModal({
       );
       return;
     }
+
     try {
       setSaving(true);
-      await AdminService.updateBuiltInAppletColor(applet.applet_id, hex);
+      const updates: {
+        name?: string;
+        subtitle?: string | null;
+        color?: string | null;
+      } = { color: hex };
+
+      if (nameChanged) updates.name = trimmedName;
+      if (subtitleChanged) {
+        updates.subtitle = trimmedSubtitle ? trimmedSubtitle : null;
+      }
+
+      const { applet: updated } = await AdminService.updateBuiltInApplet(
+        applet.applet_id,
+        updates
+      );
       invalidateBuiltInAppletsCache();
-      onSaved(hex);
+      onSaved(updated);
     } catch (err: any) {
       console.error('[EditBuiltInAppletColorModal] save failed', err);
-      Alert.alert('Could not save color', err?.message || 'Unknown error');
+      Alert.alert('Could not save changes', err?.message || 'Unknown error');
     } finally {
       setSaving(false);
     }
@@ -80,7 +119,7 @@ export function EditBuiltInAppletColorModal({
   const handleReset = async () => {
     if (!applet) return;
     Alert.alert(
-      'Reset to default?',
+      'Reset color to default?',
       `Clear the global color for "${applet.name}"? Tiles will fall back to the default accent.`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -90,12 +129,21 @@ export function EditBuiltInAppletColorModal({
           onPress: async () => {
             try {
               setSaving(true);
-              await AdminService.updateBuiltInAppletColor(applet.applet_id, null);
+              const { applet: updated } =
+                await AdminService.updateBuiltInApplet(applet.applet_id, {
+                  color: null,
+                });
               invalidateBuiltInAppletsCache();
-              onSaved(null);
+              onSaved(updated);
             } catch (err: any) {
-              console.error('[EditBuiltInAppletColorModal] reset failed', err);
-              Alert.alert('Could not reset color', err?.message || 'Unknown error');
+              console.error(
+                '[EditBuiltInAppletColorModal] reset failed',
+                err
+              );
+              Alert.alert(
+                'Could not reset color',
+                err?.message || 'Unknown error'
+              );
             } finally {
               setSaving(false);
             }
@@ -112,16 +160,23 @@ export function EditBuiltInAppletColorModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.title}>Applet color</Text>
+            <Text style={styles.title}>Edit applet</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.content}>
+          <ScrollView
+            style={styles.scrollArea}
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
             {applet && (
               <View style={styles.appletRow}>
                 <View
@@ -141,69 +196,104 @@ export function EditBuiltInAppletColorModal({
                 </View>
                 <View style={styles.appletText}>
                   <Text style={styles.appletName} numberOfLines={1}>
-                    {applet.name}
+                    {trimmedName || applet.name}
                   </Text>
-                  {!!applet.subtitle && (
+                  {!!trimmedSubtitle && (
                     <Text style={styles.appletSubtitle} numberOfLines={1}>
-                      {applet.subtitle}
+                      {trimmedSubtitle}
                     </Text>
                   )}
                 </View>
               </View>
             )}
 
-            <MyBuysThemeSelector
-              themeId={themeId}
-              customHex={customHex}
-              onThemeIdChange={setThemeId}
-              onCustomHexChange={setCustomHex}
-            />
-
-            <Text style={styles.helpText}>
-              This color is global. Everyone using the app will see it on this
-              applet&apos;s tile and screen header.
-            </Text>
-
-            <View style={styles.actions}>
-              <TouchableOpacity
-                style={[styles.button, styles.resetButton]}
-                onPress={handleReset}
-                disabled={saving || !applet?.color}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.resetButtonText,
-                    !applet?.color && styles.resetButtonTextDisabled,
-                  ]}
-                >
-                  Reset
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={onClose}
-                disabled={saving}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.saveButton]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.7}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save</Text>
-                )}
-              </TouchableOpacity>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Name</Text>
+              <TextInput
+                style={styles.textInput}
+                value={name}
+                onChangeText={setName}
+                placeholder="Applet name"
+                placeholderTextColor={colors.textSecondary}
+                maxLength={NAME_MAX_LENGTH}
+                autoCapitalize="words"
+                autoCorrect={false}
+                editable={!saving}
+                returnKeyType="next"
+              />
             </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Subtitle</Text>
+              <TextInput
+                style={[styles.textInput, styles.textInputMultiline]}
+                value={subtitle}
+                onChangeText={setSubtitle}
+                placeholder="Optional short description"
+                placeholderTextColor={colors.textSecondary}
+                maxLength={SUBTITLE_MAX_LENGTH}
+                multiline
+                editable={!saving}
+              />
+              <Text style={styles.helpText}>
+                Leave blank to hide the subtitle under this applet&apos;s name.
+              </Text>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Color</Text>
+              <MyBuysThemeSelector
+                themeId={themeId}
+                customHex={customHex}
+                onThemeIdChange={setThemeId}
+                onCustomHexChange={setCustomHex}
+              />
+              <Text style={styles.helpText}>
+                Name, subtitle, and color are global — every user will see
+                these changes on this applet&apos;s tile and screen header.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.button, styles.resetButton]}
+              onPress={handleReset}
+              disabled={saving || !applet?.color}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.resetButtonText,
+                  !applet?.color && styles.resetButtonTextDisabled,
+                ]}
+              >
+                Reset color
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={onClose}
+              disabled={saving}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton]}
+              onPress={handleSave}
+              disabled={saving}
+              activeOpacity={0.7}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save</Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -221,6 +311,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     width: '100%',
     maxWidth: 500,
+    maxHeight: '90%',
   },
   header: {
     flexDirection: 'row',
@@ -236,6 +327,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: spacing.sm,
+  },
+  scrollArea: {
+    flexGrow: 0,
   },
   content: {
     padding: spacing.lg,
@@ -265,15 +359,44 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
   },
+  fieldGroup: {
+    marginBottom: spacing.lg,
+  },
+  fieldLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  textInput: {
+    ...typography.body,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+  },
+  textInputMultiline: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+    paddingTop: spacing.sm,
+  },
   helpText: {
     ...typography.bodySmall,
     color: colors.textSecondary,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   button: {
     flex: 1,

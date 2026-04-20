@@ -96,17 +96,12 @@ export function AppsList() {
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [applets]);
 
-  const handleSaved = useCallback(
-    (appletId: string, newColor: string | null) => {
-      setApplets(prev =>
-        prev.map(a =>
-          a.applet_id === appletId ? { ...a, color: newColor } : a
-        )
-      );
-      setEditing(null);
-    },
-    []
-  );
+  const handleSaved = useCallback((updated: BuiltInApplet) => {
+    setApplets(prev =>
+      prev.map(a => (a.applet_id === updated.applet_id ? { ...a, ...updated } : a))
+    );
+    setEditing(null);
+  }, []);
 
   const renderItem = ({ item }: { item: BuiltInApplet }) => {
     const swatch = item.color || colors.accentBlue;
@@ -116,7 +111,7 @@ export function AppsList() {
         onPress={() => setEditing(item)}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`Edit color for ${item.name}`}
+        accessibilityLabel={`Edit ${item.name}`}
       >
         <View style={[styles.swatch, { backgroundColor: swatch }]}>
           <Ionicons
@@ -181,9 +176,7 @@ export function AppsList() {
         visible={!!editing}
         applet={editing}
         onClose={() => setEditing(null)}
-        onSaved={newColor => {
-          if (editing) handleSaved(editing.applet_id, newColor);
-        }}
+        onSaved={handleSaved}
       />
     </View>
   );

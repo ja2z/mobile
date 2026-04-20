@@ -103,3 +103,53 @@ export async function updateBuiltInAppletColor(
   );
   return rows[0] ?? null;
 }
+
+export interface BuiltInAppletUpdate {
+  name?: string;
+  subtitle?: string | null;
+  color?: string | null;
+}
+
+/**
+ * Partial update for a built-in applet's editable display fields.
+ * Only provided fields are written; omit a field to leave it untouched.
+ * Returns the updated row, or null if no applet exists with that id.
+ */
+export async function updateBuiltInApplet(
+  appletId: string,
+  updates: BuiltInAppletUpdate
+): Promise<BuiltInAppletRow | null> {
+  const sets: string[] = [];
+  const values: unknown[] = [appletId];
+  let idx = 2;
+
+  if (updates.name !== undefined) {
+    sets.push(`name = $${idx++}`);
+    values.push(updates.name);
+  }
+  if (updates.subtitle !== undefined) {
+    sets.push(`subtitle = $${idx++}`);
+    values.push(updates.subtitle);
+  }
+  if (updates.color !== undefined) {
+    sets.push(`color = $${idx++}`);
+    values.push(updates.color);
+  }
+
+  // Nothing to change - just return the current row so callers get a
+  // consistent shape.
+  if (sets.length === 0) {
+    const { rows } = await query<BuiltInAppletRow>(
+      'SELECT * FROM built_in_applets WHERE applet_id = $1',
+      [appletId]
+    );
+    return rows[0] ?? null;
+  }
+
+  sets.push(`updated_at = EXTRACT(EPOCH FROM NOW())::bigint`);
+  const { rows } = await query<BuiltInAppletRow>(
+    `UPDATE built_in_applets SET ${sets.join(', ')} WHERE applet_id = $1 RETURNING *`,
+    values
+  );
+  return rows[0] ?? null;
+}

@@ -12,7 +12,11 @@ import { validateRole, getUserProfile, getUserProfileByEmail } from '../shared/u
 import { logActivity, getActivityLogEmail } from '../shared/activity-logger';
 import { listUsers, updateUser, purgeUserFromPostgres } from '../shared/user-service';
 import { listApprovedEmails, createOrUpdateApprovedEmail, deleteApprovedEmail, getApprovedEmail } from '../shared/approved-emails-service';
-import { listBuiltInApplets, updateBuiltInAppletColor } from '../shared/built-in-applets-service';
+import {
+  listBuiltInApplets,
+  updateBuiltInApplet,
+  updateBuiltInAppletColor,
+} from '../shared/built-in-applets-service';
 import { listUserActivity, listDistinctEventTypes } from '../shared/admin-user-activity-queries';
 
 // CRITICAL: Log module initialization immediately after imports
@@ -339,6 +343,12 @@ const handlerImpl = async (event: any) => {
       ) {
         const appletId = path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)\/color$/)?.[1];
         return await handleUpdateBuiltInAppletColor(appletId!, body, decoded);
+      } else if (
+        path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)$/) &&
+        method === 'PUT'
+      ) {
+        const appletId = path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)$/)?.[1];
+        return await handleUpdateBuiltInAppletDetails(appletId!, body, decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'GET') {
         return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
@@ -705,6 +715,96 @@ async function handleUpdateBuiltInAppletColor(appletId: string, body: any, admin
     return createResponse(500, {
       error: 'Failed to update built-in applet color',
       details: error?.message || String(error)
+    });
+  }
+}
+
+/**
+ * Update editable display fields on a built-in applet (admin only).
+ * Body: { name?: string; subtitle?: string | null; color?: string | null }
+ * Any subset of fields may be provided. `subtitle` and `color` accept null to
+ * clear. Unknown/empty-only bodies are a no-op and return the current row.
+ */
+async function handleUpdateBuiltInAppletDetails(appletId: string, body: any, adminUser: any) {
+  if (!appletId) {
+    return createResponse(400, { error: 'Applet id is required' });
+  }
+
+  const updates: { name?: string; subtitle?: string | null; color?: string | null } = {};
+
+  if (body && Object.prototype.hasOwnProperty.call(body, 'name')) {
+    if (typeof body.name !== 'string') {
+      return createResponse(400, {
+        error: 'Invalid name',
+        message: 'name must be a non-empty string',
+      });
+    }
+    const trimmed = body.name.trim();
+    if (!trimmed) {
+      return createResponse(400, {
+        error: 'Invalid name',
+        message: 'name must be a non-empty string',
+      });
+    }
+    if (trimmed.length > 120) {
+      return createResponse(400, {
+        error: 'Invalid name',
+        message: 'name must be 120 characters or fewer',
+      });
+    }
+    updates.name = trimmed;
+  }
+
+  if (body && Object.prototype.hasOwnProperty.call(body, 'subtitle')) {
+    if (body.subtitle === null) {
+      updates.subtitle = null;
+    } else if (typeof body.subtitle === 'string') {
+      const trimmed = body.subtitle.trim();
+      if (trimmed.length > 240) {
+        return createResponse(400, {
+          error: 'Invalid subtitle',
+          message: 'subtitle must be 240 characters or fewer',
+        });
+      }
+      updates.subtitle = trimmed ? trimmed : null;
+    } else {
+      return createResponse(400, {
+        error: 'Invalid subtitle',
+        message: 'subtitle must be a string or null',
+      });
+    }
+  }
+
+  if (body && Object.prototype.hasOwnProperty.call(body, 'color')) {
+    const normalized = normalizeBuiltInAppletColor(body.color);
+    if (normalized === undefined) {
+      return createResponse(400, {
+        error: 'Invalid color',
+        message: 'color must be a #RRGGBB hex string or null',
+      });
+    }
+    updates.color = normalized;
+  }
+
+  try {
+    const updated = await updateBuiltInApplet(appletId, updates);
+    if (!updated) {
+      return createResponse(404, { error: 'Built-in applet not found' });
+    }
+
+    await logActivity(
+      'built_in_applet_updated',
+      adminUser.userId,
+      getActivityLogEmail(adminUser.email, adminUser.isBackdoor),
+      { appletId, updates }
+    );
+
+    return createResponse(200, { applet: updated });
+  } catch (error: any) {
+    console.error('Error updating built-in applet:', error);
+    return createResponse(500, {
+      error: 'Failed to update built-in applet',
+      details: error?.message || String(error),
     });
   }
 }

@@ -337,5 +337,27 @@ export class AdminService {
       }
     );
   }
+
+  /**
+   * Update editable display fields on a built-in applet (admin only).
+   * Any subset of `{ name, subtitle, color }` may be provided. Use null to
+   * clear `subtitle` or `color`.
+   */
+  static async updateBuiltInApplet(
+    appletId: string,
+    updates: {
+      name?: string;
+      subtitle?: string | null;
+      color?: string | null;
+    }
+  ): Promise<{ applet: BuiltInApplet }> {
+    return this.apiCall<{ applet: BuiltInApplet }>(
+      `/applets/built-in/${encodeURIComponent(appletId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }
+    );
+  }
 }
 
