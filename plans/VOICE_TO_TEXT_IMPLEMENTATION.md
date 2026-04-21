@@ -36,10 +36,11 @@ Features:
 
 - `ExpoSpeechRecognitionModule.start` / `stop` / `abort`
 - `useSpeechRecognitionEvent` for `start`, `end`, `result`, and `error`
-- Interim results via `interimResults: true`
+- Interim results via `interimResults: true`, continuous via `continuous: true`
 - Permission request via `requestPermissionsAsync`
 - Availability check via `isRecognitionAvailable`
-- 60-second auto-stop (calls `stop()`)
+- 30-second silence auto-stop (resets on any partial/final result; calls `stop()` only after 30s with no transcript activity). There is no total-duration cap.
+- Accumulates final segments internally (continuous mode on Android emits multiple `isFinal` segments per session) and passes the full running transcript to `onResult`.
 - Alerts for permission / network style errors; ignores `aborted` on cancel
 
 **API** (unchanged for callers):
@@ -48,6 +49,7 @@ Features:
 const {
   isRecording,
   partialResults,
+  transcript,
   error,
   startRecording,
   stopRecording,
@@ -57,6 +59,8 @@ const {
   onError: (error) => console.error(error),
 });
 ```
+
+`transcript` is the running accumulated final transcript (new in this version). `onResult` is still called on every final segment with the full accumulated text.
 
 ### 4. ChatModal component
 
@@ -71,7 +75,7 @@ Voice-related styles in `ChatModal.tsx` (mic button, recording indicator, etc.) 
 ### 6. Edge cases
 
 - Permission denied — alert and messaging aligned with expo-speech-recognition error codes (e.g. `not-allowed`, `network`).
-- Long sessions — 60s auto-stop.
+- Long sessions — no hard cap; 30s-of-silence watchdog ends the session gracefully.
 - Cancel — `abort()`; `aborted` errors are not surfaced to the user.
 
 ## Testing instructions
@@ -124,7 +128,7 @@ ChatModal
 - **iOS**: Speech framework (`SFSpeechRecognizer`) via the module.
 - **Android**: `SpeechRecognizer` and configured recognition service visibility (plugin).
 - **Default language**: `en-US` (configurable via hook prop).
-- **Timeout**: 60 seconds, then `stop()`.
+- **Timeout**: 30 seconds of silence (no partial/final results), then `stop()`. Resets on any transcript activity. No overall-duration cap.
 
 ## Optional enhancements
 
