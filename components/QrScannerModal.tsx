@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     ...typography.body,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#FFFFFF',
   },
   textButton: {
     marginTop: spacing.md,
