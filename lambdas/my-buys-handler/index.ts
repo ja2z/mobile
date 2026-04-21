@@ -63,6 +63,25 @@ function normalizeAppletColor(raw: unknown): string | null {
 }
 
 /**
+ * Validate a user-supplied Ionicons glyph name for persistence.
+ * Returns:
+ *   - `{ ok: true, value: null }` when caller sent null / empty / undefined.
+ *   - `{ ok: true, value: <trimmed> }` when valid.
+ *   - `{ ok: false, message }` when invalid.
+ */
+function validateAppletIconName(raw: unknown): { ok: true; value: string | null } | { ok: false; message: string } {
+    if (raw === null || raw === undefined) return { ok: true, value: null };
+    if (typeof raw !== 'string') return { ok: false, message: 'iconName must be a string or null' };
+    const trimmed = raw.trim();
+    if (!trimmed) return { ok: true, value: null };
+    if (trimmed.length > 64) return { ok: false, message: 'iconName must be 64 characters or fewer' };
+    if (!/^[a-z0-9-]+$/.test(trimmed)) {
+        return { ok: false, message: 'iconName must contain only lowercase letters, digits, and hyphens' };
+    }
+    return { ok: true, value: trimmed };
+}
+
+/**
  * Get session JWT secret (for verifying user session JWTs)
  */
 async function getSessionSecret(): Promise<string> {
@@ -557,7 +576,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
     const body = JSON.parse(event.body || '{}');
     const { name, embedUrl, embedClientId, embedSecretKey,
             sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
-            restApiClientId, restApiSecretKey, color } = body;
+            restApiClientId, restApiSecretKey, color, iconName } = body;
 
     // Normalize and validate color: accept null, undefined, or `#RRGGBB` (case-insensitive)
     const normalizedColor = normalizeAppletColor(color);
@@ -566,6 +585,15 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
             success: false,
             error: 'Invalid color',
             message: 'color must be a #RRGGBB hex string'
+        });
+    }
+
+    const iconResult = validateAppletIconName(iconName);
+    if (!iconResult.ok) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid iconName',
+            message: iconResult.message,
         });
     }
 
@@ -653,6 +681,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
         restApiSameAsEmbed: sameAsEmbed,
         pageFooterConfig: pageFooterConfig || null,
         color: normalizedColor,
+        iconName: iconResult.value,
     });
 
     // Log activity
@@ -677,6 +706,7 @@ async function handleCreateApplet(event: any, userId: string, email: string, dev
             restApiSameAsEmbed: created.restApiSameAsEmbed,
             pageFooterConfig: created.pageFooterConfig,
             color: created.color,
+            iconName: created.iconName,
             createdAt: created.createdAt,
             updatedAt: created.updatedAt
         }
@@ -700,6 +730,7 @@ async function handleListApplets(userId: string): Promise<any> {
         restApiSameAsEmbed: item.restApiSameAsEmbed,
         pageFooterConfig: item.pageFooterConfig,
         color: item.color,
+        iconName: item.iconName,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt
     }));
@@ -735,7 +766,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
     const body = JSON.parse(event.body || '{}');
     const { name, embedUrl, embedClientId, embedSecretKey,
             sigmaApiBaseUrl, restApiSameAsEmbed, pageFooterConfig,
-            restApiClientId, restApiSecretKey, color } = body;
+            restApiClientId, restApiSecretKey, color, iconName } = body;
 
     // Normalize and validate color: accept null, undefined, or `#RRGGBB` (case-insensitive)
     const colorProvided = Object.prototype.hasOwnProperty.call(body, 'color');
@@ -745,6 +776,18 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             success: false,
             error: 'Invalid color',
             message: 'color must be a #RRGGBB hex string'
+        });
+    }
+
+    const iconNameProvided = Object.prototype.hasOwnProperty.call(body, 'iconName');
+    const iconResult = iconNameProvided
+        ? validateAppletIconName(iconName)
+        : ({ ok: true, value: null } as const);
+    if (!iconResult.ok) {
+        return createResponse(400, {
+            success: false,
+            error: 'Invalid iconName',
+            message: iconResult.message,
         });
     }
 
@@ -817,6 +860,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
         restApiSameAsEmbed: sameAsEmbed,
         pageFooterConfig: pageFooterConfig || null,
         ...(colorProvided ? { color: normalizedColor } : {}),
+        ...(iconNameProvided ? { iconName: iconResult.value } : {}),
     });
 
     const refreshed = await getApplet(userId, appletId);
@@ -843,6 +887,7 @@ async function handleUpdateApplet(event: any, userId: string, email: string, dev
             restApiSameAsEmbed: refreshed?.restApiSameAsEmbed ?? true,
             pageFooterConfig: refreshed?.pageFooterConfig,
             color: refreshed?.color,
+            iconName: refreshed?.iconName,
             createdAt: existing.createdAt,
             updatedAt: refreshed?.updatedAt ?? existing.updatedAt
         }

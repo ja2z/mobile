@@ -23,6 +23,8 @@ export interface Applet {
   themeCustomHex?: string;
   /** Persisted accent hex in Postgres `applets.color` (#RRGGBB uppercase). */
   color?: string;
+  /** User-selected Ionicons glyph name for this applet's tile. */
+  iconName?: string | null;
   secretName?: string;
   /** Globally unique mybuys:word-word-word value for magic link `app` param */
   deepLinkSlug?: string;
@@ -42,6 +44,8 @@ export interface CreateAppletData {
   themeCustomHex?: string;
   /** Optional direct hex override; MyBuysService otherwise derives it from themeId/themeCustomHex. */
   color?: string;
+  /** Ionicons glyph name for the applet tile. */
+  iconName?: string | null;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;
@@ -58,6 +62,8 @@ export interface UpdateAppletData {
   themeCustomHex?: string;
   /** Optional direct hex override; MyBuysService otherwise derives it from themeId/themeCustomHex. */
   color?: string;
+  /** Ionicons glyph name for the applet tile. */
+  iconName?: string | null;
   sigmaApiBaseUrl?: string;
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;

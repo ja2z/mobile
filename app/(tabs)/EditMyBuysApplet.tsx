@@ -23,8 +23,9 @@ import * as Haptics from 'expo-haptics';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
-import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, resolveColorHexForSave, type AppletThemeId } from '../../constants/AppletThemes';
+import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
+import { IconPicker } from '../../components/IconPicker';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -37,11 +38,6 @@ import { parseSigmaEmbedUrl } from '../../utils/parseSigmaEmbedUrl';
 import { mergeFetchedPagesWithExisting } from '../../utils/mergeSigmaPagesWithConfig';
 import type { RootStackParamList } from '../_layout';
 import type { Applet, PageFooterPageConfig } from '../../types/mybuys.types';
-function buildThemeLiveKey(themeId: AppletThemeId, themeCustomHex: string): string {
-  const hexPart =
-    themeId === 'custom' ? normalizeThemeCustomHex(themeCustomHex) || themeCustomHex.trim() || '' : '';
-  return `${themeId}|${hexPart}`;
-}
 
 type EditMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'EditMyBuysApplet'>;
 type EditMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'EditMyBuysApplet'>;
@@ -65,6 +61,7 @@ export default function EditMyBuysApplet() {
   const [showSecretKey, setShowSecretKey] = useState(false);
   const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
   const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
+  const [iconName, setIconName] = useState<string>('layers-outline');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -96,8 +93,6 @@ export default function EditMyBuysApplet() {
   const embedClientIdInputRef = useRef<TextInput>(null);
   const embedSecretKeyInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
-  /** Suppress live theme emit until user diverges from last loaded snapshot. */
-  const lastThemeLiveKeyRef = useRef<string | null>(null);
 
   const headerAccent = getAppletAccentColor(themeId, themeCustomHex);
 
@@ -129,35 +124,6 @@ export default function EditMyBuysApplet() {
     });
   }, [navigation, headerAccent]);
 
-  // Apply accent + persist color immediately (no Save required). Listeners that
-  // see `liveThemeOnly: true` skip their server refetch so the optimistic patch
-  // isn't clobbered before the PUT lands.
-  useEffect(() => {
-    if (loading || !appletId) return;
-    const delay = themeId === 'custom' ? 320 : 0;
-    const t = setTimeout(() => {
-      const key = buildThemeLiveKey(themeId, themeCustomHex);
-      if (key === lastThemeLiveKeyRef.current) return;
-      lastThemeLiveKeyRef.current = key;
-      const normalizedCustom = normalizeThemeCustomHex(themeCustomHex);
-      const payload: MyBuysAppletsChangedPayload = {
-        action: 'updated',
-        appletId,
-        themeId,
-        liveThemeOnly: true,
-        ...(themeId === 'custom'
-          ? { themeCustomHex: normalizedCustom || themeCustomHex.trim() || '#3B6FA0' }
-          : {}),
-      };
-      DeviceEventEmitter.emit(MY_BUYS_APPLETS_CHANGED, payload);
-      const colorToSave = resolveColorHexForSave(themeId, themeCustomHex);
-      MyBuysService.updateAppletColor(appletId, colorToSave).catch((err) => {
-        console.warn('[EditMyBuysApplet] Failed to persist color:', err);
-      });
-    }, delay);
-    return () => clearTimeout(t);
-  }, [loading, appletId, themeId, themeCustomHex]);
-
   // --- Load applet ---
   useEffect(() => {
     const loadApplet = async () => {
@@ -175,7 +141,7 @@ export default function EditMyBuysApplet() {
         const loadedHex = found.themeCustomHex || '#3B6FA0';
         setThemeId(loadedThemeId);
         setThemeCustomHex(loadedHex);
-        lastThemeLiveKeyRef.current = buildThemeLiveKey(loadedThemeId, loadedHex);
+        setIconName(found.iconName || 'layers-outline');
         setEmbedUrl(found.embedUrl);
         setSigmaApiBaseUrl(found.sigmaApiBaseUrl || DEFAULT_SIGMA_API_SERVER);
         setSameAsEmbed(found.restApiSameAsEmbed !== false);
@@ -360,6 +326,7 @@ export default function EditMyBuysApplet() {
         name, embedUrl, embedClientId, embedSecretKey,
         themeId,
         themeCustomHex: themeId === 'custom' ? themeCustomHex : undefined,
+        iconName,
         sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
         restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
@@ -464,6 +431,15 @@ export default function EditMyBuysApplet() {
           customHex={themeCustomHex}
           onThemeIdChange={setThemeId}
           onCustomHexChange={setThemeCustomHex}
+        />
+      </View>
+
+      <View style={styles.fieldContainer}>
+        <Text style={styles.label}>Icon</Text>
+        <IconPicker
+          value={iconName}
+          onChange={setIconName}
+          accentColor={getAppletAccentColor(themeId, themeCustomHex)}
         />
       </View>
 

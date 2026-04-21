@@ -23,6 +23,7 @@ import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { DEFAULT_APPLET_THEME_ID, normalizeThemeCustomHex, getAppletAccentColor, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
+import { IconPicker } from '../../components/IconPicker';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -50,6 +51,7 @@ export default function AddMyBuysApplet() {
   const [showSecretKey, setShowSecretKey] = useState(false);
   const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
   const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
+  const [iconName, setIconName] = useState<string>('layers-outline');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -315,6 +317,7 @@ export default function AddMyBuysApplet() {
         embedSecretKey,
         themeId,
         themeCustomHex: themeId === 'custom' ? themeCustomHex : undefined,
+        iconName,
         sigmaApiBaseUrl: useRestApiFeatures && hasRestCreds ? sigmaApiBaseUrl : undefined,
         restApiSameAsEmbed: useRestApiFeatures ? sameAsEmbed : true,
         pageFooterConfig: footerPages ? { pages: footerPages } : undefined,
@@ -418,6 +421,15 @@ export default function AddMyBuysApplet() {
           customHex={themeCustomHex}
           onThemeIdChange={setThemeId}
           onCustomHexChange={setThemeCustomHex}
+        />
+      </View>
+
+      <View style={styles.fieldContainer}>
+        <Text style={styles.label}>Icon</Text>
+        <IconPicker
+          value={iconName}
+          onChange={setIconName}
+          accentColor={getAppletAccentColor(themeId, themeCustomHex)}
         />
       </View>
 

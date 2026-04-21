@@ -167,7 +167,9 @@ export default function MyBuys() {
         landingColor: colors.primary,
         title: applet.name,
         subtitle: applet.secretName || undefined,
-        iconName: 'layers-outline',
+        iconName:
+          (applet.iconName as keyof typeof Ionicons.glyphMap) ||
+          'layers-outline',
         iconColor: colors.primary,
         iconBgColor: iconBg,
         iconSize: 24,
@@ -258,7 +260,14 @@ export default function MyBuys() {
               <View style={[styles.tileAccent, { backgroundColor: accent }]} />
               <View style={styles.tileContent}>
                 <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
-                  <Ionicons name="layers-outline" size={24} color={colors.primary} />
+                  <Ionicons
+                    name={
+                      (applet.iconName as keyof typeof Ionicons.glyphMap) ||
+                      'layers-outline'
+                    }
+                    size={24}
+                    color={colors.primary}
+                  />
                 </View>
                 <View style={styles.tileTextContainer}>
                   <Text style={styles.tileTitle} numberOfLines={2} ellipsizeMode="tail">

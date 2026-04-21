@@ -33,6 +33,8 @@ export interface Applet {
   pageFooterConfig?: PageFooterConfig;
   /** User-selected accent hex (#RRGGBB). Undefined = default accent. */
   color?: string;
+  /** User-selected Ionicons glyph name for the tile. Undefined = default icon. */
+  iconName?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -48,6 +50,7 @@ interface AppletRow {
   rest_api_same_as_embed: boolean;
   page_footer_config: any | null;
   color: string | null;
+  icon_name: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -67,6 +70,7 @@ function rowToApplet(row: AppletRow): Applet {
     restApiSameAsEmbed: row.rest_api_same_as_embed ?? true,
     pageFooterConfig: row.page_footer_config || undefined,
     color: row.color || undefined,
+    iconName: row.icon_name || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -206,6 +210,7 @@ export async function createApplet(applet: {
   restApiSameAsEmbed?: boolean;
   pageFooterConfig?: PageFooterConfig;
   color?: string | null;
+  iconName?: string | null;
 }): Promise<Applet> {
   const now = Math.floor(Date.now() / 1000);
   const deepLinkSlug = await allocateUniqueDeepLinkSlug();
@@ -213,9 +218,9 @@ export async function createApplet(applet: {
   await query(
     `INSERT INTO applets (
       user_id, applet_id, name, embed_url, secret_name, deep_link_slug,
-      sigma_api_base_url, rest_api_same_as_embed, page_footer_config, color,
+      sigma_api_base_url, rest_api_same_as_embed, page_footer_config, color, icon_name,
       created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     ON CONFLICT (user_id, applet_id) DO UPDATE SET
       name = EXCLUDED.name,
       embed_url = EXCLUDED.embed_url,
@@ -224,6 +229,7 @@ export async function createApplet(applet: {
       rest_api_same_as_embed = EXCLUDED.rest_api_same_as_embed,
       page_footer_config = EXCLUDED.page_footer_config,
       color = EXCLUDED.color,
+      icon_name = EXCLUDED.icon_name,
       updated_at = EXCLUDED.updated_at`,
     [
       applet.userId,
@@ -236,6 +242,7 @@ export async function createApplet(applet: {
       applet.restApiSameAsEmbed ?? true,
       applet.pageFooterConfig ? JSON.stringify(applet.pageFooterConfig) : null,
       applet.color ?? null,
+      applet.iconName ?? null,
       now,
       now,
     ]
@@ -265,6 +272,7 @@ export async function updateApplet(
     restApiSameAsEmbed?: boolean;
     pageFooterConfig?: PageFooterConfig | null;
     color?: string | null;
+    iconName?: string | null;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -299,6 +307,10 @@ export async function updateApplet(
   if (updates.color !== undefined) {
     setParts.push(`color = $${paramIndex++}`);
     values.push(updates.color);
+  }
+  if (updates.iconName !== undefined) {
+    setParts.push(`icon_name = $${paramIndex++}`);
+    values.push(updates.iconName);
   }
 
   if (setParts.length === 0) {
