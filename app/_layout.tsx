@@ -168,7 +168,7 @@ function myBuysAppletModalScreenOptions(title: string) {
     cardStyle: {
       marginHorizontal: 28 + spacing.sm,
       marginTop: 92 + spacing.sm,
-      marginBottom: 72 + spacing.sm,
+      marginBottom: 96 + spacing.sm,
       borderRadius: 20,
       backgroundColor: colors.background,
       overflow: 'hidden',

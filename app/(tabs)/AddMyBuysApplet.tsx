@@ -38,7 +38,7 @@ import type { PageFooterPageConfig } from '../../types/mybuys.types';
 
 type AddMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AddMyBuysApplet'>;
 
-type TabName = 'basic' | 'advanced';
+type TabName = 'embed' | 'format' | 'advanced';
 
 export default function AddMyBuysApplet() {
   const navigation = useNavigation<AddMyBuysAppletScreenNavigationProp>();
@@ -52,12 +52,13 @@ export default function AddMyBuysApplet() {
   const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
   const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
   const [iconName, setIconName] = useState<string>('layers-outline');
+  const [iconSearch, setIconSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // --- Advanced fields ---
-  const [activeTab, setActiveTab] = useState<TabName>('basic');
+  const [activeTab, setActiveTab] = useState<TabName>('embed');
   const [sigmaApiBaseUrl, setSigmaApiBaseUrl] = useState(DEFAULT_SIGMA_API_SERVER);
   const [showServerPicker, setShowServerPicker] = useState(false);
   /** When false, Test only validates embed; REST API / footer UI is hidden. */
@@ -222,7 +223,7 @@ export default function AddMyBuysApplet() {
     if (!hasRestCreds) {
       Alert.alert(
         'Credentials required',
-        'Enter embed credentials on the Basic tab (or separate REST API credentials when not using "Same as Embed Key") before detecting the server.',
+        'Enter embed credentials on the Embed tab (or separate REST API credentials when not using "Same as Embed Key") before detecting the server.',
       );
       return;
     }
@@ -371,10 +372,16 @@ export default function AddMyBuysApplet() {
   const renderTabBar = () => (
     <View style={styles.tabBar}>
       <TouchableOpacity
-        style={[styles.tab, activeTab === 'basic' && styles.tabActive]}
-        onPress={() => setActiveTab('basic')}
+        style={[styles.tab, activeTab === 'embed' && styles.tabActive]}
+        onPress={() => setActiveTab('embed')}
       >
-        <Text style={[styles.tabText, activeTab === 'basic' && styles.tabTextActive]}>Basic</Text>
+        <Text style={[styles.tabText, activeTab === 'embed' && styles.tabTextActive]}>Embed</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.tab, activeTab === 'format' && styles.tabActive]}
+        onPress={() => setActiveTab('format')}
+      >
+        <Text style={[styles.tabText, activeTab === 'format' && styles.tabTextActive]}>Format</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.tab, activeTab === 'advanced' && styles.tabActive, !advancedTabEnabled && styles.tabDisabled]}
@@ -394,45 +401,8 @@ export default function AddMyBuysApplet() {
     </View>
   );
 
-  const renderBasicTab = () => (
+  const embedTab = useMemo(() => (
     <>
-      {/* Name */}
-      <View style={styles.fieldContainer}>
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Name</Text>
-          <Text style={styles.charCount}>{name.length}/35</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Demand Planning"
-          placeholderTextColor={colors.textSecondary}
-          value={name}
-          onChangeText={setName}
-          maxLength={35}
-          autoCapitalize="words"
-          returnKeyType="next"
-          onSubmitEditing={() => embedUrlInputRef.current?.focus()}
-        />
-      </View>
-
-      <View style={styles.fieldContainer}>
-        <MyBuysThemeSelector
-          themeId={themeId}
-          customHex={themeCustomHex}
-          onThemeIdChange={setThemeId}
-          onCustomHexChange={setThemeCustomHex}
-        />
-      </View>
-
-      <View style={styles.fieldContainer}>
-        <Text style={styles.label}>Icon</Text>
-        <IconPicker
-          value={iconName}
-          onChange={setIconName}
-          accentColor={getAppletAccentColor(themeId, themeCustomHex)}
-        />
-      </View>
-
       {/* Embed URL */}
       <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
@@ -511,9 +481,65 @@ export default function AddMyBuysApplet() {
         </View>
       </View>
     </>
-  );
+  ), [embedUrl, embedClientId, embedSecretKey, showSecretKey]);
 
-  const renderServerPicker = () => {
+  const formatTab = useMemo(() => (
+    <IconPicker
+      value={iconName}
+      onChange={setIconName}
+      accentColor={getAppletAccentColor(themeId, themeCustomHex)}
+      searchQuery={iconSearch}
+      style={styles.formatList}
+      contentContainerStyle={styles.formatListContent}
+      renderHeader={() => (
+        <>
+          {/* Name */}
+          <View style={styles.fieldContainer}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Name</Text>
+              <Text style={styles.charCount}>{name.length}/35</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Demand Planning"
+              placeholderTextColor={colors.textSecondary}
+              value={name}
+              onChangeText={setName}
+              maxLength={35}
+              autoCapitalize="words"
+              returnKeyType="done"
+            />
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <MyBuysThemeSelector
+              themeId={themeId}
+              customHex={themeCustomHex}
+              onThemeIdChange={setThemeId}
+              onCustomHexChange={setThemeCustomHex}
+            />
+          </View>
+
+          <View style={[styles.labelRow, styles.iconLabelRow]}>
+            <Text style={styles.label}>Icon</Text>
+            <TextInput
+              style={styles.iconSearchInput}
+              placeholder="Search icons"
+              placeholderTextColor={colors.textSecondary}
+              value={iconSearch}
+              onChangeText={setIconSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        </>
+      )}
+    />
+  ), [name, themeId, themeCustomHex, iconName, iconSearch]);
+
+  const serverPicker = useMemo(() => {
     if (!showServerPicker) return null;
     return (
       <View style={styles.pickerDropdown}>
@@ -541,9 +567,9 @@ export default function AddMyBuysApplet() {
         </ScrollView>
       </View>
     );
-  };
+  }, [showServerPicker, sigmaApiBaseUrl]);
 
-  const renderAdvancedTab = () => (
+  const advancedTab = useMemo(() => (
     <>
       <View style={[styles.switchRow, styles.switchRowMulti]}>
         <View style={styles.switchLabelBlock}>
@@ -601,7 +627,7 @@ export default function AddMyBuysApplet() {
             )}
           </TouchableOpacity>
         </View>
-        {renderServerPicker()}
+        {serverPicker}
       </View>
 
       {/* Same as Embed Key toggle */}
@@ -681,7 +707,7 @@ export default function AddMyBuysApplet() {
         )}
         {!hasRestCreds && (
           <Text style={styles.hintText}>
-            {sameAsEmbed ? 'Enter embed credentials on Basic tab first' : 'Enter REST API credentials above'}
+            {sameAsEmbed ? 'Enter embed credentials on Embed tab first' : 'Enter REST API credentials above'}
           </Text>
         )}
       </View>
@@ -720,7 +746,13 @@ export default function AddMyBuysApplet() {
         </>
       )}
     </>
-  );
+  ), [
+    useRestApiFeatures, sameAsEmbed, sigmaApiBaseUrl, showServerPicker,
+    restApiClientId, restApiSecretKey, showRestSecret,
+    fetchingPages, pages, pagesError, workbookId, hasRestCreds,
+    canGetPages, detectingApiServer, embedUrl, embedClientId,
+    serverPicker,
+  ]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -730,20 +762,42 @@ export default function AddMyBuysApplet() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {renderTabBar()}
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustContentInsets={false}
-          automaticallyAdjustsScrollIndicatorInsets={false}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled
-        >
-          {activeTab === 'basic' ? renderBasicTab() : renderAdvancedTab()}
+        <View style={styles.tabsContainer}>
+          <View style={[styles.tabView, activeTab === 'embed' ? null : styles.hiddenTab]}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              automaticallyAdjustsScrollIndicatorInsets={false}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {embedTab}
+            </ScrollView>
+          </View>
+          <View style={[styles.tabView, activeTab === 'format' ? null : styles.hiddenTab]}>
+            {formatTab}
+          </View>
+          <View style={[styles.tabView, activeTab === 'advanced' ? null : styles.hiddenTab]}>
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              automaticallyAdjustsScrollIndicatorInsets={false}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {advancedTab}
+            </ScrollView>
+          </View>
+        </View>
 
+        <View style={styles.footer}>
           {/* Test Result */}
           {testResult && (
             <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
@@ -792,7 +846,7 @@ export default function AddMyBuysApplet() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
 
       {/* Modals */}
@@ -816,14 +870,37 @@ const styles = StyleSheet.create({
   keyboardAvoid: {
     flex: 1,
   },
+  tabsContainer: {
+    flex: 1,
+  },
+  tabView: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
+  formatList: {
+    flex: 1,
+  },
+  formatListContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  footer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  hiddenTab: { display: 'none' },
   headerButton: {
     paddingVertical: 6,
     paddingHorizontal: 6,
@@ -867,7 +944,7 @@ const styles = StyleSheet.create({
 
   // --- Fields ---
   fieldContainer: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   fieldDisabled: {
     opacity: 0.45,
@@ -875,7 +952,7 @@ const styles = StyleSheet.create({
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   label: {
     ...typography.body,
@@ -926,6 +1003,22 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginLeft: 'auto',
+  },
+  iconSearchInput: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    height: 36,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    fontSize: typography.bodySmall.fontSize,
+    color: colors.textPrimary,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  iconLabelRow: {
+    marginBottom: spacing.md,
   },
 
   // --- Dropdown + Detect ---
@@ -1010,8 +1103,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    paddingVertical: spacing.xs,
   },
   switchRowMulti: {
     alignItems: 'flex-start',
@@ -1063,10 +1156,10 @@ const styles = StyleSheet.create({
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
+    padding: spacing.sm,
     backgroundColor: '#FEE2E2',
     borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     gap: spacing.sm,
   },
   errorBannerText: {
@@ -1077,13 +1170,13 @@ const styles = StyleSheet.create({
 
   // --- Pages list ---
   pagesSection: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   pagesSectionTitle: {
     ...typography.bodySmall,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   pageRow: {
     flexDirection: 'row',
@@ -1124,9 +1217,9 @@ const styles = StyleSheet.create({
   testResultContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
+    padding: spacing.sm,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   testResultSuccess: {
     backgroundColor: '#D1FAE5',
@@ -1150,7 +1243,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   testButton: {
     flex: 1,

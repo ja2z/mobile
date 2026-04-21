@@ -42,7 +42,7 @@ import type { Applet, PageFooterPageConfig } from '../../types/mybuys.types';
 type EditMyBuysAppletScreenNavigationProp = StackNavigationProp<RootStackParamList, 'EditMyBuysApplet'>;
 type EditMyBuysAppletScreenRouteProp = RouteProp<RootStackParamList, 'EditMyBuysApplet'>;
 
-type TabName = 'basic' | 'advanced';
+type TabName = 'embed' | 'format' | 'advanced';
 const EMOJI_OPTIONS = ['📄', '📊', '📈', '📉', '💰', '🛒', '📋', '⭐', '🏠', '🔍', '⚙️', '📦'];
 
 export default function EditMyBuysApplet() {
@@ -62,12 +62,13 @@ export default function EditMyBuysApplet() {
   const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
   const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
   const [iconName, setIconName] = useState<string>('layers-outline');
+  const [iconSearch, setIconSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // --- Advanced ---
-  const [activeTab, setActiveTab] = useState<TabName>('basic');
+  const [activeTab, setActiveTab] = useState<TabName>('embed');
   const [sigmaApiBaseUrl, setSigmaApiBaseUrl] = useState(DEFAULT_SIGMA_API_SERVER);
   const [showServerPicker, setShowServerPicker] = useState(false);
   /** When false, Test only validates embed; REST API / footer UI is hidden. */
@@ -258,7 +259,7 @@ export default function EditMyBuysApplet() {
     if (!hasRestCreds) {
       Alert.alert(
         'Credentials required',
-        'Enter embed credentials on the Basic tab (or separate REST API credentials when not using "Same as Embed Key") before detecting the server.',
+        'Enter embed credentials on the Embed tab (or separate REST API credentials when not using "Same as Embed Key") before detecting the server.',
       );
       return;
     }
@@ -373,8 +374,11 @@ export default function EditMyBuysApplet() {
   // ---- Render helpers ----
   const renderTabBar = () => (
     <View style={styles.tabBar}>
-      <TouchableOpacity style={[styles.tab, activeTab === 'basic' && styles.tabActive]} onPress={() => setActiveTab('basic')}>
-        <Text style={[styles.tabText, activeTab === 'basic' && styles.tabTextActive]}>Basic</Text>
+      <TouchableOpacity style={[styles.tab, activeTab === 'embed' && styles.tabActive]} onPress={() => setActiveTab('embed')}>
+        <Text style={[styles.tabText, activeTab === 'embed' && styles.tabTextActive]}>Embed</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[styles.tab, activeTab === 'format' && styles.tabActive]} onPress={() => setActiveTab('format')}>
+        <Text style={[styles.tabText, activeTab === 'format' && styles.tabTextActive]}>Format</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.tab, activeTab === 'advanced' && styles.tabActive, !advancedTabEnabled && styles.tabDisabled]}
@@ -388,7 +392,7 @@ export default function EditMyBuysApplet() {
     </View>
   );
 
-  const renderServerPicker = () => {
+  const serverPicker = useMemo(() => {
     if (!showServerPicker) return null;
     return (
       <View style={styles.pickerDropdown}>
@@ -416,53 +420,10 @@ export default function EditMyBuysApplet() {
         </ScrollView>
       </View>
     );
-  };
+  }, [showServerPicker, sigmaApiBaseUrl]);
 
-  const renderBasicTab = () => (
+  const embedTab = useMemo(() => (
     <>
-      <View style={styles.fieldContainer}>
-        <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
-        <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="next" onSubmitEditing={() => embedUrlInputRef.current?.focus()} />
-      </View>
-
-      <View style={styles.fieldContainer}>
-        <MyBuysThemeSelector
-          themeId={themeId}
-          customHex={themeCustomHex}
-          onThemeIdChange={setThemeId}
-          onCustomHexChange={setThemeCustomHex}
-        />
-      </View>
-
-      <View style={styles.fieldContainer}>
-        <Text style={styles.label}>Icon</Text>
-        <IconPicker
-          value={iconName}
-          onChange={setIconName}
-          accentColor={getAppletAccentColor(themeId, themeCustomHex)}
-        />
-      </View>
-
-      {applet?.deepLinkSlug ? (
-        <View style={styles.fieldContainer}>
-          <View style={styles.labelRow}>
-            <Text style={[styles.label, styles.labelDisabled]}>Deep link key</Text>
-            <TouchableOpacity onPress={() => setDeepLinkKeyModalVisible(true)} style={styles.infoButton} activeOpacity={0.7}>
-              <Ionicons name="information-circle-outline" size={20} color={colors.info} />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity onPress={handleCopyDeepLinkKey} style={styles.copyKeyButton} activeOpacity={0.7}>
-              <Text style={styles.copyKeyButtonText}>Copy</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.readonlySlugContainer}>
-            <Text style={styles.readonlySlugText} selectable>
-              {applet.deepLinkSlug}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
       <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
           <Text style={styles.label}>Embed URL</Text>
@@ -491,10 +452,73 @@ export default function EditMyBuysApplet() {
           </TouchableOpacity>
         </View>
       </View>
-    </>
-  );
 
-  const renderAdvancedTab = () => (
+      {applet?.deepLinkSlug ? (
+        <View style={styles.fieldContainer}>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, styles.labelDisabled]}>Deep link key</Text>
+            <TouchableOpacity onPress={() => setDeepLinkKeyModalVisible(true)} style={styles.infoButton} activeOpacity={0.7}>
+              <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={handleCopyDeepLinkKey} style={styles.copyKeyButton} activeOpacity={0.7}>
+              <Text style={styles.copyKeyButtonText}>Copy</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.readonlySlugContainer}>
+            <Text style={styles.readonlySlugText} selectable>
+              {applet.deepLinkSlug}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </>
+  ), [embedUrl, embedClientId, embedSecretKey, showSecretKey, applet?.deepLinkSlug]);
+
+  const formatTab = useMemo(() => (
+    <IconPicker
+      value={iconName}
+      onChange={setIconName}
+      accentColor={getAppletAccentColor(themeId, themeCustomHex)}
+      searchQuery={iconSearch}
+      style={styles.formatList}
+      contentContainerStyle={styles.formatListContent}
+      renderHeader={() => (
+        <>
+          <View style={styles.fieldContainer}>
+            <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
+            <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="done" />
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <MyBuysThemeSelector
+              themeId={themeId}
+              customHex={themeCustomHex}
+              onThemeIdChange={setThemeId}
+              onCustomHexChange={setThemeCustomHex}
+            />
+          </View>
+
+          <View style={[styles.labelRow, styles.iconLabelRow]}>
+            <Text style={styles.label}>Icon</Text>
+            <TextInput
+              style={styles.iconSearchInput}
+              placeholder="Search icons"
+              placeholderTextColor={colors.textSecondary}
+              value={iconSearch}
+              onChangeText={setIconSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        </>
+      )}
+    />
+  ), [name, themeId, themeCustomHex, iconName, iconSearch]);
+
+  const advancedTab = useMemo(() => (
     <>
       <View style={[styles.switchRow, styles.switchRowMulti]}>
         <View style={styles.switchLabelBlock}>
@@ -543,7 +567,7 @@ export default function EditMyBuysApplet() {
             )}
           </TouchableOpacity>
         </View>
-        {renderServerPicker()}
+        {serverPicker}
       </View>
 
       <View style={styles.switchRow}>
@@ -575,7 +599,7 @@ export default function EditMyBuysApplet() {
           )}
         </TouchableOpacity>
         {!workbookId && embedUrl.trim() && <Text style={styles.hintText}>Could not parse workbook ID from embed URL</Text>}
-        {!hasRestCreds && <Text style={styles.hintText}>{sameAsEmbed ? 'Enter embed credentials on Basic tab first' : 'Enter REST API credentials above'}</Text>}
+        {!hasRestCreds && <Text style={styles.hintText}>{sameAsEmbed ? 'Enter embed credentials on Embed tab first' : 'Enter REST API credentials above'}</Text>}
       </View>
 
       {pagesError && (
@@ -601,7 +625,13 @@ export default function EditMyBuysApplet() {
         </>
       )}
     </>
-  );
+  ), [
+    useRestApiFeatures, sameAsEmbed, sigmaApiBaseUrl, showServerPicker,
+    restApiClientId, restApiSecretKey, showRestSecret,
+    fetchingPages, pages, pagesError, workbookId, hasRestCreds,
+    canGetPages, detectingApiServer, embedUrl, embedClientId,
+    serverPicker,
+  ]);
 
   if (loading) {
     return (
@@ -615,20 +645,42 @@ export default function EditMyBuysApplet() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoid} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
         {renderTabBar()}
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustContentInsets={false}
-          automaticallyAdjustsScrollIndicatorInsets={false}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled
-        >
-          {activeTab === 'basic' ? renderBasicTab() : renderAdvancedTab()}
+        <View style={styles.tabsContainer}>
+          <View style={[styles.tabView, activeTab === 'embed' ? null : styles.hiddenTab]}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              automaticallyAdjustsScrollIndicatorInsets={false}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {embedTab}
+            </ScrollView>
+          </View>
+          <View style={[styles.tabView, activeTab === 'format' ? null : styles.hiddenTab]}>
+            {formatTab}
+          </View>
+          <View style={[styles.tabView, activeTab === 'advanced' ? null : styles.hiddenTab]}>
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              automaticallyAdjustsScrollIndicatorInsets={false}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {advancedTab}
+            </ScrollView>
+          </View>
+        </View>
 
+        <View style={styles.footer}>
           {testResult && (
             <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
               <Ionicons name={testResult.success ? 'checkmark-circle' : 'close-circle'} size={20} color={testResult.success ? colors.success : colors.error} />
@@ -648,7 +700,7 @@ export default function EditMyBuysApplet() {
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} activeOpacity={0.7}>
             <Ionicons name="trash-outline" size={20} color="#FFFFFF" /><Text style={styles.deleteButtonText}>Delete</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
 
       <MyBuysEmbedUrlInfoModal visible={embedUrlModalVisible} onClose={() => setEmbedUrlModalVisible(false)} />
@@ -669,12 +721,29 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { ...typography.body, color: colors.textSecondary, marginTop: spacing.md },
   keyboardAvoid: { flex: 1 },
+  tabsContainer: { flex: 1 },
+  tabView: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
+  formatList: { flex: 1 },
+  formatListContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  footer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  hiddenTab: { display: 'none' },
   headerButton: { paddingVertical: 6, paddingHorizontal: 6, marginLeft: 2, justifyContent: 'center', alignItems: 'center', minWidth: 40, minHeight: 40 },
 
   tabBar: { flexDirection: 'row', backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -698,6 +767,22 @@ const styles = StyleSheet.create({
   secretInput: { flex: 1, marginRight: spacing.sm },
   eyeButton: { padding: spacing.sm },
   charCount: { ...typography.caption, color: colors.textSecondary, marginLeft: 'auto' },
+  iconSearchInput: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    height: 36,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    fontSize: typography.bodySmall.fontSize,
+    color: colors.textPrimary,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  iconLabelRow: {
+    marginBottom: spacing.md,
+  },
   copyKeyButton: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
   copyKeyButtonText: { ...typography.bodySmall, fontWeight: '600', color: colors.primary },
   readonlySlugContainer: {
@@ -781,6 +866,6 @@ const styles = StyleSheet.create({
   testButtonText: { ...typography.body, fontWeight: '600', color: colors.primary },
   saveButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.primary, gap: spacing.sm },
   saveButtonText: { ...typography.body, fontWeight: '600', color: '#FFFFFF' },
-  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.error, marginTop: spacing.md, marginBottom: 0, gap: spacing.sm },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.error, marginTop: spacing.sm, marginBottom: 0, gap: spacing.sm },
   deleteButtonText: { ...typography.body, fontWeight: '600', color: '#FFFFFF' },
 });

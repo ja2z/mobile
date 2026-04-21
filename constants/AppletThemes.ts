@@ -2,26 +2,19 @@ import { colors } from './Theme';
 
 export type AppletPresetThemeId =
   | 'teal'
-  | 'indigo'
+  | 'sigma'
+  | 'databricks'
+  | 'snowflake'
   | 'violet'
-  | 'blue'
-  | 'amber'
+  | 'pink'
+  | 'orange'
+  | 'yellow'
   | 'emerald'
-  | 'rose';
+  | 'slate';
 
 export type AppletThemeId = AppletPresetThemeId | 'custom';
 
 export const DEFAULT_APPLET_THEME_ID: AppletThemeId = 'teal';
-
-const PRESET_THEME_IDS = new Set<string>([
-  'teal',
-  'indigo',
-  'violet',
-  'blue',
-  'amber',
-  'emerald',
-  'rose',
-]);
 
 /**
  * My Apps applet accent swatches — full hue range so users can pick any vibe.
@@ -29,13 +22,18 @@ const PRESET_THEME_IDS = new Set<string>([
  */
 export const APPLET_THEME_OPTIONS: { id: AppletPresetThemeId; label: string; color: string }[] = [
   { id: 'teal', label: 'Brand Purple', color: colors.accentBlue },
-  { id: 'indigo', label: 'Indigo', color: '#4F46E5' },
+  { id: 'sigma', label: 'Sigma Blue', color: '#0059EC' },
+  { id: 'databricks', label: 'Databricks Red', color: '#FE3A27' },
+  { id: 'snowflake', label: 'Snowflake Blue', color: '#28B6E7' },
   { id: 'violet', label: 'Violet', color: '#A855F7' },
-  { id: 'blue', label: 'Blue', color: '#2563EB' },
-  { id: 'amber', label: 'Amber', color: '#D97706' },
+  { id: 'pink', label: 'Pink', color: '#EC4899' },
+  { id: 'orange', label: 'Orange', color: '#EA580C' },
+  { id: 'yellow', label: 'Yellow', color: '#EAB308' },
   { id: 'emerald', label: 'Emerald', color: '#059669' },
-  { id: 'rose', label: 'Rose', color: '#E11D48' },
+  { id: 'slate', label: 'Slate', color: '#64748B' },
 ];
+
+const PRESET_THEME_IDS = new Set<string>(APPLET_THEME_OPTIONS.map((t) => t.id));
 
 function mixHex(a: string, b: string, t: number): string {
   const pa = a.replace('#', '');

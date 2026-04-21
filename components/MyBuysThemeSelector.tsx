@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
   APPLET_THEME_OPTIONS,
   getAppletAccentColor,
@@ -50,12 +49,14 @@ export function MyBuysThemeSelector({
 
   const handleDigitsChange = (text: string) => {
     onCustomHexChange(fullHexFromDigits(text));
+    if (!customActive) {
+      onThemeIdChange('custom');
+    }
   };
 
-  const handlePalettePress = () => {
-    if (themeId !== 'custom') {
-      onCustomHexChange(accentHex);
-    }
+  const handleHexFocus = () => {
+    if (customActive) return;
+    onCustomHexChange(accentHex);
     onThemeIdChange('custom');
   };
 
@@ -79,17 +80,9 @@ export function MyBuysThemeSelector({
             </TouchableOpacity>
           );
         })}
-        <TouchableOpacity
-          onPress={handlePalettePress}
-          style={[styles.swatch, themeId === 'custom' && styles.swatchSelected]}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityState={{ selected: themeId === 'custom' }}
-          accessibilityLabel="Custom hex color. Opens the hex field when selected."
+        <View
+          style={[styles.hexField, customActive && styles.hexFieldSelected]}
         >
-          <Ionicons name="color-palette-outline" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <View style={[styles.hexField, !customActive && styles.hexFieldMuted]}>
           <Text style={styles.hexHash} importantForAccessibility="no">
             #
           </Text>
@@ -97,13 +90,12 @@ export function MyBuysThemeSelector({
             style={styles.hexInputInner}
             value={displayDigits}
             onChangeText={handleDigitsChange}
+            onFocus={handleHexFocus}
             placeholder="2D3748"
             placeholderTextColor={colors.textSecondary}
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={6}
-            editable={customActive}
-            showSoftInputOnFocus={customActive}
             includeFontPadding={false}
             accessibilityLabel="Hex color digits, six characters after the number sign"
           />
@@ -151,20 +143,22 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   hexField: {
-    flex: 1,
-    minWidth: 160,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 90,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 44,
-    borderWidth: 1,
+    height: SWATCH_SIZE,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: borderRadius.sm,
-    paddingLeft: spacing.md,
+    paddingLeft: spacing.sm,
     paddingRight: spacing.sm,
     backgroundColor: colors.background,
   },
-  hexFieldMuted: {
-    backgroundColor: colors.surface,
+  hexFieldSelected: {
+    borderColor: colors.textPrimary,
+    borderWidth: 2.5,
   },
   hexHash: {
     ...typography.body,
@@ -173,8 +167,7 @@ const styles = StyleSheet.create({
   },
   hexInputInner: {
     flex: 1,
-    minWidth: 48,
-    height: 44,
+    height: SWATCH_SIZE,
     padding: 0,
     margin: 0,
     ...typography.body,
