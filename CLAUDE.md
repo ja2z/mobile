@@ -1,0 +1,116 @@
+# Big Buys Mobile
+
+React Native + Expo app that embeds Sigma dashboards via signed-JWT iframes. Distributed via TestFlight for Sigma employees and select customers; demo tool, not public-facing.
+
+## Tech stack
+
+- **Framework**: React Native with Expo (managed workflow — **not** EAS).
+- **Language**: TypeScript preferred for everything.
+- **Primary target**: iOS (iPhone via TestFlight).
+- **Secondary target**: Android.
+- **Dev loop**: Expo Go on a physical iPhone.
+- **Key libs**: `react-navigation/native` (stack), `react-native-webview`, `expo-secure-store`, `expo-router`.
+
+## App structure
+
+```
+/app             # screens (expo-router)
+  _layout.tsx    # root layout + deep-link handler
+  (tabs)/        # main navigation
+/components
+  HomeButton.tsx    # persistent home button — present on every screen
+  DashboardView.tsx # WebView wrapper for Sigma embeds
+/constants/Config.ts  # URLs and configuration (no hardcoded URLs in components)
+/services        # AuthService, etc.
+/hooks
+/lambdas         # backend Lambda functions (separate deploys)
+/plans           # planning docs, setup guides, writeups (NOT the repo root)
+```
+
+Persistent `HomeButton` on every screen with a minimum 44×44 pt hit area.
+
+## Code style
+
+- Functional components + hooks. No class components.
+- `StyleSheet.create` for styles — no inline styles.
+- TypeScript everywhere; clear, descriptive names.
+- Comments only where the **why** is non-obvious.
+- Keep state simple — `useState` / `useContext` is fine; no Redux/Zustand etc.
+- Reusable components in `/components`; configuration in `/constants/Config.ts`; no hardcoded URLs in components.
+- Stay in Expo managed workflow. Don't add native modules that require a custom dev build.
+
+## Git push policy
+
+**Do not run `git push`** (or `gh repo sync`, force-push, etc.) unless explicitly asked. Local `git commit` is fine when it helps the task, but stop before pushing — services tied to the remote can redeploy on every change. When the user wants to ship, they will say so ("push to origin", "deploy", "push it").
+
+## Documentation placement
+
+- Planning notes, implementation writeups, setup guides, and checklists belong in **`plans/`** at the repo root.
+- Do **not** add markdown files to the project root. The root is reserved for `README.md` and essential config.
+- When creating or updating a plan document, prefer `plans/<descriptive-name>.md` and link to it from code comments or PRs as needed.
+
+## AWS context (project-specific)
+
+For *procedures* (auth, SSL, CLI patterns, build/deploy), use the global skills:
+- **`aws-cli-usage`** — SAML/Okta auth, SSL workarounds, region default, CloudWatch tailing, common read-only commands.
+- **`lambda-deployment`** — build/zip/deploy workflow, IAM role discovery, Secrets Manager permission grants.
+
+Project-specific values for this repo:
+
+- **Region**: `us-west-2`
+- **Account**: `763903610969`
+- **API Gateway**: id `qx7x0uioo1`, stage `v1`, base URL `https://qx7x0uioo1.execute-api.us-west-2.amazonaws.com/v1`
+- **S3 deployment bucket**: `mobile-lambda-deployments` (keys: `<handler>/<function>-YYYYMMDD-HHMMSS.zip`)
+- **IAM role naming**: `mobile-<service>-lambda-role` (e.g. `mobile-auth-lambda-role`)
+- **NAT Gateway EIP**: `54.213.75.202` (drives SES sender reputation — be aware before any networking changes)
+
+### Lambda functions
+
+| Function | ARN |
+|---|---|
+| `auth-handler` | `arn:aws:lambda:us-west-2:763903610969:function:auth-handler` |
+| `admin-handler` | `arn:aws:lambda:us-west-2:763903610969:function:admin-handler` |
+| `generateSigmaEmbedURL` | `arn:aws:lambda:us-west-2:763903610969:function:generateSigmaEmbedURL` |
+| `my-buys-handler` | `arn:aws:lambda:us-west-2:763903610969:function:my-buys-handler` |
+| `phone-validation-handler` | `arn:aws:lambda:us-west-2:763903610969:function:phone-validation-handler` |
+| `migrate-activity-logs` | `arn:aws:lambda:us-west-2:763903610969:function:migrate-activity-logs` |
+
+Each Lambda lives in `lambdas/<name>/` with its own `build-lambda.sh` and `deploy-lambda-s3.sh`. Shared utilities are in `lambdas/shared/`.
+
+### DynamoDB tables
+
+- `mobile-auth-tokens` — magic-link tokens (15-min TTL) + session JWT records.
+- `mobile-short-urls` — short-id → full magic-link URL, TTL.
+- `mobile-users` — *(deprecated; migrated to Postgres)* email-index GSI present.
+- `mobile-approved-emails` — *(deprecated; migrated to Postgres)*.
+- `mobile-my-buys-applets` — MyBuys applet configuration.
+- `mobile-user-activity` — *(deprecated; migrated to Postgres)*.
+
+Active user, approved-email, and activity data live in **Postgres RDS**, not DynamoDB. See the [[postgres-connection]] project skill for connection and migration details.
+
+### Secrets Manager
+
+- `mobile-app/jwt-secret` — HS256 signing key for session JWTs.
+- `mobile-app/api-key` — server-to-Lambda API key.
+- `mobile-app/backdoor-secret` — backdoor auth shared secret.
+- `mobile-app/telnyx-api-key` — Telnyx SMS API key.
+- `mobile-app/postgres-credentials` — RDS connection credentials.
+
+When adding a Lambda's access to a secret, the IAM policy ARN must end with `-*` (the [[lambda-deployment]] skill covers the grant procedure).
+
+## Things to avoid
+
+- Over-engineering — this is a demo tool, not a public product.
+- Unnecessary dependencies.
+- Complex state management (no Redux / Zustand / etc.).
+- Native modules that break Expo Go (stay in managed workflow).
+- Inline styles.
+
+## Deeper references
+
+- [plans/DEVELOPMENT.md](plans/DEVELOPMENT.md) — condensed dev guide.
+- [plans/mobile-auth-architecture.md](plans/mobile-auth-architecture.md) — current auth system architecture (supersedes the original `.cursor/rules/architecture.mdc` spec).
+- `plans/SETUP_MAGIC_LINKS.md`, `plans/SMS_MAGIC_LINK_SETUP.md`, `plans/BACKDOOR_SETUP.md` — per-flow setup notes.
+- `plans/LAMBDA_NETWORKING_EXPLANATION.md`, `plans/NAT_GATEWAY_FIX_SUMMARY.md` — VPC and NAT-Gateway background; consult before networking changes.
+- `plans/SES_SPAM_DIAGNOSIS.md`, `plans/GMAIL_SPAM_FIX.md` — email deliverability playbook.
+- `.cursor/rules/` — original Cursor rules, kept for historical reference (not active).
