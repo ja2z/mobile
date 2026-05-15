@@ -30,8 +30,8 @@ const BACKDOOR_SECRET_NAME = process.env.BACKDOOR_SECRET_NAME || 'mobile-app/bac
 const TELNYX_API_KEY_SECRET_NAME = process.env.TELNYX_API_KEY_SECRET_NAME || 'mobile-app/telnyx-api-key';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@sigmacomputing.com';
 const FROM_NAME = process.env.FROM_NAME || null;
-const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'bigbuys';
-const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.bigbuys.io';
+const APP_DEEP_LINK_SCHEME = process.env.APP_DEEP_LINK_SCHEME || 'sigmazeta';
+const REDIRECT_BASE_URL = process.env.REDIRECT_BASE_URL || 'https://mobile.sigmazeta.io';
 const SHORT_URLS_TABLE = process.env.SHORT_URLS_TABLE || 'mobile-short-urls';
 
 // Cache for secrets (reduces Secrets Manager calls)
@@ -502,7 +502,7 @@ async function handleRequestMagicLink(body: any, event?: any) {
     }
 
     // Always use HTTPS redirect URL in emails (email clients require HTTPS and block custom schemes)
-    // The redirect page will convert to bigbuys:// scheme for the app
+    // The redirect page will convert to sigmazeta:// scheme for the app
     console.log('[handleRequestMagicLink] Building redirect URL...');
     const magicLink = buildRedirectUrl(tokenId, null);
     console.log('[handleRequestMagicLink] Generated magic link:', magicLink);
@@ -669,7 +669,7 @@ async function handleSendToMobile(body: any, event: any) {
     return createResponse(400, {
       error: 'Phone number not verified',
       message:
-        'You must verify your phone number before using the send-to-mobile feature. In the Big Buys mobile app, open Profile (from the home screen) and use Verify phone number to complete verification.',
+        'You must verify your phone number before using the send-to-mobile feature. In the Zeta mobile app, open Profile (from the home screen) and use Verify phone number to complete verification.',
     });
   }
 
@@ -1535,7 +1535,7 @@ async function getUserIdForEmail(email: string): Promise<string> {
 
 /**
  * Build direct custom scheme URL (for Expo Go / development)
- * Format: bigbuys://auth?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
+ * Format: sigmazeta://auth?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
  */
 function buildDirectSchemeUrl(tokenId: string, app: string | null, pageId?: string, variables?: Record<string, string>): string {
   let url = `${APP_DEEP_LINK_SCHEME}://auth?token=${encodeURIComponent(tokenId)}`;
@@ -1554,7 +1554,7 @@ function buildDirectSchemeUrl(tokenId: string, app: string | null, pageId?: stri
 /**
  * Build HTTPS redirect URL that will redirect to deep link
  * This works better in email clients than direct deep links
- * Format: https://mobile.bigbuys.io/auth/verify?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
+ * Format: https://mobile.sigmazeta.io/auth/verify?token=xxx&app=dashboard&pageId=123abc&variables={"p_stockroom_qty":"100"}
  */
 function buildRedirectUrl(tokenId: string, app: string | null, pageId?: string, variables?: Record<string, string>): string {
   let url = `${REDIRECT_BASE_URL}/auth/verify?token=${encodeURIComponent(tokenId)}`;
@@ -1591,7 +1591,7 @@ function generateShortId(): string {
 
 /**
  * Create a short URL mapping in DynamoDB
- * Returns the short URL (e.g., https://mobile.bigbuys.io/s/abc123)
+ * Returns the short URL (e.g., https://mobile.sigmazeta.io/s/abc123)
  */
 async function createShortUrl(fullUrl: string, tokenId: string): Promise<string> {
   const maxRetries = 5;
@@ -1818,13 +1818,13 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
         <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #007AFF;">Welcome to Big Buys Mobile!</h2>
+          <h2 style="color: #007AFF;">Welcome to Zeta!</h2>
           <p>Click the button below to sign in to your account:</p>
           <div style="margin: 30px 0;">
-            <a href="${magicLink}" 
-               style="background-color: #007AFF; color: white; padding: 12px 30px; 
+            <a href="${magicLink}"
+               style="background-color: #007AFF; color: white; padding: 12px 30px;
                       text-decoration: none; border-radius: 5px; display: inline-block;">
-              Sign In to Big Buys Mobile
+              Sign In to Zeta
             </a>
           </div>
           <p style="color: #666; font-size: 14px;">
@@ -1835,7 +1835,7 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
           </p>
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
           <p style="color: #999; font-size: 12px;">
-            Big Buys Mobile by Sigma Computing
+            Zeta by Sigma Computing
           </p>
         </div>
       </body>
@@ -1856,10 +1856,10 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
       Source: fromAddress,
       Destination: { ToAddresses: [email] },
       Message: {
-        Subject: { Data: 'Sign in to Big Buys Mobile' },
+        Subject: { Data: 'Sign in to Zeta' },
         Body: {
           Html: { Data: emailBody },
-          Text: { Data: `Sign in to Big Buys Mobile: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
+          Text: { Data: `Sign in to Zeta: ${magicLink}\n\nClick this link to open the app and sign in. This link expires in 15 minutes.` }
         }
       }
     });
@@ -1893,7 +1893,7 @@ async function sendMagicLinkEmail(email: string, magicLink: string): Promise<voi
  * Send magic link via SMS using Telnyx API
  */
 async function sendMagicLinkSMS(phoneNumber: string, magicLink: string, customMessage?: string): Promise<void> {
-  let message = `Your Big Buys Mobile sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
+  let message = `Your Zeta sign-in link: ${magicLink}\n\nExpires in 15 minutes.`;
   
   // If a custom message is provided, prepend it to the SMS
   if (customMessage) {

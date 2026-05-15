@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signing in to Big Buys Mobile...</title>
+  <title>Signing in to Zeta...</title>
   <style>
     * {
       margin: 0;
@@ -83,10 +83,10 @@
 <body>
   <div class="container">
     <div class="spinner"></div>
-    <h1>Opening Big Buys Mobile...</h1>
+    <h1>Opening Zeta...</h1>
     <p>If the app doesn't open automatically, tap the button below:</p>
     <div class="fallback-link">
-      <a href="#" id="deep-link">Open in App</a>
+      <a href="#" id="deep-link">Open in Zeta</a>
     </div>
   </div>
 
@@ -100,7 +100,7 @@
     
     if (token) {
       // Build deep link URL
-      let deepLink = 'bigbuys://auth?token=' + encodeURIComponent(token);
+      let deepLink = 'sigmazeta://auth?token=' + encodeURIComponent(token);
       if (app) {
         deepLink += '&app=' + encodeURIComponent(app);
       }

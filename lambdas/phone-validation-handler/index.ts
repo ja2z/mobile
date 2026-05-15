@@ -339,7 +339,7 @@ async function handleVerifyPhoneCode(body: any, event: any) {
 // ─── Utilities ─────────────────────────────────────────────────────────────────
 
 async function sendVerificationCodeSMS(phoneNumber: string, verificationCode: string): Promise<void> {
-  const message = `Your Big Buys Mobile verification code is: ${verificationCode}\n\nExpires in 5 minutes.`;
+  const message = `Your Zeta verification code is: ${verificationCode}\n\nExpires in 5 minutes.`;
   const apiKey = await getTelnyxApiKey();
 
   const response = await fetch('https://api.telnyx.com/v2/messages', {

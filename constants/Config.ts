@@ -32,8 +32,8 @@ export const Config = {
   
   // Authentication configuration
   AUTH: {
-    // Magic link type: 'direct' = bigbuys://auth?token=xxx (for Expo Go)
-    // 'universal' = https://mobile.bigbuys.io/auth/verify?token=xxx (for production)
+    // Magic link type: 'direct' = sigmazeta://auth?token=xxx (for Expo Go)
+    // 'universal' = https://mobile.sigmazeta.io/auth/verify?token=xxx (for production)
     // Default to 'universal' for production builds
     // Override with EXPO_PUBLIC_AUTH_LINK_TYPE=direct in .env.local for Expo Go testing
     LINK_TYPE: (process.env.EXPO_PUBLIC_AUTH_LINK_TYPE || 'universal') as 'direct' | 'universal',

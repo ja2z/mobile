@@ -867,15 +867,15 @@ export default function RootLayout() {
       const parsed = Linking.parse(url);
       console.log('📋 Parsed deep link:', JSON.stringify(parsed, null, 2));
       
-      // Handle both bigbuys://auth?token=xxx and https://mobile.bigbuys.io/auth/verify?token=xxx
+      // Handle both sigmazeta://auth?token=xxx and https://mobile.sigmazeta.io/auth/verify?token=xxx
       let token: string | undefined;
-      
-      if (parsed.scheme === 'bigbuys' && parsed.hostname === 'auth') {
-        // Custom URL scheme: bigbuys://auth?token=xxx
+
+      if (parsed.scheme === 'sigmazeta' && parsed.hostname === 'auth') {
+        // Custom URL scheme: sigmazeta://auth?token=xxx
         token = parsed.queryParams?.token as string;
         console.log('✅ Parsed custom scheme token:', token ? 'found' : 'missing');
-      } else if (parsed.hostname === 'mobile.bigbuys.io') {
-        // Universal link: https://mobile.bigbuys.io/auth/verify?token=xxx
+      } else if (parsed.hostname === 'mobile.sigmazeta.io') {
+        // Universal link: https://mobile.sigmazeta.io/auth/verify?token=xxx
         // Path might be "auth/verify" or "/auth/verify" - both are valid
         const path = parsed.path || '';
         
