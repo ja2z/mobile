@@ -1072,11 +1072,13 @@ export default function RootLayout() {
             setIsCheckingAuth(false);
             setPendingDeepLinkNav(null);
           } else {
-            // ViewMyBuysApplet requires route.params (appletId) on first paint; mounting it as
-            // initialRouteName leaves route.params undefined and crashes. Use Home first; onReady
-            // applies pendingDeepLinkNav to navigate there with params.
-            const initialRouteForStack =
-              targetScreen === 'ViewMyBuysApplet' ? 'Home' : targetScreen;
+            // Any deep-link target (Dashboard, ConversationalAI, ViewMyBuysApplet, etc.)
+            // needs route.params on first paint to pick up pageId/variables/appletId.
+            // initialRouteName cannot carry params, so mounting the target directly
+            // means its first render — and its mount-time effects like the embed URL
+            // fetch — run with empty route.params. Always mount Home first; the
+            // onReady handler then navigates to the target with the full screenParams.
+            const initialRouteForStack = 'Home' as keyof RootStackParamList;
             setCollectNameInitialParams(undefined);
             setInitialRoute(initialRouteForStack);
             setIsCheckingAuth(false);
