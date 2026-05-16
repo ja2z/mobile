@@ -196,19 +196,15 @@ submit_ipa() {
     log "Submitting to TestFlight..."
     echo -e "${YELLOW}Submitting to TestFlight...${NC}"
     
-    # Run submit command and capture output
-    local submit_output=$(mktemp)
     eas submit -p ios --path "$ipa_path" --non-interactive >> "$log_file" 2>&1
     local submit_exit_code=$?
-    
-    # Check for errors in the output
-    local has_error=false
-    if grep -qi "submission failed\|error\|failed" "$log_file"; then
-        has_error=true
-    fi
-    
-    # Check exit code or error messages
-    if [ $submit_exit_code -ne 0 ] || [ "$has_error" = true ]; then
+
+    # Trust eas submit's exit code as the source of truth. The log file
+    # also contains the prior build-phase output where "error" and
+    # "failed" appear in innocuous contexts (e.g. "0 errors", tooling
+    # categories), so substring matching against it produces false
+    # positives even when the IPA was uploaded successfully.
+    if [ $submit_exit_code -ne 0 ]; then
         log "ERROR: Submission failed"
         echo -e "${RED}Submission failed!${NC}"
         echo -e "${YELLOW}Last few lines of submission output:${NC}"
