@@ -799,6 +799,7 @@ export default function RootLayout() {
   const [isExiting, setIsExiting] = useState(false);
   const [hasExited, setHasExited] = useState(false);
   const navigationRef = useRef<any>(null);
+  const dispatchedDeepLinkNavRef = useRef<unknown>(null);
 
   const isLoading = isCheckingAuth || initialRoute === null || isVerifyingMagicLink;
 
@@ -1309,6 +1310,72 @@ export default function RootLayout() {
     };
   }, []);
 
+  /**
+   * Drive deep-link navigation from `pendingDeepLinkNav` state instead of
+   * relying solely on NavigationContainer's onReady callback.
+   *
+   * Why: when checkAuth wins the race and sets initialRoute='Home', the
+   * container mounts and onReady fires BEFORE handleDeepLink finishes
+   * setting pendingDeepLinkNav. By the time pendingDeepLinkNav becomes
+   * non-null, onReady has already run (with null) and won't fire again
+   * because the key didn't change (we now always mount 'Home' first).
+   * This effect re-runs on every pendingDeepLinkNav change and dispatches
+   * the reset+navigate as soon as both the nav ref is ready and a pending
+   * target exists.
+   *
+   * dispatchedDeepLinkNavRef guards against re-dispatching the same target
+   * twice without clearing pendingDeepLinkNav from inside the effect — if
+   * we cleared it here, the dependency change would trigger this effect's
+   * cleanup, killing the 100ms navigate timer before it fires.
+   */
+  useEffect(() => {
+    const target = pendingDeepLinkNav;
+    if (!target) return;
+    if (dispatchedDeepLinkNavRef.current === target) return;
+    dispatchedDeepLinkNavRef.current = target;
+
+    let cancelled = false;
+
+    const tryNavigate = (attemptsLeft: number) => {
+      if (cancelled) return;
+      const nav = navigationRef.current;
+      const isReady = !!(nav && nav.isReady && nav.isReady());
+
+      if (!isReady) {
+        if (attemptsLeft > 0) {
+          setTimeout(() => tryNavigate(attemptsLeft - 1), 50);
+        }
+        return;
+      }
+
+      console.log('🔗 Executing pending deep-link navigation:', target);
+      nav.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        })
+      );
+
+      setTimeout(() => {
+        if (cancelled) return;
+        const navRef = navigationRef.current;
+        if (navRef) {
+          navRef.navigate(target.screen as never, target.params as never);
+          console.log(
+            `✅ Navigated to ${target.screen} with params`,
+            JSON.stringify(target.params, null, 2)
+          );
+        }
+      }, 100);
+    };
+
+    tryNavigate(20);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingDeepLinkNav]);
+
   return (
     <View style={styles.rootContainer}>
       {initialRoute !== null && (
@@ -1319,41 +1386,13 @@ export default function RootLayout() {
            * importantly, when a deep-linked magic-link verify finishes AFTER
            * checkAuth has already set initialRoute='Login'. Without this,
            * React Navigation ignores the prop change (initialRouteName is
-           * mount-time only) and the user is stranded on Login. onReady
-           * re-fires on the new container, which also re-runs pendingDeepLinkNav.
+           * mount-time only) and the user is stranded on Login. Deep-link
+           * navigation with params is then driven by the pendingDeepLinkNav
+           * useEffect above, not onReady.
            */
           key={initialRoute}
           ref={navigationRef}
-      onReady={() => {
-        // Once navigation is ready, navigate with params if we have pending deep link navigation
-        if (pendingDeepLinkNav) {
-          const nav = navigationRef.current;
-          if (nav) {
-            console.log('🔗 Navigation container ready, executing pending navigation:', pendingDeepLinkNav);
-            // Use navigate instead of reset to avoid header styling issues
-            // First navigate to Home, then to the target screen
-            nav.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{ name: 'Home' }],
-              })
-            );
-            
-            // Then navigate to the target screen after a brief delay
-            // This ensures the header style is applied correctly
-            setTimeout(() => {
-              if (nav) {
-                nav.navigate(pendingDeepLinkNav.screen as never, pendingDeepLinkNav.params as never);
-              }
-            }, 100);
-            console.log(`✅ Navigated to ${pendingDeepLinkNav.screen} with params via onReady`);
-            console.log('🔗 Params passed:', JSON.stringify(pendingDeepLinkNav.params, null, 2));
-            // Clear pending navigation
-            setPendingDeepLinkNav(null);
-          }
-        }
-      }}
-    >
+        >
       <StatusBar style="light" />
       <Stack.Navigator
         initialRouteName={initialRoute}
