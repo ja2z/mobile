@@ -182,6 +182,50 @@ export class AuthService {
   }
 
   /**
+   * Consume an SMS magic-link token for its navigation metadata. Requires an
+   * existing session — SMS links are navigation-only, never an auth channel.
+   * Returns the navigation context (app, pageId, variables) the SMS was
+   * generated for. Throws when no session exists or the token is rejected.
+   */
+  static async consumeSmsToken(
+    token: string
+  ): Promise<{ app: string | null; pageId: string | null; variables: Record<string, string> | null }> {
+    const session = await this.getSession();
+    if (!session) {
+      const error = new Error('Not signed in') as any;
+      error.requiresLogin = true;
+      throw error;
+    }
+
+    const response = await fetch(`${AUTH_BASE_URL}/consume-sms-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.jwt}`,
+      },
+      body: JSON.stringify({ token }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const error = new Error(data.message || data.error || 'Failed to consume SMS token') as any;
+      if (response.status === 401) {
+        // Session JWT is invalid/expired — clear it so the caller can redirect to Login
+        await this.clearSession();
+        error.requiresLogin = true;
+      }
+      throw error;
+    }
+
+    return {
+      app: data.app ?? null,
+      pageId: data.pageId ?? null,
+      variables: data.variables ?? null,
+    };
+  }
+
+  /**
    * Authenticate via backdoor (for development/testing)
    * Directly authenticates without requiring a magic link
    * @param email - The backdoor email (e.g., hash@sigmacomputing.com)

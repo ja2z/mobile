@@ -101,6 +101,8 @@ export const handler = async (event: any) => {
       return await handleSendToMobile(body, event);
     } else if (path === '/v1/auth/verify-magic-link' && method === 'POST') {
       return await handleVerifyMagicLink(body, event);
+    } else if (path === '/v1/auth/consume-sms-token' && method === 'POST') {
+      return await handleConsumeSmsToken(body, event);
     } else if (path === '/v1/auth/refresh-token' && method === 'POST') {
       return await handleRefreshToken(body, event);
     } else if (path === '/v1/auth/authenticate-backdoor' && method === 'POST') {
@@ -826,10 +828,30 @@ async function handleVerifyMagicLink(body: any, event: any) {
       reason: 'Token expired',
       sourceFlow: tokenData.metadata?.sourceFlow || 'unknown'
     }, deviceId, ipAddress);
-    
-    return createResponse(400, { 
+
+    return createResponse(400, {
       error: 'Token expired',
       email: tokenData.email // Include email in error response
+    });
+  }
+
+  // SECURITY: SMS magic-link tokens are navigation-only and must NOT mint a
+  // session JWT. The authoritative authentication channel is the email magic
+  // link (controlling the company email = proof of active employment, since
+  // IT disables the email at termination). SMS goes to a personal phone that
+  // is not disabled on offboarding, so allowing SMS to authenticate would
+  // bypass the email kill switch. Clients should call /v1/auth/consume-sms-token
+  // with a valid session JWT instead.
+  if (tokenData.metadata?.sourceFlow === 'sms') {
+    const ipAddress = getIpAddress(event);
+    await logActivity('failed_login', 'unknown', tokenData.email || 'unknown', {
+      reason: 'SMS token cannot authenticate',
+      sourceFlow: 'sms'
+    }, deviceId, ipAddress);
+
+    return createResponse(403, {
+      error: 'SMS link cannot authenticate',
+      message: 'SMS links can only open content for an already-signed-in user. Please sign in with your email first.'
     });
   }
 
@@ -994,7 +1016,110 @@ async function handleVerifyMagicLink(body: any, event: any) {
 }
 
 /**
+ * Consume an SMS magic-link token for its navigation metadata WITHOUT
+ * minting a new session JWT. Requires an existing session (Authorization
+ * header) — SMS is a "push content to an already-authenticated user"
+ * mechanism, not an authentication channel. See handleVerifyMagicLink for
+ * the security rationale.
+ *
+ * Body: { token: string }
+ * Returns: { app, pageId, variables } from the token's metadata, plus the
+ * authenticated user's identity (which must match the token's email).
+ */
+async function handleConsumeSmsToken(body: any, event: any) {
+  const { token } = body || {};
+
+  if (!token) {
+    return createResponse(400, { error: 'Token is required' });
+  }
+
+  // Require valid session JWT
+  const headers = event.headers || {};
+  const authHeader = headers['Authorization'] || headers['authorization'];
+  const sessionJwt = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!sessionJwt) {
+    return createResponse(401, { error: 'Authorization header with Bearer token is required' });
+  }
+
+  let decoded: any;
+  try {
+    const secret = await getJWTSecret();
+    decoded = jwt.verify(sessionJwt, secret, { algorithms: ['HS256'] });
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return createResponse(401, { error: 'Session expired. Please sign in again.' });
+    }
+    return createResponse(401, { error: 'Invalid session token' });
+  }
+
+  // Look up the SMS token
+  const result = await docClient.send(new GetCommand({
+    TableName: TOKENS_TABLE,
+    Key: { tokenId: token }
+  }));
+
+  if (!result.Item) {
+    return createResponse(404, { error: 'Invalid or expired token' });
+  }
+
+  const tokenData = result.Item;
+  const ipAddress = getIpAddress(event);
+
+  if (tokenData.tokenType !== 'magic_link') {
+    return createResponse(400, { error: 'Invalid token type' });
+  }
+
+  if (tokenData.metadata?.sourceFlow !== 'sms') {
+    return createResponse(400, { error: 'Token is not an SMS link' });
+  }
+
+  if (tokenData.used) {
+    return createResponse(400, { error: 'Token already used' });
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (now > tokenData.expiresAt) {
+    return createResponse(400, { error: 'Token expired' });
+  }
+
+  // The token must belong to the authenticated user (prevents one user from
+  // consuming another user's SMS link to deep-link into their content).
+  if ((tokenData.email || '').toLowerCase() !== (decoded.email || '').toLowerCase()) {
+    await logActivity('failed_login', decoded.userId || 'unknown', decoded.email || 'unknown', {
+      reason: 'SMS token email mismatch',
+      sourceFlow: 'sms',
+      tokenEmail: tokenData.email
+    }, decoded.deviceId, ipAddress);
+
+    return createResponse(403, { error: 'Token does not belong to the signed-in user' });
+  }
+
+  // Mark token as used
+  await docClient.send(new UpdateCommand({
+    TableName: TOKENS_TABLE,
+    Key: { tokenId: token },
+    UpdateExpression: 'SET #used = :true, usedAt = :now',
+    ExpressionAttributeNames: { '#used': 'used' },
+    ExpressionAttributeValues: { ':true': true, ':now': now }
+  }));
+
+  return createResponse(200, {
+    success: true,
+    app: tokenData.metadata?.app || null,
+    pageId: tokenData.metadata?.pageId || null,
+    variables: tokenData.metadata?.variables || null
+  });
+}
+
+/**
  * Refresh session token before expiry
+ *
+ * UNUSED as of 2026-05-19: no client code calls POST /v1/auth/refresh-token.
+ * The mobile client lets sessions expire at the 14-day mark and requires a
+ * fresh email magic-link sign-in, rather than sliding the window. Kept here
+ * because the route is still wired in the handler dispatch above; either
+ * wire it up on the client or remove the endpoint outright in a future pass.
  */
 async function handleRefreshToken(body: any, event: any) {
   const { token } = body;

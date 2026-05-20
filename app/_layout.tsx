@@ -11,6 +11,7 @@ import {
 } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
+import * as SecureStore from 'expo-secure-store';
 import {
   View,
   StyleSheet,
@@ -780,6 +781,106 @@ function MagicLinkVerifyingOverlay({ visible }: MagicLinkVerifyingOverlayProps) 
 }
 
 /**
+ * SecureStore key holding an unconsumed SMS magic-link token while the user
+ * is taken through the email sign-in flow. SMS tokens have a 15-min TTL on
+ * the backend; the value here is only useful within that window.
+ */
+const PENDING_SMS_TOKEN_KEY = 'pending_sms_token';
+
+/**
+ * Resolve a deep-link `app` query param (plus optional pageId/variables)
+ * into a target screen name + screenParams. Used by both:
+ *   - the SMS-with-session path (after consume-sms-token)
+ *   - the post-email-login path (when a pending SMS token exists)
+ *
+ * Returns Home with empty params for unknown apps so the caller doesn't
+ * have to special-case the negative branch.
+ */
+async function resolveAppToScreenTarget(
+  app: string,
+  pageId: string | undefined,
+  variables: Record<string, string> | undefined
+): Promise<{ targetScreen: keyof RootStackParamList; screenParams: Record<string, unknown> }> {
+  let targetScreen: keyof RootStackParamList = 'Home';
+  let screenParams: Record<string, unknown> = {};
+
+  if (app.startsWith('mybuys:')) {
+    try {
+      const userApplets = await MyBuysService.listApplets();
+      const match = userApplets.find((a) => a.deepLinkSlug === app);
+      if (match) {
+        targetScreen = 'ViewMyBuysApplet';
+        screenParams = {
+          appletId: match.appletId,
+          ...(pageId ? { pageId } : {}),
+          ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
+        };
+      } else {
+        console.warn(`⚠️ No My Apps applet for deep link slug: ${app}`);
+        Toast.show({
+          type: 'error',
+          text1: 'Applet not found',
+          text2: 'Check your deep link key or open the applet from My Apps.',
+        });
+      }
+    } catch (e) {
+      console.error('Failed to resolve My Apps deep link:', e);
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to load My Apps',
+        text2: 'Navigating to Home',
+      });
+    }
+    return { targetScreen, screenParams };
+  }
+
+  try {
+    const applets = await listBuiltInApplets();
+    const appNormalized = app.toLowerCase().replace(/-/g, '');
+    const applet = applets.find(
+      (a) => a.app_name && a.app_name.toLowerCase().replace(/-/g, '') === appNormalized
+    );
+
+    if (applet) {
+      const ts = applet.target_screen;
+      targetScreen = (ts === 'conversationalai' ? 'ConversationalAI' : ts) as keyof RootStackParamList;
+      screenParams = {
+        appletId: applet.applet_id,
+        appletName: applet.name,
+        workbookId: applet.workbook_id ?? undefined,
+        slug: applet.slug,
+        embedPath: applet.embed_path,
+        name: applet.name,
+        pageId: pageId || applet.initial_page_id || undefined,
+        variables,
+      };
+    } else {
+      const appLower = app.toLowerCase();
+      if (appLower === 'dashboard') {
+        targetScreen = 'Dashboard';
+      } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
+        targetScreen = 'ConversationalAI';
+      } else if (appLower === 'operations') {
+        targetScreen = 'Operations';
+      } else {
+        console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
+      }
+      if (pageId) screenParams.pageId = pageId;
+      if (variables) screenParams.variables = variables;
+    }
+  } catch (fetchError) {
+    console.error('Failed to fetch applets for deep link:', fetchError);
+    Toast.show({
+      type: 'error',
+      text1: 'Failed to load app',
+      text2: 'Navigating to Home',
+    });
+  }
+
+  return { targetScreen, screenParams };
+}
+
+/**
  * Root Layout Component
  * Sets up the main navigation structure for the app
  * Handles authentication checks and deep link routing
@@ -935,41 +1036,122 @@ export default function RootLayout() {
       }
 
       if (token) {
+        // ----- Parse deep-link query params (shared by SMS and email flows) -----
+        console.log('🔗 ===== DEEP LINK PARSING =====');
+        console.log('🔗 Full parsed object:', JSON.stringify(parsed, null, 2));
+        console.log('🔗 Query params object:', JSON.stringify(parsed.queryParams, null, 2));
+
+        const app = parsed.queryParams?.app as string | undefined;
+        const pageId = parsed.queryParams?.pageId as string | undefined;
+        const variablesStr = parsed.queryParams?.variables as string | undefined;
+
+        console.log('🔗 Extracted from query params:');
+        console.log('🔗   app:', app);
+        console.log('🔗   pageId:', pageId);
+        console.log('🔗   variablesStr (raw):', variablesStr);
+
+        let variables: Record<string, string> | undefined;
+        if (variablesStr) {
+          try {
+            const decoded = decodeURIComponent(variablesStr);
+            console.log('🔗   variablesStr (decoded):', decoded);
+            variables = JSON.parse(decoded);
+          } catch (parseError) {
+            console.error('⚠️ Failed to parse variables JSON:', parseError);
+          }
+        }
+        console.log('🔗 ===== END DEEP LINK PARSING =====');
+
+        // The backend tags magic-link tokens with sourceFlow ('email' vs 'sms').
+        // Only SMS-flow magic links carry an `app` query param (handleSendToMobile),
+        // so the presence of `app` is a reliable client-side classifier of the
+        // sourceFlow without first asking the backend.
+        const isSmsFlow = !!app;
+
+        // ===== SMS flow: navigation-only, never authenticates =====
+        // If signed in, consume the SMS token for nav metadata and route to the
+        // target. If not signed in, persist the token so the post-email-login
+        // path below can pick it up, then send the user to Login.
+        if (isSmsFlow) {
+          setIsVerifyingMagicLink(true);
+          try {
+            const existingSession = await AuthService.getSession();
+            if (!existingSession) {
+              console.log('🔒 SMS deep link tapped with no session — saving pending token and routing to Login');
+              try {
+                await SecureStore.setItemAsync(PENDING_SMS_TOKEN_KEY, token);
+              } catch (storeErr) {
+                console.warn('Failed to persist pending SMS token:', storeErr);
+              }
+              setCollectNameInitialParams(undefined);
+              setPendingDeepLinkNav(null);
+              setInitialRoute('Login');
+              setIsCheckingAuth(false);
+              setIsVerifyingMagicLink(false);
+              return;
+            }
+
+            console.log('🔗 SMS deep link with existing session — consuming token for navigation only');
+            const navMeta = await AuthService.consumeSmsToken(token);
+            const consumedApp = navMeta.app || app;
+            const consumedVariables = navMeta.variables ?? variables;
+            const consumedPageId = navMeta.pageId ?? pageId;
+
+            const { targetScreen, screenParams } = consumedApp
+              ? await resolveAppToScreenTarget(consumedApp, consumedPageId ?? undefined, consumedVariables ?? undefined)
+              : { targetScreen: 'Home' as keyof RootStackParamList, screenParams: {} as Record<string, unknown> };
+
+            setCollectNameInitialParams(undefined);
+            setInitialRoute('Home');
+            setIsCheckingAuth(false);
+
+            if (targetScreen !== 'Home') {
+              setPendingDeepLinkNav({ screen: targetScreen, params: screenParams });
+              console.log('🔗 Stored pending navigation (SMS):', { screen: targetScreen, params: screenParams });
+            } else {
+              setPendingDeepLinkNav(null);
+            }
+
+            await ActivityService.logActivity('app_launch', {
+              source: 'deep_link',
+              app: consumedApp || null,
+            });
+
+            setIsVerifyingMagicLink(false);
+          } catch (smsErr: any) {
+            console.warn('⚠️ SMS token consume failed:', smsErr?.message || smsErr);
+            if (smsErr?.requiresLogin) {
+              // Session was invalid; persist token and route to Login so the user
+              // can sign in via email and we'll resume the deep link after.
+              try {
+                await SecureStore.setItemAsync(PENDING_SMS_TOKEN_KEY, token);
+              } catch (storeErr) {
+                console.warn('Failed to persist pending SMS token:', storeErr);
+              }
+              setCollectNameInitialParams(undefined);
+              setPendingDeepLinkNav(null);
+              setInitialRoute('Login');
+            } else {
+              // Token expired/invalid/used or other backend rejection — just
+              // continue to Home and let the user navigate from there.
+              Toast.show({
+                type: 'error',
+                text1: 'Link could not be opened',
+                text2: smsErr?.message || 'Please request a new link.',
+              });
+              setInitialRoute('Home');
+              setPendingDeepLinkNav(null);
+            }
+            setIsCheckingAuth(false);
+            setIsVerifyingMagicLink(false);
+          }
+          return;
+        }
+
+        // ===== Email flow: authenticates and mints a session JWT =====
         console.log('🔐 Verifying magic link token...');
         setIsVerifyingMagicLink(true);
         try {
-          console.log('🔗 ===== DEEP LINK PARSING =====');
-          console.log('🔗 Full parsed object:', JSON.stringify(parsed, null, 2));
-          console.log('🔗 Query params object:', JSON.stringify(parsed.queryParams, null, 2));
-          
-          const app = parsed.queryParams?.app as string | undefined;
-          const pageId = parsed.queryParams?.pageId as string | undefined;
-          const variablesStr = parsed.queryParams?.variables as string | undefined;
-          
-          console.log('🔗 Extracted from query params:');
-          console.log('🔗   app:', app);
-          console.log('🔗   pageId:', pageId);
-          console.log('🔗   variablesStr (raw):', variablesStr);
-          console.log('🔗   variablesStr type:', typeof variablesStr);
-          console.log('🔗   variablesStr length:', variablesStr?.length);
-          
-          // Parse variables JSON string if provided
-          let variables: Record<string, string> | undefined;
-          if (variablesStr) {
-            try {
-              const decoded = decodeURIComponent(variablesStr);
-              console.log('🔗   variablesStr (decoded):', decoded);
-              variables = JSON.parse(decoded);
-              console.log('🔗   variables (parsed):', JSON.stringify(variables, null, 2));
-            } catch (parseError) {
-              console.error('⚠️ Failed to parse variables JSON:', parseError);
-              console.error('⚠️   variablesStr that failed:', variablesStr);
-            }
-          } else {
-            console.log('🔗   No variablesStr provided');
-          }
-          console.log('🔗 ===== END DEEP LINK PARSING =====');
-          
           const session = await AuthService.verifyMagicLink(token);
           console.log('✅ Authentication successful!', { email: session.user.email });
 
@@ -980,83 +1162,37 @@ export default function RootLayout() {
             AuthService.needsProfileName(profileAfterVerify) &&
             !decoded?.isBackdoor;
 
-          // Map app query param to screen (My Apps / mybuys: slugs, built-in applets, or hardcoded fallbacks)
-          let targetScreen: keyof RootStackParamList = 'Home';
-          let screenParams: Record<string, unknown> = {};
-
-          if (app) {
-            if (app.startsWith('mybuys:')) {
+          // Default destination after email login is whatever the email URL
+          // specified via `app` (typically nothing → Home). If a pending SMS
+          // token is parked in SecureStore, consume it here and let its nav
+          // metadata override — that's the "resume after login" path.
+          let resolvedApp = app;
+          let resolvedPageId = pageId;
+          let resolvedVariables = variables;
+          try {
+            const pendingSmsToken = await SecureStore.getItemAsync(PENDING_SMS_TOKEN_KEY);
+            if (pendingSmsToken) {
+              await SecureStore.deleteItemAsync(PENDING_SMS_TOKEN_KEY);
               try {
-                const userApplets = await MyBuysService.listApplets();
-                const match = userApplets.find((a) => a.deepLinkSlug === app);
-                if (match) {
-                  targetScreen = 'ViewMyBuysApplet';
-                  screenParams = {
-                    appletId: match.appletId,
-                    ...(pageId ? { pageId } : {}),
-                    ...(variables && Object.keys(variables).length > 0 ? { variables } : {}),
-                  };
-                } else {
-                  console.warn(`⚠️ No My Apps applet for deep link slug: ${app}`);
-                  Toast.show({
-                    type: 'error',
-                    text1: 'Applet not found',
-                    text2: 'Check your deep link key or open the applet from My Apps.',
-                  });
-                }
-              } catch (e) {
-                console.error('Failed to resolve My Apps deep link:', e);
-                Toast.show({
-                  type: 'error',
-                  text1: 'Failed to load My Apps',
-                  text2: 'Navigating to Home',
-                });
-              }
-            } else {
-              try {
-                const applets = await listBuiltInApplets();
-                const appNormalized = app.toLowerCase().replace(/-/g, '');
-                const applet = applets.find(
-                  (a) => a.app_name && a.app_name.toLowerCase().replace(/-/g, '') === appNormalized
+                const navMeta = await AuthService.consumeSmsToken(pendingSmsToken);
+                console.log('🔗 Consumed pending SMS token after email login:', navMeta);
+                resolvedApp = navMeta.app || undefined;
+                resolvedPageId = navMeta.pageId ?? undefined;
+                resolvedVariables = navMeta.variables ?? undefined;
+              } catch (consumeErr: any) {
+                console.warn(
+                  '⚠️ Pending SMS token could not be consumed (likely expired):',
+                  consumeErr?.message || consumeErr
                 );
-
-                if (applet) {
-                  const ts = applet.target_screen;
-                  targetScreen = (ts === 'conversationalai' ? 'ConversationalAI' : ts) as keyof RootStackParamList;
-                  screenParams = {
-                    appletId: applet.applet_id,
-                    appletName: applet.name,
-                    workbookId: applet.workbook_id ?? undefined,
-                    slug: applet.slug,
-                    embedPath: applet.embed_path,
-                    name: applet.name,
-                    pageId: pageId || applet.initial_page_id || undefined,
-                    variables,
-                  };
-                } else {
-                  const appLower = app.toLowerCase();
-                  if (appLower === 'dashboard') {
-                    targetScreen = 'Dashboard';
-                  } else if (appLower === 'conversationalai' || appLower === 'conversational-ai') {
-                    targetScreen = 'ConversationalAI';
-                  } else if (appLower === 'operations') {
-                    targetScreen = 'Operations';
-                  } else {
-                    console.warn(`⚠️ Unknown app name: ${app}, defaulting to Home`);
-                  }
-                  if (pageId) screenParams.pageId = pageId;
-                  if (variables) screenParams.variables = variables;
-                }
-              } catch (fetchError) {
-                console.error('Failed to fetch applets for deep link:', fetchError);
-                Toast.show({
-                  type: 'error',
-                  text1: 'Failed to load app',
-                  text2: 'Navigating to Home',
-                });
               }
             }
+          } catch (storeErr) {
+            console.warn('Failed to read pending SMS token:', storeErr);
           }
+
+          const { targetScreen, screenParams } = resolvedApp
+            ? await resolveAppToScreenTarget(resolvedApp, resolvedPageId, resolvedVariables)
+            : { targetScreen: 'Home' as keyof RootStackParamList, screenParams: {} as Record<string, unknown> };
 
           if (needsProfileName) {
             setCollectNameInitialParams(
@@ -1137,10 +1273,11 @@ export default function RootLayout() {
             setTimeout(() => attemptReset(20), 50);
           }
 
-          // Log app launch (from deep link)
+          // Log app launch (from deep link). Uses resolvedApp so the resume-after-
+          // email-login path attributes the launch to the SMS target it landed on.
           await ActivityService.logActivity('app_launch', {
             source: 'deep_link',
-            app: app || null,
+            app: resolvedApp || null,
           });
           
           setIsVerifyingMagicLink(false);

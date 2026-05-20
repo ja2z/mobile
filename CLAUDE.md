@@ -77,6 +77,12 @@ Project-specific values for this repo:
 
 Each Lambda lives in `lambdas/<name>/` with its own `build-lambda.sh` and `deploy-lambda-s3.sh`. Shared utilities are in `lambdas/shared/`.
 
+### Auth endpoint notes
+
+- **Session JWT lifetime is a fixed 14-day window from issuance, not sliding.** Email magic-link verify mints a JWT with `exp = iat + 14d`; the client never refreshes it. After 14 days the user must re-authenticate via a fresh email magic link.
+- **`POST /v1/auth/refresh-token` is unused as of 2026-05-19.** The lambda still implements it (`handleRefreshToken` in `lambdas/auth-handler/index.ts`) but no client code calls it. Either wire it on the client or delete the route in a future pass.
+- **SMS deep links are navigation-only, not authentication.** `handleSendToMobile` creates a token tagged `sourceFlow='sms'`; `handleVerifyMagicLink` rejects those (clients must be authenticated via email first). Consume an SMS token's navigation context via `POST /v1/auth/consume-sms-token` with a valid session JWT.
+
 ### DynamoDB tables
 
 - `mobile-auth-tokens` — magic-link tokens (15-min TTL) + session JWT records.
