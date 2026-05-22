@@ -62,6 +62,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.5"
+          }
+        }
+      ],
       "expo-secure-store",
       "expo-font",
       [
@@ -76,7 +84,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Zeta to access your camera to scan QR codes.",
+          "cameraPermission": "Allow Zeta to access your camera for QR code scanning and text recognition.",
           "microphonePermission": "Allow Zeta to access your microphone when recording video with the camera.",
           "recordAudioAndroid": false
         }

@@ -10,6 +10,7 @@ import { colors, spacing, typography } from '../constants/Theme';
 import type { RootStackParamList } from '../app/_layout';
 import * as Haptics from 'expo-haptics';
 import { QrScannerModal } from './QrScannerModal';
+import { OcrScannerModal, type OcrFormat } from './OcrScannerModal';
 import { VoiceRecorderModal } from './VoiceRecorderModal';
 
 /** Fallback when embed URL is missing or invalid; matches historical hardcoded postMessage target. */
@@ -124,6 +125,12 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
   const [recorderVisible, setRecorderVisible] = useState(false);
   const recorderControlIdRef = useRef<string | null>(null);
   const recorderNavigateToPageRef = useRef<string | null>(null);
+
+  const [ocrScannerVisible, setOcrScannerVisible] = useState(false);
+  const ocrControlIdRef = useRef<string | null>(null);
+  const ocrNavigateToPageRef = useRef<string | null>(null);
+  /** Output format requested by Sigma; defaults to 'json' when missing or invalid in the invocation message. */
+  const ocrFormatRef = useRef<OcrFormat>('json');
 
   /**
    * Check if a URL is an "ask" URL that doesn't send workbook:loaded events
@@ -560,6 +567,25 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           } else {
             console.warn('🎤 invokeRecorder (action:outbound) missing or empty values.controlId');
           }
+        } else if (data.name === 'invokeOcrScanner') {
+          const raw = data.values?.controlId;
+          const cid = typeof raw === 'string' ? raw.trim() : '';
+          const navRaw = data.values?.navigateToPage;
+          const nav =
+            typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
+          const fmt: OcrFormat = data.values?.format === 'text' ? 'text' : 'json';
+          if (cid) {
+            console.log('🔠 OCR scanner requested (action:outbound) for control:', cid, 'format:', fmt);
+            if (nav) {
+              console.log('🔠 navigateToPage:', nav);
+            }
+            ocrControlIdRef.current = cid;
+            ocrNavigateToPageRef.current = nav;
+            ocrFormatRef.current = fmt;
+            setOcrScannerVisible(true);
+          } else {
+            console.warn('🔠 invokeOcrScanner (action:outbound) missing or empty values.controlId');
+          }
         }
       } else if (data.type === 'invokeQRscanner') {
         const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
@@ -586,6 +612,22 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           setRecorderVisible(true);
         } else {
           console.warn('🎤 invokeRecorder missing or empty controlId');
+        }
+      } else if (data.type === 'invokeOcrScanner') {
+        const cid = typeof data.controlId === 'string' ? data.controlId.trim() : '';
+        const navRaw = (data as { navigateToPage?: unknown }).navigateToPage;
+        const nav =
+          typeof navRaw === 'string' && navRaw.trim() !== '' ? navRaw.trim() : null;
+        const fmt: OcrFormat =
+          (data as { format?: unknown }).format === 'text' ? 'text' : 'json';
+        if (cid) {
+          console.log('🔠 OCR scanner requested for control:', cid, 'format:', fmt);
+          ocrControlIdRef.current = cid;
+          ocrNavigateToPageRef.current = nav;
+          ocrFormatRef.current = fmt;
+          setOcrScannerVisible(true);
+        } else {
+          console.warn('🔠 invokeOcrScanner missing or empty controlId');
         }
       } else if (data.type === 'workbook:variables:onchange') {
         // Handle variable changes - check for sessionId and chat response
@@ -810,6 +852,38 @@ export const DashboardView = forwardRef<DashboardViewRef, DashboardViewProps>(({
           recorderControlIdRef.current = null;
           recorderNavigateToPageRef.current = null;
           setRecorderVisible(false);
+        }}
+      />
+
+      <OcrScannerModal
+        visible={ocrScannerVisible}
+        format={ocrFormatRef.current}
+        onClose={() => {
+          ocrControlIdRef.current = null;
+          ocrNavigateToPageRef.current = null;
+          setOcrScannerVisible(false);
+        }}
+        onScanned={(payload) => {
+          const id = ocrControlIdRef.current;
+          if (!id) return;
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {
+            // Haptics not available on this device
+          });
+          sendMessage({
+            type: 'workbook:variables:update',
+            variables: { [id]: payload },
+          });
+          const navigateTo = ocrNavigateToPageRef.current;
+          if (navigateTo) {
+            sendMessage({
+              type: 'workbook:selectednodeid:update',
+              selectedNodeId: navigateTo,
+              nodeType: 'page',
+            });
+          }
+          ocrControlIdRef.current = null;
+          ocrNavigateToPageRef.current = null;
+          setOcrScannerVisible(false);
         }}
       />
     </View>
