@@ -1,0 +1,7 @@
+{
+  "name": "audio-route",
+  "version": "0.1.0",
+  "description": "Read-only access to the active iOS audio input route.",
+  "main": "src/index.ts",
+  "private": true
+}

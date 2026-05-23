@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatMessage, ChatModalProps } from '../types/chat.types';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/Theme';
+import { useActiveMicLabel } from '../hooks/useActiveMicLabel';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 /**
@@ -42,6 +43,8 @@ export const ChatModal = forwardRef<ChatModalRef, ChatModalProps>(({
   const scrollViewRef = useRef<ScrollView>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
   
+  const activeMicLabel = useActiveMicLabel();
+
   // Voice recording hook
   const {
     isRecording,
@@ -286,9 +289,16 @@ export const ChatModal = forwardRef<ChatModalRef, ChatModalProps>(({
                     <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                       <View style={styles.recordingDot} />
                     </Animated.View>
-                    <Text style={styles.recordingText}>
-                      {partialResults.length > 0 ? partialResults[0] : 'Listening...'}
-                    </Text>
+                    <View style={styles.recordingTextWrapper}>
+                      <Text style={styles.recordingText} numberOfLines={1}>
+                        {partialResults.length > 0 ? partialResults[0] : 'Listening...'}
+                      </Text>
+                      {activeMicLabel ? (
+                        <Text style={styles.recordingMicLabel} numberOfLines={1}>
+                          {activeMicLabel}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 )}
                 
@@ -891,10 +901,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
     marginRight: spacing.sm,
   },
+  recordingTextWrapper: {
+    flex: 1,
+  },
   recordingText: {
     ...typography.body,
     color: colors.textPrimary,
-    flex: 1,
+  },
+  recordingMicLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });
 

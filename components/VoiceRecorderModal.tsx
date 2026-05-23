@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { borderRadius, colors, shadows, spacing, typography } from '../constants/Theme';
+import { useActiveMicLabel } from '../hooks/useActiveMicLabel';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 type VoiceRecorderModalProps = {
@@ -77,6 +78,8 @@ export function VoiceRecorderModal({
     }
     onCompleteRef.current(text.trim());
   }, []);
+
+  const activeMicLabel = useActiveMicLabel();
 
   const {
     isRecording,
@@ -230,6 +233,11 @@ export function VoiceRecorderModal({
     <View style={styles.overlay} pointerEvents="box-none">
       <View style={styles.card}>
         <Text style={styles.durationText}>{formatDuration(elapsedMs)}</Text>
+        {isRecording && activeMicLabel ? (
+          <Text style={styles.micLabel} numberOfLines={1}>
+            Recording from {activeMicLabel}
+          </Text>
+        ) : null}
 
         <View style={styles.body}>
           {!isRecording && !error && (
@@ -288,6 +296,12 @@ const styles = StyleSheet.create({
   },
   durationText: {
     ...typography.h3,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  micLabel: {
+    ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.sm,
