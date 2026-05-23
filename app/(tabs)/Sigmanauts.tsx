@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Platform, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -44,7 +44,20 @@ export default function Sigmanauts() {
   );
   const [loading, setLoading] = useState(cachedOnMount === null);
   const [showSpinner, setShowSpinner] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const spinnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const all = await listBuiltInApplets({ forceRefresh: true });
+      setApplets(all.filter((a) => a.list_screen === LIST_SCREEN));
+    } catch (err) {
+      console.error('Failed to refresh applets:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const [hiddenHeroTileId, setHiddenHeroTileId] = useState<string | null>(null);
   const tileInnerRefs = useRef<Map<string, View>>(new Map());
@@ -194,6 +207,13 @@ export default function Sigmanauts() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accentBlue}
+          />
+        }
       >
         <View style={styles.grid}>
           {applets.map(renderAppletTile)}

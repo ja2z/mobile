@@ -65,10 +65,28 @@ async function fetchBuiltInAppletsFromNetwork(): Promise<BuiltInApplet[]> {
 /**
  * List all built-in applets. Returns cached results when available, otherwise
  * performs the network fetch and populates the cache. Concurrent callers
- * share a single in-flight request.
+ * share a single in-flight request. Pass `forceRefresh` to bypass the cache
+ * and refetch from the network (pull-to-refresh).
  * Requires authentication.
  */
-export async function listBuiltInApplets(): Promise<BuiltInApplet[]> {
+export async function listBuiltInApplets(
+  options?: { forceRefresh?: boolean },
+): Promise<BuiltInApplet[]> {
+  if (options?.forceRefresh) {
+    cachedApplets = null;
+    if (!inFlight) {
+      inFlight = fetchBuiltInAppletsFromNetwork()
+        .then((applets) => {
+          cachedApplets = applets;
+          return applets;
+        })
+        .finally(() => {
+          inFlight = null;
+        });
+    }
+    return inFlight;
+  }
+
   if (cachedApplets) return cachedApplets;
   if (inFlight) return inFlight;
 
