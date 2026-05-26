@@ -233,10 +233,16 @@ export default function EditMyBuysApplet() {
       setTesting(true);
       setTestResult(null);
       const result = await MyBuysService.testConfiguration({ embedUrl, embedClientId, embedSecretKey });
-      if (!result.success) { setTestResult({ success: false, message: `Embed: ${result.message}` }); return; }
+      if (!result.success) { setTestResult({ success: false, message: `Embed key failed: ${result.message}` }); return; }
       if (useRestApiFeatures && hasRestCreds) {
         const whoami = await SigmaRestApiService.whoami(resolvedRestClientId, resolvedRestSecret, sigmaApiBaseUrl);
-        if (!whoami.success) { setTestResult({ success: false, message: `Embed OK, REST API: ${whoami.message}` }); return; }
+        if (!whoami.success) {
+          const restApiMessage = sameAsEmbed
+            ? `Good news — your embed key works. The bad news is that same key doesn't have REST API access (${whoami.message}). In Sigma, an API key's Embed and REST API permissions are set at creation and can't be changed later. Either use a separate REST API key, or regenerate a new key with both Embed and REST API checked.`
+            : `Embed key works, but the REST API key failed: ${whoami.message}`;
+          setTestResult({ success: false, message: restApiMessage });
+          return;
+        }
         setTestResult({ success: true, message: `Embed OK (HTTP ${result.statusCode}). REST API verified.` });
       } else {
         setTestResult({ success: true, message: `Test successful! (HTTP ${result.statusCode})` });
@@ -603,7 +609,19 @@ export default function EditMyBuysApplet() {
       </View>
 
       {pagesError && (
-        <View style={styles.errorBanner}><Ionicons name="close-circle" size={18} color={colors.error} /><Text style={styles.errorBannerText}>{pagesError}</Text></View>
+        <View style={styles.errorBanner}>
+          <Ionicons name="close-circle" size={18} color={colors.error} />
+          <Text style={styles.errorBannerText}>{pagesError}</Text>
+          <TouchableOpacity
+            onPress={() => setPagesError(null)}
+            style={styles.errorBannerDismiss}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Dismiss error"
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={18} color={colors.error} />
+          </TouchableOpacity>
+        </View>
       )}
 
       {pages.length > 0 && (
@@ -683,8 +701,17 @@ export default function EditMyBuysApplet() {
         <View style={styles.footer}>
           {testResult && (
             <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
-              <Ionicons name={testResult.success ? 'checkmark-circle' : 'close-circle'} size={20} color={testResult.success ? colors.success : colors.error} />
+              <Ionicons name={testResult.success ? 'checkmark-circle' : 'close-circle'} size={20} color={testResult.success ? colors.success : colors.error} style={styles.testResultIcon} />
               <Text style={[styles.testResultText, testResult.success ? styles.testResultTextSuccess : styles.testResultTextError]}>{testResult.message}</Text>
+              <TouchableOpacity
+                onPress={() => setTestResult(null)}
+                style={styles.testResultDismiss}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Dismiss test result"
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={18} color={testResult.success ? colors.success : colors.error} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -843,8 +870,9 @@ const styles = StyleSheet.create({
   getPagesButtonText: { ...typography.body, fontWeight: '600', color: colors.primary },
   hintText: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' },
 
-  errorBanner: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, backgroundColor: '#FEE2E2', borderRadius: borderRadius.md, marginBottom: spacing.md, gap: spacing.sm },
+  errorBanner: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.sm, backgroundColor: '#FEE2E2', borderRadius: borderRadius.md, marginBottom: spacing.md, gap: spacing.sm },
   errorBannerText: { ...typography.bodySmall, color: colors.error, flex: 1 },
+  errorBannerDismiss: { padding: spacing.xs },
 
   pagesSection: { marginBottom: spacing.md },
   pagesSectionTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.xs },
@@ -854,12 +882,14 @@ const styles = StyleSheet.create({
   emojiButton: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: borderRadius.sm, backgroundColor: colors.surface },
   emojiText: { fontSize: 24 },
 
-  testResultContainer: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, borderRadius: borderRadius.md, marginBottom: spacing.md },
+  testResultContainer: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.sm, borderRadius: borderRadius.md, marginBottom: spacing.md },
   testResultSuccess: { backgroundColor: '#D1FAE5' },
   testResultError: { backgroundColor: '#FEE2E2' },
+  testResultIcon: { marginTop: 1 },
   testResultText: { ...typography.bodySmall, marginLeft: spacing.sm, flex: 1 },
   testResultTextSuccess: { color: colors.success },
   testResultTextError: { color: colors.error },
+  testResultDismiss: { padding: spacing.xs, marginLeft: spacing.xs },
 
   buttonContainer: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   testButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 2, borderColor: colors.primary, gap: spacing.sm },
