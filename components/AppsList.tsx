@@ -103,6 +103,11 @@ export function AppsList() {
     setEditing(null);
   }, []);
 
+  const handleDeleted = useCallback((appletId: string) => {
+    setApplets(prev => prev.filter(a => a.applet_id !== appletId));
+    setEditing(null);
+  }, []);
+
   const renderItem = ({ item }: { item: BuiltInApplet }) => {
     const swatch = item.color || colors.accentBlue;
     return (
@@ -177,6 +182,7 @@ export function AppsList() {
         applet={editing}
         onClose={() => setEditing(null)}
         onSaved={handleSaved}
+        onDeleted={handleDeleted}
       />
     </View>
   );

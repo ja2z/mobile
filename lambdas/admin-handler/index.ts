@@ -16,6 +16,7 @@ import {
   listBuiltInApplets,
   updateBuiltInApplet,
   updateBuiltInAppletColor,
+  deleteBuiltInApplet,
 } from '../shared/built-in-applets-service';
 import { listUserActivity, listDistinctEventTypes } from '../shared/admin-user-activity-queries';
 
@@ -349,6 +350,12 @@ const handlerImpl = async (event: any) => {
       ) {
         const appletId = path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)$/)?.[1];
         return await handleUpdateBuiltInAppletDetails(appletId!, body, decoded);
+      } else if (
+        path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)$/) &&
+        method === 'DELETE'
+      ) {
+        const appletId = path.match(/^\/v1\/admin\/applets\/built-in\/([^/]+)$/)?.[1];
+        return await handleDeleteBuiltInApplet(appletId!, decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'GET') {
         return await handleListWhitelist(decoded);
       } else if (path === '/v1/admin/whitelist' && method === 'POST') {
@@ -730,7 +737,7 @@ async function handleUpdateBuiltInAppletDetails(appletId: string, body: any, adm
     return createResponse(400, { error: 'Applet id is required' });
   }
 
-  const updates: { name?: string; subtitle?: string | null; color?: string | null } = {};
+  const updates: { name?: string; subtitle?: string | null; color?: string | null; icon_name?: string } = {};
 
   if (body && Object.prototype.hasOwnProperty.call(body, 'name')) {
     if (typeof body.name !== 'string') {
@@ -786,6 +793,29 @@ async function handleUpdateBuiltInAppletDetails(appletId: string, body: any, adm
     updates.color = normalized;
   }
 
+  if (body && Object.prototype.hasOwnProperty.call(body, 'icon_name')) {
+    if (typeof body.icon_name !== 'string') {
+      return createResponse(400, {
+        error: 'Invalid icon_name',
+        message: 'icon_name must be a non-empty string',
+      });
+    }
+    const trimmed = body.icon_name.trim();
+    if (!trimmed) {
+      return createResponse(400, {
+        error: 'Invalid icon_name',
+        message: 'icon_name must be a non-empty string',
+      });
+    }
+    if (trimmed.length > 100) {
+      return createResponse(400, {
+        error: 'Invalid icon_name',
+        message: 'icon_name must be 100 characters or fewer',
+      });
+    }
+    updates.icon_name = trimmed;
+  }
+
   try {
     const updated = await updateBuiltInApplet(appletId, updates);
     if (!updated) {
@@ -804,6 +834,37 @@ async function handleUpdateBuiltInAppletDetails(appletId: string, body: any, adm
     console.error('Error updating built-in applet:', error);
     return createResponse(500, {
       error: 'Failed to update built-in applet',
+      details: error?.message || String(error),
+    });
+  }
+}
+
+/**
+ * Hard-delete a built-in applet (admin only).
+ */
+async function handleDeleteBuiltInApplet(appletId: string, adminUser: any) {
+  if (!appletId) {
+    return createResponse(400, { error: 'Applet id is required' });
+  }
+
+  try {
+    const deleted = await deleteBuiltInApplet(appletId);
+    if (!deleted) {
+      return createResponse(404, { error: 'Built-in applet not found' });
+    }
+
+    await logActivity(
+      'built_in_applet_deleted',
+      adminUser.userId,
+      getActivityLogEmail(adminUser.email, adminUser.isBackdoor),
+      { appletId }
+    );
+
+    return createResponse(200, { success: true, appletId });
+  } catch (error: any) {
+    console.error('Error deleting built-in applet:', error);
+    return createResponse(500, {
+      error: 'Failed to delete built-in applet',
       details: error?.message || String(error),
     });
   }

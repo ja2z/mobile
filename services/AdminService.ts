@@ -340,8 +340,8 @@ export class AdminService {
 
   /**
    * Update editable display fields on a built-in applet (admin only).
-   * Any subset of `{ name, subtitle, color }` may be provided. Use null to
-   * clear `subtitle` or `color`.
+   * Any subset of `{ name, subtitle, color, icon_name }` may be provided.
+   * Use null to clear `subtitle` or `color`. `icon_name` cannot be cleared.
    */
   static async updateBuiltInApplet(
     appletId: string,
@@ -349,6 +349,7 @@ export class AdminService {
       name?: string;
       subtitle?: string | null;
       color?: string | null;
+      icon_name?: string;
     }
   ): Promise<{ applet: BuiltInApplet }> {
     return this.apiCall<{ applet: BuiltInApplet }>(
@@ -356,6 +357,21 @@ export class AdminService {
       {
         method: 'PUT',
         body: JSON.stringify(updates),
+      }
+    );
+  }
+
+  /**
+   * Hard-delete a built-in applet (admin only). Removes the row from the
+   * built_in_applets table; subsequent loads will no longer include it.
+   */
+  static async deleteBuiltInApplet(
+    appletId: string
+  ): Promise<{ success: boolean; appletId: string }> {
+    return this.apiCall<{ success: boolean; appletId: string }>(
+      `/applets/built-in/${encodeURIComponent(appletId)}`,
+      {
+        method: 'DELETE',
       }
     );
   }

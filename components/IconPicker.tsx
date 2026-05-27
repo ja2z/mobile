@@ -17,13 +17,6 @@ export interface IconPickerProps {
   onChange: (name: string) => void;
   accentColor: string;
   searchQuery?: string;
-  /**
-   * Optional content rendered above the icon grid as the FlatList's
-   * ListHeaderComponent. When provided, the IconPicker is intended to be
-   * used as the scroll container for its surrounding tab/screen, which
-   * avoids the "VirtualizedLists nested inside ScrollViews" warning.
-   */
-  renderHeader?: () => React.ReactNode;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
 }
@@ -31,7 +24,6 @@ export interface IconPickerProps {
 type IconName = keyof typeof Ionicons.glyphMap;
 
 const TILE_HEIGHT = 48;
-const ROWS_VISIBLE = 2;
 const NUM_COLUMNS = 4;
 
 interface TileProps {
@@ -69,7 +61,6 @@ function IconPickerImpl({
   onChange,
   accentColor,
   searchQuery,
-  renderHeader,
   style,
   contentContainerStyle,
 }: IconPickerProps) {
@@ -111,11 +102,6 @@ function IconPickerImpl({
     [value, accentColor, handlePress],
   );
 
-  const ListHeader = useMemo(
-    () => (renderHeader ? <>{renderHeader()}</> : null),
-    [renderHeader],
-  );
-
   const ListEmpty = useMemo(
     () => (
       <View style={styles.emptyContainer}>
@@ -125,19 +111,14 @@ function IconPickerImpl({
     [],
   );
 
-  // When used as a standalone (no renderHeader), keep the original compact
-  // 2-row scroller height for backward compatibility.
-  const listStyle = renderHeader ? style : [styles.standaloneList, style];
-
   return (
     <FlatList
       data={filteredIconNames}
       keyExtractor={keyExtractor}
       renderItem={renderItem}
       numColumns={NUM_COLUMNS}
-      style={listStyle}
+      style={style}
       contentContainerStyle={contentContainerStyle}
-      ListHeaderComponent={ListHeader}
       ListEmptyComponent={ListEmpty}
       initialNumToRender={16}
       maxToRenderPerBatch={16}
@@ -153,9 +134,6 @@ function IconPickerImpl({
 export const IconPicker = memo(IconPickerImpl);
 
 const styles = StyleSheet.create({
-  standaloneList: {
-    maxHeight: TILE_HEIGHT * ROWS_VISIBLE + spacing.sm * (ROWS_VISIBLE - 1),
-  },
   emptyContainer: {
     justifyContent: 'center',
     alignItems: 'center',

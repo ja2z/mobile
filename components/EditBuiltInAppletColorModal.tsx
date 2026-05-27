@@ -25,6 +25,7 @@ import {
   type AppletThemeId,
 } from '../constants/AppletThemes';
 import { MyBuysThemeSelector } from './MyBuysThemeSelector';
+import { IconField } from './IconField';
 import { colors, spacing, borderRadius, typography } from '../constants/Theme';
 
 interface EditBuiltInAppletColorModalProps {
@@ -33,6 +34,8 @@ interface EditBuiltInAppletColorModalProps {
   onClose: () => void;
   /** Called with the updated applet after a successful save. */
   onSaved: (updated: BuiltInApplet) => void;
+  /** Called with the deleted applet id after a successful hard-delete. */
+  onDeleted: (appletId: string) => void;
 }
 
 const NAME_MAX_LENGTH = 120;
@@ -49,11 +52,13 @@ export function EditBuiltInAppletColorModal({
   applet,
   onClose,
   onSaved,
+  onDeleted,
 }: EditBuiltInAppletColorModalProps) {
   const [themeId, setThemeId] = useState<AppletThemeId>('teal');
   const [customHex, setCustomHex] = useState<string>('#');
   const [name, setName] = useState<string>('');
   const [subtitle, setSubtitle] = useState<string>('');
+  const [iconName, setIconName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -63,6 +68,7 @@ export function EditBuiltInAppletColorModal({
     setCustomHex(seed.themeCustomHex || '#');
     setName(applet.name ?? '');
     setSubtitle(applet.subtitle ?? '');
+    setIconName(applet.icon_name ?? null);
   }, [visible, applet]);
 
   const previewAccent = getAppletAccentColor(themeId, customHex);
@@ -71,6 +77,8 @@ export function EditBuiltInAppletColorModal({
   const nameChanged = !!applet && trimmedName !== (applet.name ?? '');
   const subtitleChanged =
     !!applet && trimmedSubtitle !== (applet.subtitle ?? '');
+  const iconChanged =
+    !!applet && !!iconName && iconName !== (applet.icon_name ?? null);
 
   const handleSave = async () => {
     if (!applet) return;
@@ -95,12 +103,14 @@ export function EditBuiltInAppletColorModal({
         name?: string;
         subtitle?: string | null;
         color?: string | null;
+        icon_name?: string;
       } = { color: hex };
 
       if (nameChanged) updates.name = trimmedName;
       if (subtitleChanged) {
         updates.subtitle = trimmedSubtitle ? trimmedSubtitle : null;
       }
+      if (iconChanged && iconName) updates.icon_name = iconName;
 
       const { applet: updated } = await AdminService.updateBuiltInApplet(
         applet.applet_id,
@@ -114,6 +124,37 @@ export function EditBuiltInAppletColorModal({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDelete = () => {
+    if (!applet) return;
+    Alert.alert(
+      'Delete applet',
+      `Permanently delete "${applet.name}"? This removes it for every user and cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              await AdminService.deleteBuiltInApplet(applet.applet_id);
+              invalidateBuiltInAppletsCache();
+              onDeleted(applet.applet_id);
+            } catch (err: any) {
+              console.error('[EditBuiltInAppletColorModal] delete failed', err);
+              Alert.alert(
+                'Could not delete applet',
+                err?.message || 'Unknown error'
+              );
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleReset = async () => {
@@ -187,6 +228,7 @@ export function EditBuiltInAppletColorModal({
                 >
                   <Ionicons
                     name={
+                      (iconName as keyof typeof Ionicons.glyphMap) ||
                       (applet.icon_name as keyof typeof Ionicons.glyphMap) ||
                       'grid-outline'
                     }
@@ -248,9 +290,18 @@ export function EditBuiltInAppletColorModal({
                 onThemeIdChange={setThemeId}
                 onCustomHexChange={setCustomHex}
               />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <IconField
+                value={iconName}
+                onChange={setIconName}
+                accentColor={previewAccent}
+              />
               <Text style={styles.helpText}>
-                Name, subtitle, and color are global — every user will see
-                these changes on this applet&apos;s tile and screen header.
+                Name, subtitle, color, and icon are global — every user will
+                see these changes on this applet&apos;s tile and screen
+                header.
               </Text>
             </View>
           </ScrollView>
@@ -272,12 +323,13 @@ export function EditBuiltInAppletColorModal({
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={onClose}
+              style={[styles.button, styles.deleteButton]}
+              onPress={handleDelete}
               disabled={saving}
               activeOpacity={0.7}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.deleteButtonText}>Delete</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, styles.saveButton]}
@@ -419,14 +471,14 @@ const styles = StyleSheet.create({
   resetButtonTextDisabled: {
     color: colors.textSecondary,
   },
-  cancelButton: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+  deleteButton: {
+    backgroundColor: colors.error,
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
-  cancelButtonText: {
+  deleteButtonText: {
     ...typography.body,
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   saveButton: {

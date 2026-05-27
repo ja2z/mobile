@@ -25,7 +25,7 @@ import { SigmaRestApiService } from '../../services/SigmaRestApiService';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
-import { IconPicker } from '../../components/IconPicker';
+import { IconField } from '../../components/IconField';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -62,7 +62,6 @@ export default function EditMyBuysApplet() {
   const [themeId, setThemeId] = useState<AppletThemeId>(DEFAULT_APPLET_THEME_ID);
   const [themeCustomHex, setThemeCustomHex] = useState('#3B6FA0');
   const [iconName, setIconName] = useState<string>('layers-outline');
-  const [iconSearch, setIconSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -482,47 +481,28 @@ export default function EditMyBuysApplet() {
   ), [embedUrl, embedClientId, embedSecretKey, showSecretKey, applet?.deepLinkSlug]);
 
   const formatTab = useMemo(() => (
-    <IconPicker
-      value={iconName}
-      onChange={setIconName}
-      accentColor={getAppletAccentColor(themeId, themeCustomHex)}
-      searchQuery={iconSearch}
-      style={styles.formatList}
-      contentContainerStyle={styles.formatListContent}
-      renderHeader={() => (
-        <>
-          <View style={styles.fieldContainer}>
-            <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
-            <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="done" />
-          </View>
+    <>
+      <View style={styles.fieldContainer}>
+        <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
+        <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="done" />
+      </View>
 
-          <View style={styles.fieldContainer}>
-            <MyBuysThemeSelector
-              themeId={themeId}
-              customHex={themeCustomHex}
-              onThemeIdChange={setThemeId}
-              onCustomHexChange={setThemeCustomHex}
-            />
-          </View>
+      <View style={styles.fieldContainer}>
+        <MyBuysThemeSelector
+          themeId={themeId}
+          customHex={themeCustomHex}
+          onThemeIdChange={setThemeId}
+          onCustomHexChange={setThemeCustomHex}
+        />
+      </View>
 
-          <View style={[styles.labelRow, styles.iconLabelRow]}>
-            <Text style={styles.label}>Icon</Text>
-            <TextInput
-              style={styles.iconSearchInput}
-              placeholder="Search icons"
-              placeholderTextColor={colors.textSecondary}
-              value={iconSearch}
-              onChangeText={setIconSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          </View>
-        </>
-      )}
-    />
-  ), [name, themeId, themeCustomHex, iconName, iconSearch]);
+      <IconField
+        value={iconName}
+        onChange={setIconName}
+        accentColor={getAppletAccentColor(themeId, themeCustomHex)}
+      />
+    </>
+  ), [name, themeId, themeCustomHex, iconName]);
 
   const advancedTab = useMemo(() => (
     <>
@@ -680,7 +660,18 @@ export default function EditMyBuysApplet() {
             </ScrollView>
           </View>
           <View style={[styles.tabView, activeTab === 'format' ? null : styles.hiddenTab]}>
-            {formatTab}
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+              contentInsetAdjustmentBehavior="never"
+              automaticallyAdjustContentInsets={false}
+              automaticallyAdjustsScrollIndicatorInsets={false}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {formatTab}
+            </ScrollView>
           </View>
           <View style={[styles.tabView, activeTab === 'advanced' ? null : styles.hiddenTab]}>
             <ScrollView
@@ -756,12 +747,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
-  formatList: { flex: 1 },
-  formatListContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
   footer: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
@@ -794,22 +779,6 @@ const styles = StyleSheet.create({
   secretInput: { flex: 1, marginRight: spacing.sm },
   eyeButton: { padding: spacing.sm },
   charCount: { ...typography.caption, color: colors.textSecondary, marginLeft: 'auto' },
-  iconSearchInput: {
-    flex: 1,
-    marginLeft: spacing.sm,
-    height: 36,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    fontSize: typography.bodySmall.fontSize,
-    color: colors.textPrimary,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  iconLabelRow: {
-    marginBottom: spacing.md,
-  },
   copyKeyButton: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
   copyKeyButtonText: { ...typography.bodySmall, fontWeight: '600', color: colors.primary },
   readonlySlugContainer: {

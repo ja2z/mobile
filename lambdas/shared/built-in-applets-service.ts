@@ -108,6 +108,7 @@ export interface BuiltInAppletUpdate {
   name?: string;
   subtitle?: string | null;
   color?: string | null;
+  icon_name?: string;
 }
 
 /**
@@ -135,6 +136,10 @@ export async function updateBuiltInApplet(
     sets.push(`color = $${idx++}`);
     values.push(updates.color);
   }
+  if (updates.icon_name !== undefined) {
+    sets.push(`icon_name = $${idx++}`);
+    values.push(updates.icon_name);
+  }
 
   // Nothing to change - just return the current row so callers get a
   // consistent shape.
@@ -152,4 +157,16 @@ export async function updateBuiltInApplet(
     values
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Hard-delete a built-in applet by id. Returns true if a row was removed,
+ * false if no applet exists with that id.
+ */
+export async function deleteBuiltInApplet(appletId: string): Promise<boolean> {
+  const { rowCount } = await query(
+    'DELETE FROM built_in_applets WHERE applet_id = $1',
+    [appletId]
+  );
+  return (rowCount ?? 0) > 0;
 }
