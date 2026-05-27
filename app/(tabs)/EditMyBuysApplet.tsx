@@ -22,10 +22,12 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
+import { runAppletConfigTest } from '../../services/appletConfigTest';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { DEFAULT_APPLET_THEME_ID, getAppletAccentColor, normalizeThemeCustomHex, resolveAppletThemeId, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
 import { IconField } from '../../components/IconField';
+import { TestResultBanner, type TestResult } from '../../components/TestResultBanner';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -64,7 +66,7 @@ export default function EditMyBuysApplet() {
   const [iconName, setIconName] = useState<string>('layers-outline');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   // --- Advanced ---
   const [activeTab, setActiveTab] = useState<TabName>('embed');
@@ -231,21 +233,12 @@ export default function EditMyBuysApplet() {
     try {
       setTesting(true);
       setTestResult(null);
-      const result = await MyBuysService.testConfiguration({ embedUrl, embedClientId, embedSecretKey });
-      if (!result.success) { setTestResult({ success: false, message: `Embed key failed: ${result.message}` }); return; }
-      if (useRestApiFeatures && hasRestCreds) {
-        const whoami = await SigmaRestApiService.whoami(resolvedRestClientId, resolvedRestSecret, sigmaApiBaseUrl);
-        if (!whoami.success) {
-          const restApiMessage = sameAsEmbed
-            ? `Good news — your embed key works. The bad news is that same key doesn't have REST API access (${whoami.message}). In Sigma, an API key's Embed and REST API permissions are set at creation and can't be changed later. Either use a separate REST API key, or regenerate a new key with both Embed and REST API checked.`
-            : `Embed key works, but the REST API key failed: ${whoami.message}`;
-          setTestResult({ success: false, message: restApiMessage });
-          return;
-        }
-        setTestResult({ success: true, message: `Embed OK (HTTP ${result.statusCode}). REST API verified.` });
-      } else {
-        setTestResult({ success: true, message: `Test successful! (HTTP ${result.statusCode})` });
-      }
+      const tr = await runAppletConfigTest({
+        embedUrl, embedClientId, embedSecretKey,
+        useRestApiFeatures, hasRestCreds, sameAsEmbed,
+        resolvedRestClientId, resolvedRestSecret, sigmaApiBaseUrl,
+      });
+      setTestResult(tr);
     } catch (error: any) {
       if (error.isSessionExpired) { navigation.reset({ index: 0, routes: [{ name: 'Login' }] }); }
       else if (error.isExpirationError) { Alert.alert('Account Expired', error.message, [{ text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Login' }] }) }]); }
@@ -430,6 +423,11 @@ export default function EditMyBuysApplet() {
   const embedTab = useMemo(() => (
     <>
       <View style={styles.fieldContainer}>
+        <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
+        <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="next" onSubmitEditing={() => embedUrlInputRef.current?.focus()} blurOnSubmit={false} />
+      </View>
+
+      <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
           <Text style={styles.label}>Embed URL</Text>
           <TouchableOpacity onPress={() => setEmbedUrlModalVisible(true)} style={styles.infoButton} activeOpacity={0.7}><Ionicons name="information-circle-outline" size={20} color={colors.info} /></TouchableOpacity>
@@ -478,15 +476,10 @@ export default function EditMyBuysApplet() {
         </View>
       ) : null}
     </>
-  ), [embedUrl, embedClientId, embedSecretKey, showSecretKey, applet?.deepLinkSlug]);
+  ), [name, embedUrl, embedClientId, embedSecretKey, showSecretKey, applet?.deepLinkSlug]);
 
   const formatTab = useMemo(() => (
     <>
-      <View style={styles.fieldContainer}>
-        <View style={styles.labelRow}><Text style={styles.label}>Name</Text><Text style={styles.charCount}>{name.length}/35</Text></View>
-        <TextInput style={styles.input} placeholder="e.g. Demand Planning" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} maxLength={35} autoCapitalize="words" returnKeyType="done" />
-      </View>
-
       <View style={styles.fieldContainer}>
         <MyBuysThemeSelector
           themeId={themeId}
@@ -502,7 +495,7 @@ export default function EditMyBuysApplet() {
         accentColor={getAppletAccentColor(themeId, themeCustomHex)}
       />
     </>
-  ), [name, themeId, themeCustomHex, iconName]);
+  ), [themeId, themeCustomHex, iconName]);
 
   const advancedTab = useMemo(() => (
     <>
@@ -690,21 +683,7 @@ export default function EditMyBuysApplet() {
         </View>
 
         <View style={styles.footer}>
-          {testResult && (
-            <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
-              <Ionicons name={testResult.success ? 'checkmark-circle' : 'close-circle'} size={20} color={testResult.success ? colors.success : colors.error} style={styles.testResultIcon} />
-              <Text style={[styles.testResultText, testResult.success ? styles.testResultTextSuccess : styles.testResultTextError]}>{testResult.message}</Text>
-              <TouchableOpacity
-                onPress={() => setTestResult(null)}
-                style={styles.testResultDismiss}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Dismiss test result"
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={18} color={testResult.success ? colors.success : colors.error} />
-              </TouchableOpacity>
-            </View>
-          )}
+          <TestResultBanner result={testResult} onDismiss={() => setTestResult(null)} />
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={[styles.testButton, (!isFormValid || testing) && styles.buttonDisabled]} onPress={handleTest} disabled={!isFormValid || testing} activeOpacity={0.7}>
@@ -850,15 +829,6 @@ const styles = StyleSheet.create({
   pageName: { ...typography.body, color: colors.textPrimary, flex: 1 },
   emojiButton: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: borderRadius.sm, backgroundColor: colors.surface },
   emojiText: { fontSize: 24 },
-
-  testResultContainer: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.sm, borderRadius: borderRadius.md, marginBottom: spacing.md },
-  testResultSuccess: { backgroundColor: '#D1FAE5' },
-  testResultError: { backgroundColor: '#FEE2E2' },
-  testResultIcon: { marginTop: 1 },
-  testResultText: { ...typography.bodySmall, marginLeft: spacing.sm, flex: 1 },
-  testResultTextSuccess: { color: colors.success },
-  testResultTextError: { color: colors.error },
-  testResultDismiss: { padding: spacing.xs, marginLeft: spacing.xs },
 
   buttonContainer: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   testButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 2, borderColor: colors.primary, gap: spacing.sm },

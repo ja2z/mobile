@@ -20,10 +20,12 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import * as Clipboard from 'expo-clipboard';
 import { MyBuysService } from '../../services/MyBuysService';
 import { SigmaRestApiService } from '../../services/SigmaRestApiService';
+import { runAppletConfigTest } from '../../services/appletConfigTest';
 import { colors, spacing, borderRadius, typography } from '../../constants/Theme';
 import { DEFAULT_APPLET_THEME_ID, normalizeThemeCustomHex, getAppletAccentColor, type AppletThemeId } from '../../constants/AppletThemes';
 import { MyBuysThemeSelector } from '../../components/MyBuysThemeSelector';
 import { IconField } from '../../components/IconField';
+import { TestResultBanner, type TestResult } from '../../components/TestResultBanner';
 import { MY_BUYS_APPLETS_CHANGED, type MyBuysAppletsChangedPayload } from '../../constants/MyBuysEvents';
 import { MyBuysEmbedUrlInfoModal } from '../../components/MyBuysEmbedUrlInfoModal';
 import { ClientIdInfoModal } from '../../components/ClientIdInfoModal';
@@ -54,7 +56,7 @@ export default function AddMyBuysApplet() {
   const [iconName, setIconName] = useState<string>('layers-outline');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   // --- Advanced fields ---
   const [activeTab, setActiveTab] = useState<TabName>('embed');
@@ -168,34 +170,18 @@ export default function AddMyBuysApplet() {
     try {
       setTesting(true);
       setTestResult(null);
-
-      // 1) Embed HEAD test via Lambda
-      const result = await MyBuysService.testConfiguration({
+      const tr = await runAppletConfigTest({
         embedUrl,
         embedClientId,
         embedSecretKey,
+        useRestApiFeatures,
+        hasRestCreds,
+        sameAsEmbed,
+        resolvedRestClientId,
+        resolvedRestSecret,
+        sigmaApiBaseUrl,
       });
-
-      if (!result.success) {
-        setTestResult({ success: false, message: `Embed: ${result.message}` });
-        return;
-      }
-
-      // 2) Optional: REST whoami when Advanced is enabled and creds resolve
-      if (useRestApiFeatures && hasRestCreds) {
-        const whoami = await SigmaRestApiService.whoami(
-          resolvedRestClientId,
-          resolvedRestSecret,
-          sigmaApiBaseUrl,
-        );
-        if (!whoami.success) {
-          setTestResult({ success: false, message: `Embed OK, REST API: ${whoami.message}` });
-          return;
-        }
-        setTestResult({ success: true, message: `Embed OK (HTTP ${result.statusCode}). REST API verified.` });
-      } else {
-        setTestResult({ success: true, message: `Test successful! (HTTP ${result.statusCode})` });
-      }
+      setTestResult(tr);
     } catch (error: any) {
       if (error.isSessionExpired) {
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -402,6 +388,26 @@ export default function AddMyBuysApplet() {
 
   const embedTab = useMemo(() => (
     <>
+      {/* Name */}
+      <View style={styles.fieldContainer}>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Name</Text>
+          <Text style={styles.charCount}>{name.length}/35</Text>
+        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Demand Planning"
+          placeholderTextColor={colors.textSecondary}
+          value={name}
+          onChangeText={setName}
+          maxLength={35}
+          autoCapitalize="words"
+          returnKeyType="next"
+          onSubmitEditing={() => embedUrlInputRef.current?.focus()}
+          blurOnSubmit={false}
+        />
+      </View>
+
       {/* Embed URL */}
       <View style={styles.fieldContainer}>
         <View style={styles.labelRow}>
@@ -480,27 +486,10 @@ export default function AddMyBuysApplet() {
         </View>
       </View>
     </>
-  ), [embedUrl, embedClientId, embedSecretKey, showSecretKey]);
+  ), [name, embedUrl, embedClientId, embedSecretKey, showSecretKey]);
 
   const formatTab = useMemo(() => (
     <>
-      <View style={styles.fieldContainer}>
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Name</Text>
-          <Text style={styles.charCount}>{name.length}/35</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Demand Planning"
-          placeholderTextColor={colors.textSecondary}
-          value={name}
-          onChangeText={setName}
-          maxLength={35}
-          autoCapitalize="words"
-          returnKeyType="done"
-        />
-      </View>
-
       <View style={styles.fieldContainer}>
         <MyBuysThemeSelector
           themeId={themeId}
@@ -516,7 +505,7 @@ export default function AddMyBuysApplet() {
         accentColor={getAppletAccentColor(themeId, themeCustomHex)}
       />
     </>
-  ), [name, themeId, themeCustomHex, iconName]);
+  ), [themeId, themeCustomHex, iconName]);
 
   const serverPicker = useMemo(() => {
     if (!showServerPicker) return null;
@@ -788,19 +777,7 @@ export default function AddMyBuysApplet() {
         </View>
 
         <View style={styles.footer}>
-          {/* Test Result */}
-          {testResult && (
-            <View style={[styles.testResultContainer, testResult.success ? styles.testResultSuccess : styles.testResultError]}>
-              <Ionicons
-                name={testResult.success ? 'checkmark-circle' : 'close-circle'}
-                size={20}
-                color={testResult.success ? colors.success : colors.error}
-              />
-              <Text style={[styles.testResultText, testResult.success ? styles.testResultTextSuccess : styles.testResultTextError]}>
-                {testResult.message}
-              </Text>
-            </View>
-          )}
+          <TestResultBanner result={testResult} onDismiss={() => setTestResult(null)} />
 
           {/* Buttons */}
           <View style={styles.buttonContainer}>
@@ -1177,32 +1154,6 @@ const styles = StyleSheet.create({
   },
   emojiText: {
     fontSize: 24,
-  },
-
-  // --- Test result ---
-  testResultContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.sm,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
-  },
-  testResultSuccess: {
-    backgroundColor: '#D1FAE5',
-  },
-  testResultError: {
-    backgroundColor: '#FEE2E2',
-  },
-  testResultText: {
-    ...typography.bodySmall,
-    marginLeft: spacing.sm,
-    flex: 1,
-  },
-  testResultTextSuccess: {
-    color: colors.success,
-  },
-  testResultTextError: {
-    color: colors.error,
   },
 
   // --- Buttons ---
