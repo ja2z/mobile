@@ -3,13 +3,15 @@ name: postgres-connection
 description: >-
   Connect to the mobile app's RDS Postgres for migrations and ad-hoc SQL from
   this repo. Use when running migrations, executing one-off SQL, working with
-  the `users`, `approved_emails`, `user_activity`, `built_in_applets`, or
-  `sigma_org_config` tables, or troubleshooting `psql` connectivity to RDS.
+  the `users`, `approved_emails`, `user_activity`, `applets`, `built_in_applets`,
+  or `sigma_org_config` tables, or troubleshooting `psql` connectivity to RDS.
 ---
 
 # Postgres (RDS) — connection and migrations
 
-The mobile app's primary persistence is **Postgres on RDS**. Auth tokens and short URLs live in DynamoDB; everything else (users, approved emails, activity logs, MyBuys applets, built-in applets, Sigma org config) lives here.
+The mobile app's primary persistence is **Postgres on RDS**. Auth tokens and short URLs live in DynamoDB; everything else (users, approved emails, activity logs, MyApps applets, built-in applets, Sigma org config) lives here.
+
+> **Naming note:** the user-facing feature is now called **MyApps**. It was originally **MyBuys**, and the legacy name lingers in identifiers — Lambda `my-buys-handler`, deprecated DynamoDB table `mobile-my-buys-applets`. Treat "MyBuys" and "MyApps" as the same feature in code/docs.
 
 ## Connection
 
@@ -71,9 +73,10 @@ The `generate-url` Lambda still receives `page_id` in the **request body**; the 
 - `users` — user profiles, lazy-provisioned on first magic-link verification.
 - `approved_emails` — whitelist for non-`@sigmacomputing.com` emails.
 - `user_activity` — activity logs (migrated from the deprecated `mobile-user-activity` DynamoDB table).
+- `applets` — per-user MyApps applet configuration (migrated from the deprecated `mobile-my-buys-applets` DynamoDB table; feature was renamed from MyBuys to MyApps).
 - `built_in_applets`, `sigma_org_config` — applet configuration.
 
-Tables that remain in DynamoDB: `mobile-auth-tokens`, `mobile-short-urls`, `mobile-my-buys-applets`.
+Tables that remain in DynamoDB: `mobile-auth-tokens`, `mobile-short-urls`.
 
 ## Network caveats
 

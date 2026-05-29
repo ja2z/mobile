@@ -89,10 +89,10 @@ Each Lambda lives in `lambdas/<name>/` with its own `build-lambda.sh` and `deplo
 - `mobile-short-urls` — short-id → full magic-link URL, TTL.
 - `mobile-users` — *(deprecated; migrated to Postgres)* email-index GSI present.
 - `mobile-approved-emails` — *(deprecated; migrated to Postgres)*.
-- `mobile-my-buys-applets` — MyBuys applet configuration.
+- `mobile-my-buys-applets` — *(deprecated; migrated to Postgres `applets` table — the feature was renamed from "MyBuys" to "MyApps", but the legacy table name persists)*.
 - `mobile-user-activity` — *(deprecated; migrated to Postgres)*.
 
-Active user, approved-email, and activity data live in **Postgres RDS**, not DynamoDB. See the [[postgres-connection]] project skill for connection and migration details.
+Active user, approved-email, activity, and MyApps (formerly "MyBuys") applet data live in **Postgres RDS**, not DynamoDB. See the [[postgres-connection]] project skill for connection and migration details.
 
 ### Secrets Manager
 
