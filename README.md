@@ -1,89 +1,64 @@
-# Mobile Dashboard App
+# Big Buys Mobile
 
-A simple React Native mobile app built with Expo for internal company demos. The app embeds an iframe displaying charts/dashboards with minimal native UI interactions.
+A React Native + Expo reference app showing how to embed [Sigma](https://www.sigmacomputing.com) dashboards in a native mobile experience. It renders signed-JWT Sigma embeds inside a WebView and layers on native mobile capabilities — camera/OCR input, voice-to-text, push-style deep links, and an admin console — to show what a production-grade Sigma mobile integration can look like.
 
-> **📋 Project Rules & Guidelines**: See [`.cursor/rules/project-specific-rule.mdc`](.cursor/rules/project-specific-rule.mdc) for comprehensive development guidelines, coding standards, and AI assistant instructions specific to this project.
+Distributed via TestFlight for internal demos and select prospects; this is a reference architecture, not a public product.
 
-## Features
+## What it demonstrates
 
-- **Home Page**: Simple landing page with a button to navigate to the Dashboard
-- **Dashboard Page**: Contains a WebView embedding a third-party dashboard/charts
-- **Persistent Navigation**: Home button visible at bottom of ALL screens to return to home page
-- **Error Handling**: Graceful handling of WebView loading errors and network issues
+- **Embedded analytics**: Sigma dashboards rendered via signed-JWT iframe embeds inside a native WebView, with dynamic embed-URL generation and auto-refresh.
+- **Authentication**: Passwordless email magic-link sign-in, with SMS-based deep links for navigation handoff between devices.
+- **Admin console**: Manage the approved-user allowlist, view activity logs, and configure "MyApps" — a curated set of applets end users can launch.
+- **Native input modes**: On-device text recognition (camera → OCR) and voice-to-text for hands-free/keyboard-free workflows layered on top of embedded dashboards.
+- **Conversational AI**: A native chat surface that can query Sigma workbooks conversationally.
 
-## Tech Stack
+## Tech stack
 
-- **Framework**: React Native with Expo
-- **Language**: TypeScript
-- **Primary Target**: iOS (iPhone)
-- **Secondary Target**: Android
-- **Navigation**: React Navigation v7
-- **WebView**: react-native-webview
+- **Framework**: React Native + Expo, with [expo-router](https://docs.expo.dev/router/introduction/) for navigation. Native projects (`ios/`, `android/`) are gitignored and regenerated via `expo prebuild`.
+- **Language**: TypeScript throughout.
+- **Targets**: iOS (primary, via TestFlight), Android (secondary).
+- **Key libraries**: `react-native-webview` (dashboard embeds), `expo-dev-client` (custom dev client for native modules), `expo-secure-store` (credential storage), `expo-camera` / `@react-native-ml-kit/text-recognition` (OCR), `expo-speech-recognition` (voice input).
+- **Backend**: AWS Lambda functions (Node/TypeScript) behind API Gateway, with Postgres (RDS) for application data and DynamoDB for short-lived tokens/links.
 
-## Project Structure
+## App structure
 
 ```
-/app
-  - (tabs)/           # Main navigation screens
-    - Home.tsx        # Home page with navigation button
-    - Dashboard.tsx   # Dashboard page with WebView
-  - _layout.tsx       # Root layout with navigation setup
-/components
-  - HomeButton.tsx    # Persistent home button component
-  - DashboardView.tsx # WebView wrapper component
-/constants
-  - Config.ts         # URLs and configuration
+/app             # screens (expo-router)
+  _layout.tsx    # root layout + deep-link handler
+  (tabs)/        # main navigation and screens
+/components      # reusable UI, incl. the persistent HomeButton and DashboardView (WebView wrapper)
+/constants       # app configuration (URLs, etc.)
+/services        # API clients, auth service
+/hooks
+/lambdas         # backend Lambda functions (deployed separately from the app)
+/plans           # architecture notes, setup guides, and writeups
 ```
 
-## Getting Started
+Every screen includes a persistent `HomeButton` with a minimum 44×44pt hit area, so users can always get back to the home screen.
 
-1. **Install dependencies**:
+## Getting started
+
+This app ships through [EAS Build](https://docs.expo.dev/build/introduction/) with a custom dev client — it does not run in the plain Expo Go app because of the native modules involved (camera, OCR, secure storage).
+
+1. **Install dependencies**
    ```bash
    npm install
    ```
-
-2. **Start the development server**:
+2. **Build a dev-client IPA**: `./scripts/eas-build.sh development` runs a local EAS build and drops the IPA in `builds/`. Install it on your iOS device (e.g. via Xcode's Devices window).
+3. **Start the dev server**
    ```bash
    npm start
    ```
+4. **Connect**: open the installed dev client on your device and connect to the Metro server started above.
 
-3. **Run on device**:
-   - iOS: `npm run ios` (requires Xcode)
-   - Android: `npm run android` (requires Android Studio)
-   - Web: `npm run web`
+Production builds (`./scripts/eas-build.sh production`) build and submit straight to TestFlight; `./scripts/eas-build.sh deploy <ipa-path>` submits an existing IPA. If you add a native dependency, re-run `expo prebuild` (or let the next EAS build do it) and ship a new dev-client build — the existing one won't pick up new native code via a JS-only reload.
 
-4. **Test with Expo Go**:
-   - Install Expo Go app on your iPhone
-   - Scan the QR code from the terminal
-   - The app will load on your device
+## Backend
 
-## Configuration
+The mobile client talks to a set of AWS Lambda functions for authentication, embed-URL generation, admin operations, and applet data. Each function lives under `lambdas/<name>/` with its own build and deploy scripts. See [plans/mobile-auth-architecture.md](plans/mobile-auth-architecture.md) for the authentication design (magic links, session JWTs, SMS deep links) and [plans/DEVELOPMENT.md](plans/DEVELOPMENT.md) for a broader development guide.
 
-The dashboard URL is configured in `/constants/Config.ts`. Currently set to a placeholder URL (`https://example.com`) for development.
+## Further reading
 
-To update for production:
-1. Open `/constants/Config.ts`
-2. Update the `DASHBOARD_URL` value
-3. Restart the app
-
-## Development Notes
-
-- The app uses TypeScript for better type safety
-- All components follow React Native best practices
-- The Home button meets iOS accessibility guidelines (44x44pt minimum hit area)
-- WebView includes proper error handling and loading states
-- Navigation is simple and flat (no complex nested navigators)
-
-## Testing
-
-- Primary testing on actual iPhone via Expo Go
-- Test both iOS and Android before considering feature complete
-- Ensure home button works from all screens
-- Test WebView loading states and error conditions
-
-## Future Enhancements
-
-- Production dashboard URL integration
-- Barcode scanning feature
-- Additional native UI interactions
-- Performance optimizations
+- [plans/DEVELOPMENT.md](plans/DEVELOPMENT.md) — development guide and conventions.
+- [plans/mobile-auth-architecture.md](plans/mobile-auth-architecture.md) — authentication system architecture.
+- [plans/](plans/) — additional setup guides and design notes for individual features.
